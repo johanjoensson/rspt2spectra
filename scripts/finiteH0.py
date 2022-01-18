@@ -43,7 +43,7 @@ print(np.shape(hyb))
 
 if r2s.verbose_fig:
     # Plot diagonal and off diagonal hybridization functions separately.
-    offdiagonal.plot_diagonal_and_offdiagonal(w, hyb_diagonal, hyb, r2s.xlim)
+#    offdiagonal.plot_diagonal_and_offdiagonal(w, hyb_diagonal, hyb, r2s.xlim)
     # Plot all orbitals, both real and imaginary parts.
     offdiagonal.plot_all_orbitals(w, hyb, xlim=r2s.xlim)
 
@@ -66,23 +66,27 @@ if r2s.verbose_fig:
     plt.figure()
     plt.hist(np.abs(v).flatten()/np.max(np.abs(v)),bins=100)
     plt.xlabel('|v|/max(|v|)')
-    plt.show()
+    #plt.show()
+    plt.savefig('hopping_distribution_rel.png')
     # Relative values of the hopping parameters
     plt.figure()
     plt.plot(sorted(np.abs(v).flatten())/np.max(np.abs(v)),'-o')
     plt.ylabel('|v|/max(|v|)')
-    plt.show()
+    #plt.show()
+    plt.savefig('hopping_values_rel.png')
 
     # Distribution of hopping parameters
     plt.figure()
     plt.hist(np.abs(v).flatten(),bins=100)
     plt.xlabel('|v|')
-    plt.show()
+    #plt.show()
+    plt.savefig('hopping_distribution.png')
     # Absolute values of the hopping parameters
     plt.figure()
     plt.plot(sorted(np.abs(v).flatten()),'-o')
     plt.ylabel('|v|')
-    plt.show()
+    #plt.show()
+    plt.savefig('hopping_values.png')
 
 print('{:d} elements in v.'.format(v.size))
 v_mean = np.mean(np.abs(v))
