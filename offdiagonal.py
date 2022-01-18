@@ -34,7 +34,8 @@ def plot_diagonal_and_offdiagonal(w, hyb_diagonal, hyb, xlim):
     plt.xlim(xlim)
     #plt.ylim(ylim)
     plt.title('Diagonal functions, real part')
-    plt.show()
+    #plt.show()
+    plt.savefig('diag_real.png')
     # -Imag part
     plt.figure()
     for i in range(n_imp):
@@ -43,7 +44,8 @@ def plot_diagonal_and_offdiagonal(w, hyb_diagonal, hyb, xlim):
     plt.xlim(xlim)
     #plt.ylim(ylim)
     plt.title('Diagonal functions, -imag part')
-    plt.show()
+    #plt.show()
+    plt.savefig('diag_imag.png')
 
     # Off diagonal functions
     # Real part
@@ -54,7 +56,8 @@ def plot_diagonal_and_offdiagonal(w, hyb_diagonal, hyb, xlim):
     plt.xlim(xlim)
     #plt.ylim(ylim)
     plt.title('Off diagonal functions, real part')
-    plt.show()
+    #plt.show()
+    plt.savefig('offdiag_real.png')
     # -Imag part
     plt.figure()
     for i in range(n_imp):
@@ -63,13 +66,18 @@ def plot_diagonal_and_offdiagonal(w, hyb_diagonal, hyb, xlim):
     plt.xlim(xlim)
     #plt.ylim(ylim)
     plt.title('Off diagonal functions, -imag part')
-    plt.show()
+    #plt.show()
+    plt.savefig('offdiag_imag.png')
 
 
+label = -1
 def plot_all_orbitals(w, hyb_orig, hyb_model=None, xlim=None):
     """
     Plot functions for all orbitals, for both hyb and hyb_model.
     """
+
+    global label
+
     assert np.shape(hyb_orig)[0] == np.shape(hyb_orig)[1]
     if hyb_model is not None:
         assert np.shape(hyb_orig) == np.shape(hyb_model)
@@ -95,7 +103,12 @@ def plot_all_orbitals(w, hyb_orig, hyb_model=None, xlim=None):
         axes[0,n//2].set_title('Real part')
         #plt.tight_layout()
         plt.subplots_adjust(top=0.95,right=0.98, wspace=0.03, hspace=0.03)
-        plt.show()
+        #plt.show()
+        if label >= 0:
+                plt.savefig('real_orbital_' + repr(label) + '.png')
+        else:
+                plt.savefig('real_orbitals.png')
+
 
         # All -imag functions
         fig, axes = plt.subplots(nrows=n, ncols=n, sharex=True, sharey=True)
@@ -112,7 +125,11 @@ def plot_all_orbitals(w, hyb_orig, hyb_model=None, xlim=None):
         axes[0,n//2].set_title('- Imag part')
         #plt.tight_layout()
         plt.subplots_adjust(top=0.95,right=0.98, wspace=0.03, hspace=0.03)
-        plt.show()
+        #plt.show()
+        if label >= 0:
+                plt.savefig('imag_orbital_' + repr(label) + '.png')
+        else:
+                plt.savefig('imag_orbitals.png')
     elif n == 1:
         # All real functions
         fig = plt.figure()
@@ -128,7 +145,11 @@ def plot_all_orbitals(w, hyb_orig, hyb_model=None, xlim=None):
         plt.title('Real part')
         plt.tight_layout()
         #plt.subplots_adjust(top=0.95,right=0.98, wspace=0.03, hspace=0.03)
-        plt.show()
+        #plt.show()
+        if label >= 0:
+                plt.savefig('real_orbital_' + repr(label) + '.png')
+        else:
+                plt.savefig('real_orbitals.png')
 
         # All -imag functions
         fig = plt.figure()
@@ -145,9 +166,15 @@ def plot_all_orbitals(w, hyb_orig, hyb_model=None, xlim=None):
         plt.title('- Imag part')
         plt.tight_layout()
         #plt.subplots_adjust(top=0.95,right=0.98, wspace=0.03, hspace=0.03)
-        plt.show()
+        #plt.show()
+        if label >= 0:
+                plt.savefig('imag_orbital_' + repr(label) + '.png')
+        else:
+                plt.savefig('imag_orbitals.png')
     else:
         sys.exit('Positive number of impurity orbitals required.')
+
+    label += 1
 
 
 def get_eb_v_for_one_block(w, eim, hyb, block, wsparse, wborders,
@@ -169,7 +196,8 @@ def get_eb_v_for_one_block(w, eim, hyb, block, wsparse, wborders,
     hyb_block = hyb[block[:, np.newaxis], block, ::wsparse]
     print('shape(hyb_block) = ', hyb_block.shape)
     print('Get bath energies...')
-    ebs = get_ebs(w_select, hyb_block, wborders, n_bath_foreach_window)
+    ebs, w_index = get_ebs(w_select, hyb_block, wborders, n_bath_foreach_window)
+    print ("Window index {}".format(w_index))
     #print('shape(ebs) = ', ebs.shape)
     #print('ebs:')
     #print(ebs)
@@ -198,15 +226,15 @@ def get_eb_v_for_one_block(w, eim, hyb, block, wsparse, wborders,
         print('Plot model and original hybridization functions..')
         plot_all_orbitals(w_select, hyb_block, hyb_model, xlim)
         # Distribution of hopping parameters
-        plt.figure()
-        plt.hist(np.abs(v).flatten()/np.max(np.abs(v)),bins=30)
-        plt.xlabel('|v|/max(|v|)')
-        plt.show()
+#        plt.figure()
+#        plt.hist(np.abs(v).flatten()/np.max(np.abs(v)),bins=30)
+#        plt.xlabel('|v|/max(|v|)')
+#        plt.show()
         # Absolute values of the hopping parameters
-        plt.figure()
-        plt.plot(sorted(np.abs(v).flatten())/np.max(np.abs(v)),'-o')
-        plt.ylabel('|v|/max(|v|)')
-        plt.show()
+#        plt.figure()
+#        plt.plot(sorted(np.abs(v).flatten())/np.max(np.abs(v)),'-o')
+#        plt.ylabel('|v|/max(|v|)')
+#        plt.show()
         print('{:d} elements in v.'.format(v.size))
         v_mean = np.mean(np.abs(v))
         v_median = np.median(np.abs(v))
@@ -218,7 +246,7 @@ def get_eb_v_for_one_block(w, eim, hyb, block, wsparse, wborders,
             v[mask].size, r_cutoff))
         #print('Absolut values of these elements:')
         #print(sorted(np.abs(v[mask])))
-    return eb, v
+    return eb, v, w_index
 
 
 def get_eb_v(w, eim, hyb, blocks, wsparse, wborders,
@@ -231,14 +259,16 @@ def get_eb_v(w, eim, hyb, blocks, wsparse, wborders,
     n_imp = sum(len(block) for block in blocks)
     # Bath energies
     eb = []
+    # Energy window associated to each bath state
+    window_indices = []
     # Hopping parameters
     v = []
     # Loop over blocks
     for block_i, (block, n_bath_sets_foreach_window) in enumerate(zip(blocks, n_bath_sets_foreach_block_and_window)):
         print('\n ---------------------------- \n')
-        print('Block {:d} treats impurity orbitals:'.format(block_i), block)
+        print('Block {:d} treats impurity orbitals:'.format(block_i), block, n_bath_sets_foreach_window)
         # Calculate bath energies and hopping parameters for each block.
-        eb_block, v_block = get_eb_v_for_one_block(w, eim, hyb, block, wsparse,
+        eb_block, v_block, window_index_block = get_eb_v_for_one_block(w, eim, hyb, block, wsparse,
                                                    wborders,
                                                    n_bath_sets_foreach_window,
                                                    xlim, verbose_fig,
@@ -247,6 +277,7 @@ def get_eb_v(w, eim, hyb, blocks, wsparse, wborders,
         v_sparse = np.zeros((len(eb_block), n_imp), dtype=np.complex)
         v_sparse[:, block] = v_block
         v.append(v_sparse)
+        window_indices += [i for i in window_index_block]
     eb = np.hstack(eb)
     v = np.vstack(v)
     # Sort bath states according to the energy windows.
@@ -255,11 +286,11 @@ def get_eb_v(w, eim, hyb, blocks, wsparse, wborders,
     # This is important if have both occupied and unoccupied bath states,
     # since we then want the unoccupied bath states to be sorted after
     # the occupied bath states.
-    eb, v = reshuffle(eb, v, wborders)
+    eb, v = reshuffle(eb, v, wborders, np.array(window_indices))
     return eb, v
 
 
-def reshuffle(eb, v, wborders):
+def reshuffle(eb, v, wborders, w_indices):
     """
     Sort bath states according to the energy windows.
 
@@ -271,10 +302,12 @@ def reshuffle(eb, v, wborders):
     """
     eb_new = []
     v_new = []
+    print (w_indices)
     for i, wborder in enumerate(wborders):
-        mask = np.logical_and(wborder[0] <= eb, eb < wborder[1])
-        eb_new.append(eb[mask])
-        v_new.append(v[mask,:])
+        mask = np.logical_and(np.logical_and(wborder[0] <= eb, eb < wborder[1]), w_indices == i)
+        #mask = np.logical_and(wborder[0] <= eb, eb < wborder[1])
+        eb_new.append(eb[mask.flatten()])
+        v_new.append(v[mask.flatten(),:])
     eb_new = np.hstack(eb_new)
     v_new = np.vstack(v_new)
     return eb_new, v_new
@@ -305,8 +338,11 @@ def get_eb(w, hyb, n_b):
     # Selection of bath energies depends on how many
     # bath orbitals have compared to the number of
     #impurity orbitals.
-    if n_b <= 0:
+    if n_b < 0:
         sys.exit('Positive number of bath energies expected.')
+    elif n_b == 0:
+        # No bath orbitals
+        print("Skipping orbitals with no bath state")
     elif n_b == 1:
         # Bath energy at the center of gravity of the imaginary part
         # of the hybridization function trace.
@@ -362,12 +398,15 @@ def get_ebs(w, hyb, wborders, n_b):
     n_windows = np.shape(wborders)[0]
     #ebs = np.zeros((n_windows, n_b), dtype=np.float)
     ebs = []
+    w_index = []
     # Treat each energy window as seperate.
     for a, wborder in enumerate(wborders):
         mask = np.logical_and(wborder[0]<= w, w <= wborder[1])
         #ebs[a,:] = get_eb(w[mask], hyb[:,:,mask], n_b)
         ebs.append(get_eb(w[mask], hyb[:,:,mask], n_b[a]))
-    return ebs
+        #if(n_b[a] > 0):
+        w_index += [a]*n_b[a]
+    return ebs, w_index
 
 
 def get_hyb(z, eb, v):
@@ -438,9 +477,13 @@ def get_vs(z, hyb, wborders, ebs, gamma=0.):
     costs = np.zeros(n_windows, dtype=np.float)
     # Treat each energy window as seperate.
     for a, wborder in enumerate(wborders):
-        mask = np.logical_and(wborder[0]<= z.real, z.real <= wborder[1])
-        #vs[a,:,:], costs[a] = get_v(z[mask], hyb[:,:,mask], ebs[a,:], gamma)
-        v, costs[a] = get_v(z[mask], hyb[:,:,mask], ebs[a], gamma)
+        if (len(ebs[a]) > 0):
+           mask = np.logical_and(wborder[0]<= z.real, z.real <= wborder[1])
+           #vs[a,:,:], costs[a] = get_v(z[mask], hyb[:,:,mask], ebs[a,:], gamma)
+           v, costs[a] = get_v(z[mask], hyb[:,:,mask], ebs[a], gamma)
+        else:
+           v = np.zeros((0,n_imp),dtype=np.float)
+           costs[a] = 0.0
         vs.append(v)
     return vs, costs
 
@@ -473,6 +516,8 @@ def get_v(z, hyb, eb, gamma=0.):
     # Treat complex-valued parameters,
     # by doubling the number of parameters.
     p0 = np.random.randn(2*n_b*n_imp)
+    p0[:n_b*n_imp] = [0.3 for i in range(n_b*n_imp)]
+    p0[n_b*n_imp:] = [0.0 for i in range(n_b*n_imp)]
 
     # Define cost function as a function of a hopping parameter
     # vector.
