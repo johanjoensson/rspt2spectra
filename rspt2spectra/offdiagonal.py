@@ -405,6 +405,7 @@ def get_ebs(w, hyb, wborders, n_b):
         #ebs[a,:] = get_eb(w[mask], hyb[:,:,mask], n_b)
         ebs.append(get_eb(w[mask], hyb[:,:,mask], n_b[a]))
         #if(n_b[a] > 0):
+        print (n_b[a])
         w_index += [a]*n_b[a]
     return ebs, w_index
 
