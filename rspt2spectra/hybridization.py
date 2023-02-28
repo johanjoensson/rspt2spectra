@@ -366,7 +366,7 @@ def get_vb_and_eb(w, hyb, wborder):
             assert wborder[i,s[j],0] < wborder[i,s[j],1]
             if j < nb-1:
                 assert wborder[i,s[j],1] <= wborder[i,s[j+1],0]
-    vb = np.zeros(np.shape(wborder)[:2],dtype=np.float)
+    vb = np.zeros(np.shape(wborder)[:2],dtype=float)
     eb = np.zeros_like(vb)
     # Loop over correlated orbitals
     for i in range(np.shape(wborder)[0]):
@@ -646,7 +646,7 @@ def hyb_d(z, eb, vb):
     # Number of different impurity orbitals
     (norb, nb) = np.shape(eb)
     # Hybridization function
-    d = np.zeros((norb, len(z)), dtype=np.complex)
+    d = np.zeros((norb, len(z)), dtype=complex)
     # Loop over correlated obitals
     for i in range(norb):
         # Loop over bath states

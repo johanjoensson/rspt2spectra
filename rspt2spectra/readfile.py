@@ -62,7 +62,7 @@ def hyb(file_re, file_im, spinpol=True, only_diagonal_part=False):
     n_imp = np.shape(mask)[0]
     assert n_imp % 2 == 0
     # Hybridization functions in a matrix.
-    hyb = np.zeros((n_imp, n_imp, len(w)), dtype=np.complex)
+    hyb = np.zeros((n_imp, n_imp, len(w)), dtype=complex)
     # Fill hybridization matrix.
     for i in range(n_imp):
         for j in range(n_imp):
@@ -108,7 +108,7 @@ def self_energy(file_re, file_im, spinpol, file_re_off=None, file_im_off=None):
     re = eV * np.loadtxt(file_re_off)[:, 1:]
     im = eV * np.loadtxt(file_im_off)[:, 1:]
     # Construct self-energy
-    sig = np.zeros((nc, nc, nw), dtype=np.complex)
+    sig = np.zeros((nc, nc, nw), dtype=complex)
     # Fill in diagonal functions.
     for i in range(nc):
         sig[i, i, :] = sig_diagonal[i, :]

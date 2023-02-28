@@ -30,7 +30,7 @@ def get_h0(e_onsite, eb, vb, spinpol):
     nc, nb = np.shape(eb)
     norb = nc//2 if spinpol else nc
     # Initialize the full Hamiltonian, including spin
-    h = np.zeros(2*norb*(1 + nb)*np.array([1, 1]), dtype=np.complex)
+    h = np.zeros(2*norb*(1 + nb)*np.array([1, 1]), dtype=complex)
 
     # On-site energies of correlated orbitals
     if no == 2*norb:
@@ -475,7 +475,7 @@ def get_e(w, eim, p_rspt, hyb, sigmaM, e0, wmin, wmax, verbose_text):
     avgErspt = np.zeros(nc)
     for i in range(nc):
         avgErspt[i] = cog(w[mask], p_rspt[i, mask])
-    hybM_mask = np.zeros((nc, nc, len(w[mask])), dtype=np.complex)
+    hybM_mask = np.zeros((nc, nc, len(w[mask])), dtype=complex)
     for i in range(nc):
         hybM_mask[i, i, :] = hyb[i, mask]
     sigmaM_mask = sigmaM[:, :, mask]
@@ -822,7 +822,7 @@ def pdos(w, eim, e, hyb, sig=0):
     diag = (e.ndim == 1 and hyb.ndim == 2
             and np.shape(sig)[0] != np.shape(sig)[1])
     if diag:
-        g = np.zeros((n, nw), dtype=np.complex)
+        g = np.zeros((n, nw), dtype=complex)
         for i in range(n):
             g[i, :] = 1. / (w[:] + 1j * eim - e[i] - hyb[i, :] - sig[i, :])
     else:
@@ -831,13 +831,13 @@ def pdos(w, eim, e, hyb, sig=0):
         e = e if e.ndim == 2 else np.diag(e)
         # Make hybridization 3d
         if hyb.ndim == 2:
-            tmp = np.zeros((n, n, nw), dtype=np.complex)
+            tmp = np.zeros((n, n, nw), dtype=complex)
             for i in range(n):
                 tmp[i, i, :] = hyb[i, :]
             hyb = tmp
         # Make self-energy 3d
         if sig.ndim == 2:
-            tmp = np.zeros((n, n, nw), dtype=np.complex)
+            tmp = np.zeros((n, n, nw), dtype=complex)
             if np.shape(sig)[0] == np.shape(sig)[1]:
                 for i in range(nw):
                     tmp[:, :, i] = sig
@@ -846,7 +846,7 @@ def pdos(w, eim, e, hyb, sig=0):
                     tmp[i, i, :] = sig[i, :]
             sig = tmp
         assert nw == np.shape(hyb)[2] and nw == np.shape(sig)[2]
-        g = np.zeros((n, n, nw), dtype=np.complex)
+        g = np.zeros((n, n, nw), dtype=complex)
         for i, x in enumerate(w):
             g[:, :, i] = np.linalg.inv((x + 1j * eim) * np.eye(n)
                                        - e[:, :]
@@ -958,7 +958,7 @@ def h_d0(e, eb=None, v=None):
     # loop over the types
     for t in range(nt):
         # create the sub-block Hamiltonian
-        h = np.atleast_2d(np.zeros((1 + nb, 1 + nb), dtype=np.complex))
+        h = np.atleast_2d(np.zeros((1 + nb, 1 + nb), dtype=complex))
         h[0, 0] = e[t]
         for i, e_bath in enumerate(eb[t]):
             h[1 + i, 1 + i] = e_bath

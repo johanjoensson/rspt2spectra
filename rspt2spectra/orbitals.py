@@ -109,7 +109,7 @@ def get_u_transformation(n, basis_tag, ang, irr_flag='',
         print("Use spherical to cubic matrix...")
         vtr = unitarytransform.get_spherical_2_cubic_matrix(spinpol, ang)
     elif irr_flag:
-        vtr = np.zeros((nc, nc), dtype=np.complex)
+        vtr = np.zeros((nc, nc), dtype=complex)
         filename = 'proj-' + basis_tag + '-' + irr_flag + '.inp'
         print("Read rotation transformation from file:", filename)
         with open(filename, 'r') as fr:
@@ -124,7 +124,7 @@ def get_u_transformation(n, basis_tag, ang, irr_flag='',
         # Spherical harmonics to spherical harmonics.
         print("Impurity orbitals are already in spherical harmonics basis.")
         print("Hence, no rotation is needed.")
-        vtr = np.eye(nc, dtype=np.complex)
+        vtr = np.eye(nc, dtype=complex)
 
     if (cubic_basis or irr_flag) and verbose_text:
         print("Rotation matrix for impurity orbitals:")
@@ -135,7 +135,7 @@ def get_u_transformation(n, basis_tag, ang, irr_flag='',
 
     # Construct unitary rotation matrix
     utr = np.transpose(np.conj(vtr))
-    u = np.zeros((n, n), dtype=np.complex)
+    u = np.zeros((n, n), dtype=complex)
 
     # Transformation of bath states
     if spherical_bath_basis:

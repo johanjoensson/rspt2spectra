@@ -47,7 +47,7 @@ def run(hyb, hdft, e_wins, blocks, bath_states, rot_spherical, w, eim, wsparse =
     print ('Eigenvalues of the DFT hamiltonian')
     print (eig_dft)
 
-    h = np.zeros((n_imp+len(eb),n_imp+len(eb)), dtype=np.complex)
+    h = np.zeros((n_imp+len(eb),n_imp+len(eb)), dtype=complex)
     h[:n_orb, :n_orb] = hdft
     h[:n_orb, n_orb:] = np.conj(v.T)
     h[n_orb:, :n_orb] = v
