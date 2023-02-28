@@ -333,6 +333,7 @@ def get_eb(w, hyb, n_b):
         sys.exit('Positive number of bath energies expected.')
     elif n_b == 0:
         # No bath orbitals
+        print ("Skipping orbital with no bath states")
     elif n_b == 1:
         # Bath energy at the center of gravity of the imaginary part
         # of the hybridization function trace.
