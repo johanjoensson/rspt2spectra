@@ -179,12 +179,14 @@ def plot_all_orbitals(w, hyb_orig, hyb_model=None, xlim=None):
 
 def get_eb_v_for_one_block(w, eim, hyb, block, wsparse, wborders,
                            n_bath_sets_foreach_window, xlim=None,
-                           verbose_fig=False, gamma=0.):
+                           verbose_fig=False, gamma=0., imag_only = True, v_cutoff = None):
     """
     Return bath energies and hybridization hopping parameters
     for a specific block.
 
     """
+    if v_cutoff is None:
+        v_cutoff = 0
     # Select energies in real axis mesh.
     w_select = w[::wsparse]
     assert w_select[1] - w_select[0] < 2*eim
@@ -193,65 +195,53 @@ def get_eb_v_for_one_block(w, eim, hyb, block, wsparse, wborders,
     # Number of bath orbitals, for each energy window.
     n_bath_foreach_window = np.array(n_bath_sets_foreach_window)*len(block)
     # Select a subset of all impurity orbitals
-    hyb_block = hyb[block[:, np.newaxis], block, ::wsparse]
-    print('shape(hyb_block) = ', hyb_block.shape)
-    print('Get bath energies...')
+    hyb_block = hyb[np.ix_(block, block, w == w_select)]
     ebs, w_index = get_ebs(w_select, hyb_block, wborders, n_bath_foreach_window)
-    print ("Window index {}".format(w_index))
-    #print('shape(ebs) = ', ebs.shape)
-    #print('ebs:')
-    #print(ebs)
-    print('Get hopping parameters...')
     mask_tmp = np.logical_and(np.min(wborders) < w_select,
                               w_select < np.max(wborders))
     n_data_points = len(block)**2*len(w_select[mask_tmp])
     print('Fit to approx {:d} data points.'.format(n_data_points))
     n_param = np.sum(n_bath_foreach_window)*len(block)*2
     print('Use {:d} real-valued parameters in the fit.'.format(n_param))
-    vs, costs = get_vs(w_select+1j*eim, hyb_block, wborders, ebs, gamma=gamma)
-    print('Cost function values (without regularization):')
-    print(costs)
-    #print('shape(vs) = ', vs.shape)
-    #print('vs:')
-    #print(vs)
-    #print('Get merged bath energies...')
+    vs, costs = get_vs(w_select+1j*eim, hyb_block, wborders, ebs, gamma=gamma, imag_only = imag_only)
+    print('Cost function values (without regularization):', flush = True)
+    print(costs, flush = True)
     eb = merge_ebs(ebs)
-    #print(eb)
-    #print('Get merged hopping parameters...')
+    print(eb)
     v = merge_vs(vs)
-    #print(v)
+    v_max = np.max(np.abs(v))
+    mask = np.any(np.abs(v) > v_cutoff*v_max, axis = 1)
     if verbose_fig:
-        print('Get model hybridization functions...')
         hyb_model = get_hyb(w_select+1j*eim, eb, v)
         print('Plot model and original hybridization functions..')
         plot_all_orbitals(w_select, hyb_block, hyb_model, xlim)
         # Distribution of hopping parameters
-#        plt.figure()
-#        plt.hist(np.abs(v).flatten()/np.max(np.abs(v)),bins=30)
-#        plt.xlabel('|v|/max(|v|)')
-#        plt.show()
+        plt.figure()
+        plt.hist(np.abs(v).flatten()/np.max(np.abs(v)),bins=30)
+        plt.xlabel('|v|/max(|v|)')
+        plt.show()
         # Absolute values of the hopping parameters
-#        plt.figure()
-#        plt.plot(sorted(np.abs(v).flatten())/np.max(np.abs(v)),'-o')
-#        plt.ylabel('|v|/max(|v|)')
-#        plt.show()
-        print('{:d} elements in v.'.format(v.size))
+        plt.figure()
+        plt.plot(sorted(np.abs(v).flatten())/np.max(np.abs(v)),'o')
+        plt.plot( [v_cutoff]*len(v.flatten()),'--', color = 'tab:red')
+        plt.ylabel('|v|/max(|v|)')
+        plt.show()
+        # plt.savefig('hopping_distribution.png')
+        plt.close()
+        print('{:d} elements in v.'.format(v.size), flush = True)
         v_mean = np.mean(np.abs(v))
         v_median = np.median(np.abs(v))
-        print('<v> = ', v_mean)
-        print('v_median = ', v_median)
-        r_cutoff = 0.02
-        mask = np.abs(v) < r_cutoff*np.max(np.abs(v))
-        print('{:d} elements in v are smaller than {:.3f}*v_max.'.format(
-            v[mask].size, r_cutoff))
-        #print('Absolut values of these elements:')
-        #print(sorted(np.abs(v[mask])))
-    return eb, v, w_index
+    # v[np.abs(v) < r_cutoff*v_max] = 0
+    # for i, (v_i, eb_i) in enumerate(zip(v, eb)):
+    #     if np.any(np.abs(v_i) > r_cutoff*v_max):
+    #         ebv.append(eb_i)
+    #         vp.append(v_i)
+    return eb[mask], v[mask], w_index
 
 
 def get_eb_v(w, eim, hyb, blocks, wsparse, wborders,
              n_bath_sets_foreach_block_and_window, xlim=None,
-             verbose_fig=False, gamma=0.):
+             verbose_fig=False, gamma=0., imag_only = True, v_cutoff = None):
     """
     Return bath and hopping parameters by discretizing hybridization functions.
     """
@@ -265,8 +255,6 @@ def get_eb_v(w, eim, hyb, blocks, wsparse, wborders,
     v = []
     # Loop over blocks
     for block_i, (block, n_bath_sets_foreach_window) in enumerate(zip(blocks, n_bath_sets_foreach_block_and_window)):
-        print('\n ---------------------------- \n')
-        print('Block {:d} treats impurity orbitals:'.format(block_i), block, n_bath_sets_foreach_window)
         # Calculate bath energies and hopping parameters for each block.
         eb_block, v_block, window_index_block = get_eb_v_for_one_block(w, eim, hyb, block, wsparse,
                                                    wborders,
@@ -302,10 +290,13 @@ def reshuffle(eb, v, wborders, w_indices):
     """
     eb_new = []
     v_new = []
-    print (w_indices)
+    # print (f"wborders = {wborders}")
+    # print (f"eb = {eb}")
+    # print (f"v = {v}")
+    # print (f"w_indices = {w_indices}", flush = True)
     for i, wborder in enumerate(wborders):
-        mask = np.logical_and(np.logical_and(wborder[0] <= eb, eb < wborder[1]), w_indices == i)
-        #mask = np.logical_and(wborder[0] <= eb, eb < wborder[1])
+        # mask = np.logical_and(np.logical_and(wborder[0] <= eb, eb < wborder[1]), w_indices == i)
+        mask = np.logical_and(wborder[0] <= eb, eb < wborder[1])
         eb_new.append(eb[mask.flatten()])
         v_new.append(v[mask.flatten(),:])
     eb_new = np.hstack(eb_new)
@@ -334,7 +325,7 @@ def get_eb(w, hyb, n_b):
     """
     n_w = len(w)
     n_imp = np.shape(hyb)[0]
-    eb = np.zeros(n_b, dtype=np.float)
+    eb = np.zeros(n_b, dtype=float)
     # Selection of bath energies depends on how many
     # bath orbitals have compared to the number of
     #impurity orbitals.
@@ -342,7 +333,6 @@ def get_eb(w, hyb, n_b):
         sys.exit('Positive number of bath energies expected.')
     elif n_b == 0:
         # No bath orbitals
-        print("Skipping orbitals with no bath state")
     elif n_b == 1:
         # Bath energy at the center of gravity of the imaginary part
         # of the hybridization function trace.
@@ -405,7 +395,6 @@ def get_ebs(w, hyb, wborders, n_b):
         #ebs[a,:] = get_eb(w[mask], hyb[:,:,mask], n_b)
         ebs.append(get_eb(w[mask], hyb[:,:,mask], n_b[a]))
         #if(n_b[a] > 0):
-        print (n_b[a])
         w_index += [a]*n_b[a]
     return ebs, w_index
 
@@ -439,7 +428,7 @@ def get_hyb(z, eb, v):
     return hyb
 
 
-def get_vs(z, hyb, wborders, ebs, gamma=0.):
+def get_vs(z, hyb, wborders, ebs, gamma=0., imag_only = True):
     """
     Return optimized hopping parameters.
 
@@ -481,7 +470,7 @@ def get_vs(z, hyb, wborders, ebs, gamma=0.):
         if (len(ebs[a]) > 0):
            mask = np.logical_and(wborder[0]<= z.real, z.real <= wborder[1])
            #vs[a,:,:], costs[a] = get_v(z[mask], hyb[:,:,mask], ebs[a,:], gamma)
-           v, costs[a] = get_v(z[mask], hyb[:,:,mask], ebs[a], gamma)
+           v, costs[a] = get_v(z[mask], hyb[:,:,mask], ebs[a], gamma, imag_only = imag_only)
         else:
            v = np.zeros((0,n_imp),dtype=float)
            costs[a] = 0.0
@@ -489,7 +478,7 @@ def get_vs(z, hyb, wborders, ebs, gamma=0.):
     return vs, costs
 
 
-def get_v(z, hyb, eb, gamma=0.):
+def get_v(z, hyb, eb, gamma=0., imag_only = True):
     """
     Return optimized hopping parameters.
 
@@ -517,20 +506,22 @@ def get_v(z, hyb, eb, gamma=0.):
     # Treat complex-valued parameters,
     # by doubling the number of parameters.
     p0 = np.random.randn(2*n_b*n_imp)
-    p0[:n_b*n_imp] = [0.3 for i in range(n_b*n_imp)]
-    p0[n_b*n_imp:] = [0.0 for i in range(n_b*n_imp)]
 
     # Define cost function as a function of a hopping parameter
     # vector.
-    fun = lambda p: cost_function(p, eb, z, hyb, gamma, output='value')
-    jac = lambda p: cost_function(p, eb, z, hyb, gamma, output='gradient')
-    # Minimize cost function
-    res = minimize(fun, p0, jac=jac)
+    fun = lambda p: cost_function(p, eb, z, hyb, gamma, imag_only, output='value')
+    if imag_only:
+        jac = lambda p: cost_function(p, eb, z, hyb, gamma, True, output='gradient')
+        # Minimize cost function
+        res = minimize(fun, p0, jac=jac, tol = 1e-12)
+    else:
+        res = minimize(fun, p0)
+
     #res = minimize(fun, p0)
     # The solution
     p = res.x
     # Cost function value, with regularization.
-    c = cost_function(p, eb, z, hyb, output='value')
+    c = cost_function(p, eb, z, hyb, only_imag_part = imag_only, output='value')
     # Convert hopping parameters to physical shape.
     v = unroll(p, n_b, n_imp)
     return v, c
