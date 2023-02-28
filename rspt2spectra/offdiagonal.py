@@ -272,9 +272,9 @@ def get_eb_v(w, eim, hyb, blocks, wsparse, wborders,
                                                    wborders,
                                                    n_bath_sets_foreach_window,
                                                    xlim, verbose_fig,
-                                                   gamma=gamma)
+                                                   gamma=gamma, imag_only = imag_only, v_cutoff = v_cutoff)
         eb.append(eb_block)
-        v_sparse = np.zeros((len(eb_block), n_imp), dtype=np.complex)
+        v_sparse = np.zeros((len(eb_block), n_imp), dtype=complex)
         v_sparse[:, block] = v_block
         v.append(v_sparse)
         window_indices += [i for i in window_index_block]
@@ -396,7 +396,7 @@ def get_ebs(w, hyb, wborders, n_b):
     n_w = len(w)
     n_imp = np.shape(hyb)[0]
     n_windows = np.shape(wborders)[0]
-    #ebs = np.zeros((n_windows, n_b), dtype=np.float)
+    #ebs = np.zeros((n_windows, n_b), dtype=float)
     ebs = []
     w_index = []
     # Treat each energy window as seperate.
@@ -431,7 +431,7 @@ def get_hyb(z, eb, v):
     """
     n_w = len(z)
     n_b, n_imp = np.shape(v)
-    hyb = np.zeros((n_imp, n_imp, n_w), dtype=np.complex)
+    hyb = np.zeros((n_imp, n_imp, n_w), dtype=complex)
     # Loop over all bath energies
     for b, e in enumerate(eb):
         # Add contributions from each bath
@@ -472,10 +472,10 @@ def get_vs(z, hyb, wborders, ebs, gamma=0.):
     #n_windows, n_b = np.shape(ebs)
     n_windows = len(ebs)
     # Hopping parameters
-    #vs = np.zeros((n_windows, n_b, n_imp), dtype=np.complex)
+    #vs = np.zeros((n_windows, n_b, n_imp), dtype=complex)
     vs = []
     # Cost function values
-    costs = np.zeros(n_windows, dtype=np.float)
+    costs = np.zeros(n_windows, dtype=float)
     # Treat each energy window as seperate.
     for a, wborder in enumerate(wborders):
         if (len(ebs[a]) > 0):
@@ -483,7 +483,7 @@ def get_vs(z, hyb, wborders, ebs, gamma=0.):
            #vs[a,:,:], costs[a] = get_v(z[mask], hyb[:,:,mask], ebs[a,:], gamma)
            v, costs[a] = get_v(z[mask], hyb[:,:,mask], ebs[a], gamma)
         else:
-           v = np.zeros((0,n_imp),dtype=np.float)
+           v = np.zeros((0,n_imp),dtype=float)
            costs[a] = 0.0
         vs.append(v)
     return vs, costs
@@ -675,8 +675,8 @@ def cost_function(p, eb, z, hyb, gamma=0., only_imag_part=True,
 
     # Partial derivatives of the cost function with respect to the
     # real and imaginary part of the hopping parameters.
-    dcdv_re = np.zeros((n_b, n_imp), dtype=np.float)
-    dcdv_im = np.zeros((n_b, n_imp), dtype=np.float)
+    dcdv_re = np.zeros((n_b, n_imp), dtype=float)
+    dcdv_im = np.zeros((n_b, n_imp), dtype=float)
     if True:
         # Calculate the gradient using some numpy broadcasting trixs.
         # complex array(B,M)
