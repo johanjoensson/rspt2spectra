@@ -14,6 +14,8 @@ import matplotlib.pylab as plt
 import numpy as np
 from scipy.optimize import minimize
 
+from time import perf_counter
+
 from .energies import cog
 
 def plot_diagonal_and_offdiagonal(w, hyb_diagonal, hyb, xlim):
@@ -422,11 +424,39 @@ def get_hyb(z, eb, v):
     n_w = len(z)
     n_b, n_imp = np.shape(v)
     hyb = np.zeros((n_imp, n_imp, n_w), dtype=complex)
+
+    
     # Loop over all bath energies
     for b, e in enumerate(eb):
         # Add contributions from each bath
         hyb += np.outer(v[b,:].conj(), v[b,:])[:,:,np.newaxis]*(1/(z-e))
+
     return hyb
+
+def get_hyb_2(z, eb, v):
+    """
+    Return the hybridization functions, as a rank 3 tensor.
+
+    Parameters
+    ----------
+    z : complex array(M)
+        Energy mesh.
+    eb : array(B)
+        Bath energies.
+    v : array(B, N)
+        Hopping parameters.
+
+    Returns
+    -------
+    hyb : array(N,N,M)
+        Hybridization functions.
+
+    """
+    # return np.einsum("li, nk, lj -> ijn", np.conj(v), 1/(z[:, np.newaxis] - eb[np.newaxis, :]), v, optimize = True)
+    return np.moveaxis(np.conj(v.T)[np.newaxis, :, :] @ 
+                       np.array([np.diag(d) for d in 1/(z[:, np.newaxis] - eb[np.newaxis, :])]) @
+                       v[np.newaxis, :, :],
+                       0, -1)
 
 
 def get_vs(z, hyb, wborders, ebs, gamma=0., imag_only = True):
@@ -479,7 +509,7 @@ def get_vs(z, hyb, wborders, ebs, gamma=0., imag_only = True):
     return vs, costs
 
 
-def get_v(z, hyb, eb, gamma=0., imag_only = True):
+def get_v(z, hyb, eb, gamma=0., imag_only = True, realvalue_v = False):
     """
     Return optimized hopping parameters.
 
@@ -506,7 +536,11 @@ def get_v(z, hyb, eb, gamma=0., imag_only = True):
     # Initialize hopping parameters.
     # Treat complex-valued parameters,
     # by doubling the number of parameters.
-    p0 = np.random.randn(2*n_b*n_imp)
+    if realvalue_v:
+        n = n_b*n_imp
+    else:
+        n = 2*n_b*n_imp
+    p0 = np.random.randn(n)
 
     # Define cost function as a function of a hopping parameter
     # vector.
@@ -547,10 +581,15 @@ def unroll(p, n_b, n_imp):
         Hybridization parameters as a matrix.
 
     """
-    assert len(p) % 2 == 0
+    realvalue_v =len(p) == n_b*n_imp
+    # assert len(p) % 2 == 0
     # Number of complex-value parameters
-    r = len(p)//2
-    p_c = p[:r] + 1j*p[r:]
+    if realvalue_v:
+        r = len(p)
+        p_c = p[:r] + 0j
+    else:
+        r = len(p)//2
+        p_c = p[:r] + 1j*p[r:]
     v = p_c.reshape(n_b, n_imp)
     return v
 
@@ -623,6 +662,7 @@ def cost_function(p, eb, z, hyb, gamma=0., only_imag_part=True,
     v = unroll(p, n_b, n_imp)
     # Model hybridization functions.
     hyb_model = get_hyb(z, eb, v)
+
     # Difference between original and model hybridization functions
     diff = hyb_model - hyb
     if only_imag_part:
