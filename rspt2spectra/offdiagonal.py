@@ -206,8 +206,8 @@ def get_eb_v_for_one_block(w, eim, hyb, block, wsparse, wborders,
     n_param = np.sum(n_bath_foreach_window)*len(block)*2
     print('Use {:d} real-valued parameters in the fit.'.format(n_param))
     vs, costs = get_vs(w_select+1j*eim, hyb_block, wborders, ebs, gamma=gamma, imag_only = imag_only)
-    print('Cost function values (without regularization):', flush = True)
-    print(costs, flush = True)
+    print('Cost function values (without regularization):')
+    print(costs)
     eb = merge_ebs(ebs)
     print(eb)
     v = merge_vs(vs)
@@ -230,7 +230,7 @@ def get_eb_v_for_one_block(w, eim, hyb, block, wsparse, wborders,
         plt.show()
         # plt.savefig('hopping_distribution.png')
         plt.close()
-        print('{:d} elements in v.'.format(v.size), flush = True)
+        print('{:d} elements in v.'.format(v.size))
         v_mean = np.mean(np.abs(v))
         v_median = np.median(np.abs(v))
     # v[np.abs(v) < r_cutoff*v_max] = 0
@@ -295,7 +295,7 @@ def reshuffle(eb, v, wborders, w_indices):
     # print (f"wborders = {wborders}")
     # print (f"eb = {eb}")
     # print (f"v = {v}")
-    # print (f"w_indices = {w_indices}", flush = True)
+    # print (f"w_indices = {w_indices}")
     for i, wborder in enumerate(wborders):
         # mask = np.logical_and(np.logical_and(wborder[0] <= eb, eb < wborder[1]), w_indices == i)
         mask = np.logical_and(wborder[0] <= eb, eb < wborder[1])
