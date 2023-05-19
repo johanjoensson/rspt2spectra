@@ -15,7 +15,6 @@ import subprocess
 import sys
 from math import pi
 from scipy.optimize import minimize, minimize_scalar
-from numba import jit
 import matplotlib.pylab as plt
 
 from . import hybridization
@@ -776,7 +775,6 @@ def get_mu(path='out'):
     return mu_value
 
 
-@jit
 def pdos(w, eim, e, hyb, sig=0):
     r"""
     Return impurity projected density of states (PDOS).
