@@ -12,19 +12,16 @@ process Slater-Condon data generated from the RSPt software.
 
 import numpy as np
 from math import pi
-from numba import jit
 
 
 # ----------------------------------------------------------
 # Slater-Condon integrals
-@jit
 def get_Slater_F(r, f1, f2, k):
     r"""
     Return Slater integral :math:`F^{(k)}`.
 
     Calculate :math:`F^{(k)}` for radial functions `f1` and `f2`,
     and the radial grid `r`.
-    A just-in-time (JIT) compilation is used for speed-up reasons.
 
     Parameters
     ----------
@@ -81,14 +78,12 @@ def get_Slater_F(r, f1, f2, k):
     return s
 
 
-@jit
 def get_Slater_G(r, f1, f2, k):
     r"""
     Return Slater integral :math:`G^{(k)}`.
 
     Calculate :math:`G^{(k)}` for radial functions `f1` and `f2`,
     and the radial grid `r`.
-    A just-in-time (JIT) compilation is used for speed-up reasons.
 
     Parameters
     ----------
