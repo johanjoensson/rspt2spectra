@@ -7,7 +7,7 @@ def block_diagonalize_hyb(hyb):
     hyb_herm = 1/2*(hyb + np.conj(np.transpose(hyb, ( 1, 0, 2))))
     # hyb_herm = 1j/2*(hyb - np.conj(np.transpose(hyb, ( 1, 0, 2))))
     blocks = get_block_structure(hyb_herm)
-    Q_full = np.zeros((hyb.shape[0], hyb.shape[1]), dtype = np.complex)
+    Q_full = np.zeros((hyb.shape[0], hyb.shape[1]), dtype = complex)
     treated_orbitals = 0
     for block in blocks:
         block_idx = np.ix_(block, block)
