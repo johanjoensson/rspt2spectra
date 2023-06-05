@@ -508,6 +508,88 @@ def get_vs(z, hyb, wborders, ebs, gamma=0., imag_only = True):
         vs.append(v)
     return vs, costs
 
+def get_p0(z, hyb, eb, gamma, imag_only, realvalue_v):
+    n_imp = np.shape(hyb)[0]
+    n_b = len(eb)
+    # Initialize hopping parameters.
+    # Treat complex-valued parameters,
+    # by doubling the number of parameters.
+    # if n_imp == 1:
+    #     return p0
+    v0 = np.empty((n_b, n_imp), dtype = complex)
+    for i in range(n_imp):
+
+        for j in range(i + 1):
+            p0 = np.random.randn(n_b//n_imp)
+            fun = lambda p: cost_function(p, eb[i::n_imp], z, hyb[i, j, :].reshape((1, 1, len(z))), gamma, imag_only, output='value')
+            if imag_only:
+                jac = lambda p: cost_function(p, eb[i::n_imp], z, hyb[i, j, :].reshape((1, 1, len(z))), gamma, True, output='gradient')
+                # Minimize cost function
+                res = minimize(fun, p0, jac=jac, tol = 1e-12)
+            else:
+                res = minimize(fun, p0, tol = 1e-12)
+            v = unroll(res.x, n_b//n_imp, 1).reshape((n_b//n_imp,))
+            if realvalue_v:
+                v = np.real(v)
+            v0[i::n_imp, j] = v
+            if i != j:
+                v0[j::n_imp, i] = -v
+    p0 = inroll(v0)
+    if realvalue_v:
+        p0 = p0[:len(p0)//2]
+    return p0
+
+
+def get_v_new(z, hyb, eb, gamma=0., imag_only = True, realvalue_v = False):
+    """
+    Return optimized hopping parameters.
+
+    Parameters
+    ----------
+    z : complex array(M)
+        Energy mesh, just above the real axis.
+    hyb : array(N,N,M)
+        RSPt hybridization functions.
+    eb : array(B)
+        Bath energies.
+    gamma : float
+        Regularization parameter
+
+    Returns
+    -------
+    v : array(B, N)
+        Hopping parameters.
+
+    """
+    n_w = len(z)
+    n_imp = np.shape(hyb)[0]
+    n_b = len(eb)
+    # Initialize hopping parameters.
+    # Treat complex-valued parameters,
+    # by doubling the number of parameters.
+    p0 = get_p0(z, hyb, eb, gamma, imag_only, realvalue_v)
+    # p0 = np.random.randn(n)
+    # p0 = get_p0(z, hyb, eb, gamma, imag_only, realvalue_v)
+
+    # Define cost function as a function of a hopping parameter
+    # vector.
+    fun = lambda p: cost_function(p, eb, z, hyb, gamma, imag_only, output='value')
+
+    if imag_only:
+        jac = lambda p: cost_function(p, eb, z, hyb, gamma, True, output='gradient')
+        # Minimize cost function
+        res = minimize(fun, p0, jac=jac, tol = 1e-12)
+    else:
+        res = minimize(fun, p0)
+
+    #res = minimize(fun, p0)
+    # The solution
+    p = res.x
+    # Cost function value, with regularization.
+    c = cost_function(p, eb, z, hyb, only_imag_part = imag_only, output='value')
+    # Convert hopping parameters to physical shape.
+    v = unroll(p, n_b, n_imp)
+    return v, c
 
 def get_v(z, hyb, eb, gamma=0., imag_only = True, realvalue_v = False):
     """
@@ -541,7 +623,6 @@ def get_v(z, hyb, eb, gamma=0., imag_only = True, realvalue_v = False):
     else:
         n = 2*n_b*n_imp
     p0 = np.random.randn(n)
-
     # Define cost function as a function of a hopping parameter
     # vector.
     fun = lambda p: cost_function(p, eb, z, hyb, gamma, imag_only, output='value')
@@ -551,8 +632,6 @@ def get_v(z, hyb, eb, gamma=0., imag_only = True, realvalue_v = False):
         res = minimize(fun, p0, jac=jac, tol = 1e-12)
     else:
         res = minimize(fun, p0)
-
-    #res = minimize(fun, p0)
     # The solution
     p = res.x
     # Cost function value, with regularization.
@@ -560,7 +639,6 @@ def get_v(z, hyb, eb, gamma=0., imag_only = True, realvalue_v = False):
     # Convert hopping parameters to physical shape.
     v = unroll(p, n_b, n_imp)
     return v, c
-
 
 def unroll(p, n_b, n_imp):
     """
@@ -581,7 +659,7 @@ def unroll(p, n_b, n_imp):
         Hybridization parameters as a matrix.
 
     """
-    realvalue_v =len(p) == n_b*n_imp
+    realvalue_v = len(p) == n_b*n_imp
     # assert len(p) % 2 == 0
     # Number of complex-value parameters
     if realvalue_v:

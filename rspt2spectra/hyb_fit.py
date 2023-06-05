@@ -1,4 +1,4 @@
-from .offdiagonal import get_v, get_hyb
+from .offdiagonal import get_v, get_v_new, get_hyb
 import numpy as np
 from scipy.signal import find_peaks, find_peaks_cwt, peak_widths
 import matplotlib.pyplot as plt
@@ -180,6 +180,7 @@ def fit_hyb(
     tol=1e-6,
     verbose=True,
     comm=None,
+    new_v = False,
 ):
     """
     Calculate the bath energies and hopping parameters for fitting the
@@ -282,6 +283,7 @@ def fit_hyb(
             realvalue_v=realvalue_v,
             w0=0,
             comm=comm,
+            new_v = new_v,
         )
         if verbose:
             print(f"--> eb {block_eb}")
@@ -311,8 +313,7 @@ def fit_hyb(
     # basis to the spherical harmonics basis
     v = v @ np.conj(Q.T) @ np.conj(corr_to_cf.T) @ rot_spherical
 
-    # sorted_indices = np.argsort(eb)
-    sorted_indices = range(len(eb))
+    sorted_indices = np.argsort(eb)
     return eb[sorted_indices], v[sorted_indices, :]
 
 
@@ -335,7 +336,7 @@ def fit_block(
     comm=None,
 ):
     hyb_trace = -np.imag(np.sum(np.diagonal(hyb, axis1=0, axis2=1), axis=1))
-    n_bath_states = bath_states_per_orbital * hyb.shape[0]
+    n_bath_states = bath_states_per_orbital #  * hyb.shape[0]
     de = w[1] - w[0]
     # widths is the peak widths we are interested in, in units of de = w[1] - w[0]
     max_width = bath_states_per_orbital * int(delta / de)
@@ -355,7 +356,7 @@ def fit_block(
     sorted_indices = np.argsort(weights * (hyb_trace[peaks]))
     sorted_peaks = peaks[sorted_indices][::-1]
 
-    bath_energies = w[sorted_peaks[:n_bath_states]]
+    bath_energies = np.repeat(w[sorted_peaks[:n_bath_states]], hyb.shape[0])
 
     min_cost = np.inf
     v = None
@@ -386,6 +387,7 @@ def fit_block_new(
     realvalue_v,
     w0=0,
     comm=None,
+    new_v = False,
 ):
     def weight(peak):
         return np.exp(-2 * np.abs(w[peak] - w0))
@@ -395,47 +397,67 @@ def fit_block_new(
     n_bath_states = bath_states_per_orbital * n_orb
     de = w[1] - w[0]
 
-    bath_energies = np.zeros((n_bath_states,), dtype=float)
+    bath_energies = np.empty((n_bath_states,), dtype=float)
     fit_hyb = np.zeros_like(hyb)
     for bath_i in range(bath_states_per_orbital):
         fit_trace = -np.imag(np.sum(np.diagonal(fit_hyb, axis1=0, axis2=1), axis=1))
-        candidate_energies = []
 
-        for orb in range(n_orb):
-            peaks, _ = find_peaks(
-                -np.imag(hyb[orb, orb] - fit_hyb[orb, orb]),
-                distance=int(delta / de),
-                width=1,
-            )  # , width = int(delta/de))
-
-            scores = weight(peaks) * (
-                -np.imag(hyb[orb, orb] - fit_hyb[orb, orb])[peaks]
-            )
-            for peak, score in zip(peaks, scores):
-                candidate_energies.append((w[peak], score))
-        sorted_candidates = sorted(
-            candidate_energies, key=lambda candidate: candidate[1]
+        peaks, _ = find_peaks(
+            hyb_trace - fit_trace,
+            distance=int(delta / de),
+            width=1,
         )
+        scores = weight(peaks)*((hyb_trace - fit_trace)[peaks])
+        sorted_indices = np.argsort(scores)
+        sorted_energies = w[peaks[sorted_indices]]
 
-        bath_energies[bath_i * n_orb : (bath_i + 1) * n_orb] = [
-            energy for energy, _ in sorted_candidates[-n_orb:]
-        ]
+        bath_energies[bath_i * n_orb : (bath_i + 1) * n_orb] = np.repeat([sorted_energies[-1]], n_orb)
 
-        min_cost = np.inf
-        v = None
-        for _ in range(max(ceil(10 / comm.size), 1)):
-            v_try, costs = get_v(
+        if new_v:
+            v, _ = get_v_new(
                 w + delta * 1j,
                 hyb,
                 bath_energies[: (bath_i + 1) * n_orb],
                 gamma=gamma,
                 imag_only=imag_only,
                 realvalue_v=realvalue_v,
-            )
-            if np.max(np.abs(costs)) < min_cost:
-                min_cost = np.max(np.abs(costs))
-                v = v_try
+                )
+        else:
+            v, _ = get_v(
+                w + delta * 1j,
+                hyb,
+                bath_energies[: (bath_i + 1) * n_orb],
+                gamma=gamma,
+                imag_only=imag_only,
+                realvalue_v=realvalue_v,
+                )
         fit_hyb = get_hyb(w + delta * 1j, bath_energies[: (bath_i + 1) * n_orb], v)
+    v_best = None
+    min_cost = np.inf
+    for _ in range(max(ceil(20/comm.size), 1)):
+        if new_v:
+            v_try, cost = get_v_new(
+                w + delta * 1j,
+                hyb,
+                bath_energies,
+                gamma=gamma,
+                imag_only=imag_only,
+                realvalue_v=realvalue_v,
+                )
+        else:
+            v_try, cost = get_v(
+                w + delta * 1j,
+                hyb,
+                bath_energies,
+                gamma=gamma,
+                imag_only=imag_only,
+                realvalue_v=realvalue_v,
+                )
+        if cost < min_cost:
+            v_best = v_try
+            min_cost = cost
+
+
     if comm is not None:
-        v, _ = comm.allreduce((v_try, min_cost), op=v_opt_op)
+        v, _ = comm.allreduce((v_best, min_cost), op=v_opt_op)
     return bath_energies, v
