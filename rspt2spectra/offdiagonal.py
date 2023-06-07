@@ -514,30 +514,23 @@ def get_p0(z, hyb, eb, gamma, imag_only, realvalue_v):
     # Initialize hopping parameters.
     # Treat complex-valued parameters,
     # by doubling the number of parameters.
-    # if n_imp == 1:
-    #     return p0
     v0 = np.empty((n_b, n_imp), dtype = complex)
-    for i in range(n_imp):
-
-        for j in range(i + 1):
-            p0 = np.random.randn(n_b//n_imp)
-            fun = lambda p: cost_function(p, eb[i::n_imp], z, hyb[i, j, :].reshape((1, 1, len(z))), gamma, imag_only, output='value')
-            if imag_only:
-                jac = lambda p: cost_function(p, eb[i::n_imp], z, hyb[i, j, :].reshape((1, 1, len(z))), gamma, True, output='gradient')
-                # Minimize cost function
-                res = minimize(fun, p0, jac=jac, tol = 1e-12)
-            else:
-                res = minimize(fun, p0, tol = 1e-12)
-            v = unroll(res.x, n_b//n_imp, 1).reshape((n_b//n_imp,))
-            if realvalue_v:
-                v = np.real(v)
-            v0[i::n_imp, j] = v
-            if i != j:
-                v0[j::n_imp, i] = -v
-    p0 = inroll(v0)
-    if realvalue_v:
-        p0 = p0[:len(p0)//2]
-    return p0
+    for b_i in range(0, n_b, n_imp):
+        for i in range(n_imp):
+            for j in range(i+1):
+                p0 = 2*np.random.randn(1 if realvalue_v else 2)
+                fun = lambda p: cost_function(p, eb[[b_i + i]], z, hyb[i, j, :].reshape((1, 1, len(z))), gamma, imag_only, output='value')
+                if imag_only:
+                    jac = lambda p: cost_function(p, eb[[b_i + i]], z, hyb[i, j, :].reshape((1, 1, len(z))), gamma, True, output='gradient')
+                    # Minimize cost function
+                    res = minimize(fun, p0, jac=jac, tol = 1e-5)
+                else:
+                    res = minimize(fun, p0, tol = 1e-5)
+                v = unroll(res.x, 1, 1).reshape((1,))
+                v0[b_i + i, j] = v
+                v0[b_i + j, i] = np.conj(v)
+    p0 = inroll(np.abs(v0))
+    return p0 if not realvalue_v else p0[:n_b*n_imp]
 
 
 def get_v_new(z, hyb, eb, gamma=0., imag_only = True, realvalue_v = False):
@@ -580,7 +573,7 @@ def get_v_new(z, hyb, eb, gamma=0., imag_only = True, realvalue_v = False):
         # Minimize cost function
         res = minimize(fun, p0, jac=jac, tol = 1e-12)
     else:
-        res = minimize(fun, p0)
+        res = minimize(fun, p0, tol = 1e-12)
 
     #res = minimize(fun, p0)
     # The solution

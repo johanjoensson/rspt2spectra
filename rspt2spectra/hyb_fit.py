@@ -318,7 +318,7 @@ def fit_hyb(
 
 
 def v_opt(a, b, datatype):
-    return a if a[1] <= b[1] else b
+    return a if a[-1] <= b[-1] else b
 
 
 v_opt_op = MPI.Op.Create(v_opt, commute=True)
@@ -397,44 +397,58 @@ def fit_block_new(
     n_bath_states = bath_states_per_orbital * n_orb
     de = w[1] - w[0]
 
+    min_peak_intensity = np.inf
     bath_energies = np.empty((n_bath_states,), dtype=float)
     fit_hyb = np.zeros_like(hyb)
     for bath_i in range(bath_states_per_orbital):
         fit_trace = -np.imag(np.sum(np.diagonal(fit_hyb, axis1=0, axis2=1), axis=1))
 
-        peaks, _ = find_peaks(
-            hyb_trace - fit_trace,
-            distance=int(delta / de),
-            width=1,
-        )
-        scores = weight(peaks)*((hyb_trace - fit_trace)[peaks])
-        sorted_indices = np.argsort(scores)
-        sorted_energies = w[peaks[sorted_indices]]
+        for orb in range(n_orb):
+            peaks, _ = find_peaks(
+                -np.imag(hyb - fit_hyb)[orb, orb],
+                distance = int(delta / de),
+                width = 1,
+            )
+            scores = weight(peaks)*(-np.imag(hyb - fit_hyb)[orb, orb])[peaks]
+            sorted_indices = np.argsort(scores)
+            sorted_peaks = peaks[sorted_indices]
+            sorted_energies = w[sorted_peaks]
+            peak_intensities = -np.imag(hyb - fit_hyb)[orb, orb][sorted_peaks]
+            # mask = np.array([np.all(np.abs(bath_energies - energy) > 1e-12) for energy in sorted_energies])
+            # sorted_energies = sorted_energies[mask]
+            # bath_energies[bath_i * n_orb : (bath_i + 1) * n_orb] = np.repeat(sorted_energies[-1], n_orb) # sorted_energies[-n_orb:]
+            bath_energies[bath_i * n_orb + orb] = sorted_energies[-1]
+            # min_peak_intensity = min(min_peak_intensity, np.min(np.abs(peak_intensities[mask][-1])))
+            min_peak_intensity = min(min_peak_intensity, np.abs(peak_intensities[-1]))
 
-        bath_energies[bath_i * n_orb : (bath_i + 1) * n_orb] = np.repeat([sorted_energies[-1]], n_orb)
-
-        if new_v:
-            v, _ = get_v_new(
-                w + delta * 1j,
-                hyb,
-                bath_energies[: (bath_i + 1) * n_orb],
-                gamma=gamma,
-                imag_only=imag_only,
-                realvalue_v=realvalue_v,
-                )
-        else:
-            v, _ = get_v(
-                w + delta * 1j,
-                hyb,
-                bath_energies[: (bath_i + 1) * n_orb],
-                gamma=gamma,
-                imag_only=imag_only,
-                realvalue_v=realvalue_v,
-                )
+        v = np.zeros((1, n_orb), dtype = complex)
+        tries = 0
+        while tries < ceil(1000/comm.size) and np.any(np.all(np.abs(v)**2/delta < min_peak_intensity*1e-3, axis = 1)):
+            if new_v:
+                v, cost = get_v_new(
+                    w + delta * 1j,
+                    hyb,
+                    bath_energies[: (bath_i + 1) * n_orb],
+                    gamma=gamma,
+                    imag_only=imag_only,
+                    realvalue_v=realvalue_v,
+                    )
+            else:
+                v, cost = get_v(
+                    w + delta * 1j,
+                    hyb,
+                    bath_energies[: (bath_i + 1) * n_orb],
+                    gamma=gamma,
+                    imag_only=imag_only,
+                    realvalue_v=realvalue_v,
+                    )
+            tries += 1
         fit_hyb = get_hyb(w + delta * 1j, bath_energies[: (bath_i + 1) * n_orb], v)
-    v_best = None
-    min_cost = np.inf
-    for _ in range(max(ceil(20/comm.size), 1)):
+    v_best = v
+    min_cost = cost
+    v_try = v
+    tries = 0
+    while tries < 10 and np.any(np.all(np.abs(v_try)**2/delta < min_peak_intensity*1e-1, axis = 1)):
         if new_v:
             v_try, cost = get_v_new(
                 w + delta * 1j,
@@ -456,8 +470,12 @@ def fit_block_new(
         if cost < min_cost:
             v_best = v_try
             min_cost = cost
+        tries += 1
+    bath_energies, v, _ = comm.allreduce((bath_energies, v_best, min_cost), op = v_opt_op)
+    if comm.rank == 0:
+        print ("Clever" if new_v else "Random")
+        print (f"{bath_energies=}")
+        print (f"{v=}", flush = True)
 
 
-    if comm is not None:
-        v, _ = comm.allreduce((v_best, min_cost), op=v_opt_op)
     return bath_energies, v
