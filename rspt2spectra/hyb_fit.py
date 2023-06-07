@@ -403,27 +403,35 @@ def fit_block_new(
     for bath_i in range(bath_states_per_orbital):
         fit_trace = -np.imag(np.sum(np.diagonal(fit_hyb, axis1=0, axis2=1), axis=1))
 
-        for orb in range(n_orb):
-            peaks, _ = find_peaks(
-                -np.imag(hyb - fit_hyb)[orb, orb],
-                distance = int(delta / de),
-                width = 1,
-            )
-            scores = weight(peaks)*(-np.imag(hyb - fit_hyb)[orb, orb])[peaks]
-            sorted_indices = np.argsort(scores)
-            sorted_peaks = peaks[sorted_indices]
-            sorted_energies = w[sorted_peaks]
-            peak_intensities = -np.imag(hyb - fit_hyb)[orb, orb][sorted_peaks]
-            # mask = np.array([np.all(np.abs(bath_energies - energy) > 1e-12) for energy in sorted_energies])
-            # sorted_energies = sorted_energies[mask]
-            # bath_energies[bath_i * n_orb : (bath_i + 1) * n_orb] = np.repeat(sorted_energies[-1], n_orb) # sorted_energies[-n_orb:]
-            bath_energies[bath_i * n_orb + orb] = sorted_energies[-1]
-            # min_peak_intensity = min(min_peak_intensity, np.min(np.abs(peak_intensities[mask][-1])))
-            min_peak_intensity = min(min_peak_intensity, np.abs(peak_intensities[-1]))
+        peaks, _ = find_peaks(
+            (hyb_trace - fit_trace),
+            distance = int(delta / de),
+            width = 1,
+        )
+        scores = weight(peaks)*(hyb_trace - fit_trace)[peaks]
+        sorted_indices = np.argsort(scores)
+        sorted_peaks = peaks[sorted_indices]
+        sorted_energies = w[sorted_peaks]
+        peak_intensities = (hyb_trace - fit_trace)[sorted_peaks]
+        bath_energies[bath_i * n_orb : (bath_i + 1) * n_orb] = sorted_energies[-1]
+        min_peak_intensity = min(min_peak_intensity, np.abs(peak_intensities[-1]))
+        # for orb in range(n_orb):
+        #     peaks, _ = find_peaks(
+        #         -np.imag(hyb - fit_hyb)[orb, orb],
+        #         distance = int(delta / de),
+        #         width = 1,
+        #     )
+        #     scores = weight(peaks)*(-np.imag(hyb - fit_hyb)[orb, orb])[peaks]
+        #     sorted_indices = np.argsort(scores)
+        #     sorted_peaks = peaks[sorted_indices]
+        #     sorted_energies = w[sorted_peaks]
+        #     peak_intensities = -np.imag(hyb - fit_hyb)[orb, orb][sorted_peaks]
+        #     bath_energies[bath_i * n_orb + orb] = sorted_energies[-1]
+        #     min_peak_intensity = min(min_peak_intensity, np.abs(peak_intensities[-1]))
 
         v = np.zeros((1, n_orb), dtype = complex)
         tries = 0
-        while tries < ceil(1000/comm.size) and np.any(np.all(np.abs(v)**2/delta < min_peak_intensity*1e-3, axis = 1)):
+        while tries < ceil(10/comm.size): # and np.any(np.all(np.abs(v)**2/delta < min_peak_intensity*1e-3, axis = 1)):
             if new_v:
                 v, cost = get_v_new(
                     w + delta * 1j,
@@ -448,7 +456,7 @@ def fit_block_new(
     min_cost = cost
     v_try = v
     tries = 0
-    while tries < 10 and np.any(np.all(np.abs(v_try)**2/delta < min_peak_intensity*1e-1, axis = 1)):
+    while tries < 10: # or np.any(np.all(np.abs(v_try)**2/delta < min_peak_intensity*1e-1, axis = 1)):
         if new_v:
             v_try, cost = get_v_new(
                 w + delta * 1j,
