@@ -312,9 +312,16 @@ def fit_hyb(
     # Transform hopping parameters back from the (close to) diagonal
     # basis to the spherical harmonics basis
     v = v @ np.conj(Q.T) @ np.conj(corr_to_cf.T) @ rot_spherical
+    # v = v @ np.conj(Q.T) @ rot_spherical
 
-    sorted_indices = np.argsort(eb)
-    return eb[sorted_indices], v[sorted_indices, :]
+
+    mask = np.any(np.abs(v)**2/delta > 1e-8, axis = 1)
+    v = v[mask, :]
+    eb = eb[mask]
+    # sorted_indices = np.argsort(eb)
+    # eb = eb[sorted_indices]
+    # v  = v[sorted_indices, :]
+    return eb, v
 
 
 def v_opt(a, b, datatype):
@@ -397,46 +404,107 @@ def fit_block_new(
     n_bath_states = bath_states_per_orbital * n_orb
     de = w[1] - w[0]
 
-    min_peak_intensity = np.inf
-    bath_energies = np.empty((n_bath_states,), dtype=float)
-    fit_hyb = np.zeros_like(hyb)
-    for bath_i in range(bath_states_per_orbital):
-        fit_trace = -np.imag(np.sum(np.diagonal(fit_hyb, axis1=0, axis2=1), axis=1))
+    if n_bath_states == 0:
+        return np.empty((0,n_orb )), np.empty((0, n_orb), dtype = complex)
 
+    bath_energies = np.empty((n_bath_states), dtype = float)
+    found_bath_states = 0
+    fit_hyb = np.zeros_like(hyb)
+    while found_bath_states < n_bath_states:
+        fit_trace = -np.imag(np.sum(np.diagonal(fit_hyb, axis1=0, axis2=1), axis=1))
         peaks, _ = find_peaks(
-            (hyb_trace - fit_trace),
+            hyb_trace - fit_trace,
             distance = int(delta / de),
-            width = 1,
+            width = int(delta / de),
         )
         scores = weight(peaks)*(hyb_trace - fit_trace)[peaks]
         sorted_indices = np.argsort(scores)
         sorted_peaks = peaks[sorted_indices]
         sorted_energies = w[sorted_peaks]
-        peak_intensities = (hyb_trace - fit_trace)[sorted_peaks]
-        bath_energies[bath_i * n_orb : (bath_i + 1) * n_orb] = sorted_energies[-1]
-        min_peak_intensity = min(min_peak_intensity, np.abs(peak_intensities[-1]))
-        # for orb in range(n_orb):
-        #     peaks, _ = find_peaks(
-        #         -np.imag(hyb - fit_hyb)[orb, orb],
-        #         distance = int(delta / de),
-        #         width = 1,
-        #     )
-        #     scores = weight(peaks)*(-np.imag(hyb - fit_hyb)[orb, orb])[peaks]
-        #     sorted_indices = np.argsort(scores)
-        #     sorted_peaks = peaks[sorted_indices]
-        #     sorted_energies = w[sorted_peaks]
-        #     peak_intensities = -np.imag(hyb - fit_hyb)[orb, orb][sorted_peaks]
-        #     bath_energies[bath_i * n_orb + orb] = sorted_energies[-1]
-        #     min_peak_intensity = min(min_peak_intensity, np.abs(peak_intensities[-1]))
+        n_b = min(len(sorted_energies), (n_bath_states - found_bath_states)//n_orb)
+        bath_energies[found_bath_states: found_bath_states + n_b*n_orb] = np.repeat(sorted_energies[-n_b:], n_orb)
+        try_again = True
+        while try_again:
+            v, cost = get_v_new(
+                    w + delta * 1j,
+                    hyb,
+                    bath_energies,
+                    gamma = gamma,
+                    imag_only = imag_only,
+                    realvalue_v = realvalue_v,
+                    )
+            try_again = np.any([np.all(np.abs(v[i:i+n_orb, :])**2 < 1e-8) for i in range(0, v.shape[0], n_orb)])
+        found_bath_states += n_b*n_orb
+        fit_hyb = get_hyb(w + delta * 1j, bath_energies[:found_bath_states], v)
+    v_best = v
+    min_cost = np.abs(cost)
 
-        v = np.zeros((1, n_orb), dtype = complex)
-        tries = 0
-        while tries < ceil(10/comm.size): # and np.any(np.all(np.abs(v)**2/delta < min_peak_intensity*1e-3, axis = 1)):
+    # min_peak_intensity = np.inf
+    # bath_energies = np.empty((n_bath_states,), dtype=float)
+    # fit_hyb = np.zeros_like(hyb)
+    # for bath_i in range(bath_states_per_orbital):
+    #     fit_trace = -np.imag(np.sum(np.diagonal(fit_hyb, axis1=0, axis2=1), axis=1))
+
+    #     trace = (hyb_trace - fit_trace)
+    #     peaks, _ = find_peaks(
+    #         trace,
+    #         distance = int(delta / de),
+    #         width = int(delta / de),
+    #     )
+    #     scores = weight(peaks)*trace[peaks]
+    #     sorted_indices = np.argsort(scores)
+    #     sorted_peaks = peaks[sorted_indices]
+    #     sorted_energies = w[sorted_peaks]
+    #     bath_energies = sorted_energies[-]
+    #     v_best = None
+    #     min_cost = np.inf
+    #     # trial_bath_energies = bath_energies[:(bath_i + 1) * n_orb].copy()
+    #     # for bath_candidate in sorted_energies[len(sorted_energies) - 1::-1]:
+    #     #     trial_bath_energies[-n_orb:] = bath_candidate
+    #     #     try_again = True
+    #     #     v = None
+    #     #     cost = np.inf
+    #     #     tries = 0
+    #     #     while try_again or tries < 10:
+    #     #         v_try, cost_try = get_v_new(
+    #     #             w + delta * 1j,
+    #     #             hyb,
+    #     #             trial_bath_energies,
+    #     #             gamma = gamma,
+    #     #             imag_only = imag_only,
+    #     #             realvalue_v = realvalue_v,
+    #     #             )
+    #     #         try_again = np.any([np.all(np.abs(v_try[i:i+n_orb, :])**2 < 1e-6) for i in range(0, v_try.shape[0], n_orb)])
+    #     #         if not try_again:
+    #     #             tries += 1
+    #     #             if abs(cost_try) < min_cost:
+    #     #                 v = v_try
+    #     #                 cost = abs(cost_try)
+    #     #     if abs(cost) < min_cost:
+    #     #         min_cost = abs(cost)
+    #     #         v_best = v
+    #     #         bath_energies[:(bath_i + 1) * n_orb] = trial_bath_energies
+    #     #     else:
+    #     #         break
+    #     # fit_hyb = get_hyb(w + delta * 1j, bath_energies[: (bath_i + 1) * n_orb], v_best)
+    #     # if comm.rank == 0:
+    #     #     fig, ax = plt.subplots(nrows = n_orb, ncols = n_orb, squeeze = False, sharex = 'all', sharey = 'all')
+    #     #     for i in range(n_orb):
+    #     #         for j in range(n_orb):
+    #     #             ax[i, j].plot(w, -np.imag(    hyb[ i, j, :]), color = 'tab:blue')
+    #     #             ax[i, j].plot(w, -np.imag(fit_hyb[ i, j, :]), color = 'tab:orange')
+    #     #             ax[i, j].vlines(bath_energies[: (bath_i + 1)*n_orb], 0, 1, linestyles = 'dashed', colors = 'tab:gray')
+    #     #     plt.ylim(bottom = -np.max(-np.imag(np.diagonal(hyb, axis1 = 0, axis2 = 1))), top = np.max(-np.imag(np.diagonal(hyb, axis1 = 0, axis2 = 1))))
+    #     #     plt.show()
+
+    for _ in range(100):
+        try_again = True
+        while try_again:
             if new_v:
                 v, cost = get_v_new(
                     w + delta * 1j,
                     hyb,
-                    bath_energies[: (bath_i + 1) * n_orb],
+                    bath_energies,
                     gamma=gamma,
                     imag_only=imag_only,
                     realvalue_v=realvalue_v,
@@ -445,45 +513,19 @@ def fit_block_new(
                 v, cost = get_v(
                     w + delta * 1j,
                     hyb,
-                    bath_energies[: (bath_i + 1) * n_orb],
+                    bath_energies,
                     gamma=gamma,
                     imag_only=imag_only,
                     realvalue_v=realvalue_v,
                     )
-            tries += 1
-        fit_hyb = get_hyb(w + delta * 1j, bath_energies[: (bath_i + 1) * n_orb], v)
-    v_best = v
-    min_cost = cost
-    v_try = v
-    tries = 0
-    while tries < 10: # or np.any(np.all(np.abs(v_try)**2/delta < min_peak_intensity*1e-1, axis = 1)):
-        if new_v:
-            v_try, cost = get_v_new(
-                w + delta * 1j,
-                hyb,
-                bath_energies,
-                gamma=gamma,
-                imag_only=imag_only,
-                realvalue_v=realvalue_v,
-                )
-        else:
-            v_try, cost = get_v(
-                w + delta * 1j,
-                hyb,
-                bath_energies,
-                gamma=gamma,
-                imag_only=imag_only,
-                realvalue_v=realvalue_v,
-                )
-        if cost < min_cost:
-            v_best = v_try
-            min_cost = cost
-        tries += 1
+            try_again = np.any([np.all(np.abs(v[i:i+n_orb, :])**2 < 1e-8) for i in range(0, v.shape[0], n_orb)])
+        if abs(cost) < min_cost:
+            v_best = v
+            min_cost = abs(cost)
     bath_energies, v, _ = comm.allreduce((bath_energies, v_best, min_cost), op = v_opt_op)
     if comm.rank == 0:
         print ("Clever" if new_v else "Random")
         print (f"{bath_energies=}")
         print (f"{v=}", flush = True)
-
 
     return bath_energies, v
