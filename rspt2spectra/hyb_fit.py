@@ -7,7 +7,7 @@ from math import ceil
 
 
 def block_diagonalize_hyb(hyb):
-    hyb_herm = 1 / 2 * (hyb + np.conj(np.transpose(hyb, (1, 0, 2))))
+    hyb_herm = 1/2 * (hyb + np.conj(np.transpose(hyb, (1, 0, 2))))
     blocks = get_block_structure(hyb_herm)
     Q_full = np.zeros((hyb.shape[0], hyb.shape[1]), dtype=complex)
     treated_orbitals = 0
@@ -211,6 +211,7 @@ def fit_hyb(
         0,
         -1,
     )
+    # cf_hyb = hyb
     # We do the fitting by first transforming the hyridization function into a basis
     # where each block is (hopefully) close to diagonal
     # np.conj(Q.T) @ cf_hyb @ Q is the transformation performed
@@ -396,6 +397,7 @@ def fit_block_new(
     comm=None,
     new_v = False,
 ):
+
     def weight(peak):
         return np.exp(-2 * np.abs(w[peak] - w0))
 
