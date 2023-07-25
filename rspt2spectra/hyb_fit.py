@@ -7,7 +7,7 @@ from math import ceil
 
 
 def block_diagonalize_hyb(hyb):
-    hyb_herm = 1/2 * (hyb + np.conj(np.transpose(hyb, (1, 0, 2))))
+    hyb_herm = 1 / 2 * (hyb + np.conj(np.transpose(hyb, (1, 0, 2))))
     blocks = get_block_structure(hyb_herm)
     Q_full = np.zeros((hyb.shape[0], hyb.shape[1]), dtype=complex)
     treated_orbitals = 0
@@ -180,7 +180,7 @@ def fit_hyb(
     tol=1e-6,
     verbose=True,
     comm=None,
-    new_v = False,
+    new_v=False,
 ):
     """
     Calculate the bath energies and hopping parameters for fitting the
@@ -272,8 +272,6 @@ def fit_hyb(
         realvalue_v = np.all(
             np.abs(block_hyb - np.transpose(block_hyb, (1, 0, 2))) < 1e-6
         )
-        if verbose:
-            print(f"realvalued v ? {realvalue_v}")
         block_eb, block_v = fit_block_new(
             block_hyb[:, :, mask],
             w[mask],
@@ -284,7 +282,7 @@ def fit_hyb(
             realvalue_v=realvalue_v,
             w0=0,
             comm=comm,
-            new_v = new_v,
+            new_v=new_v,
         )
         if verbose:
             print(f"--> eb {block_eb}")
@@ -315,8 +313,7 @@ def fit_hyb(
     v = v @ np.conj(Q.T) @ np.conj(corr_to_cf.T) @ rot_spherical
     # v = v @ np.conj(Q.T) @ rot_spherical
 
-
-    mask = np.any(np.abs(v)**2/delta > 1e-8, axis = 1)
+    mask = np.any(np.abs(v) ** 2 / delta > 1e-8, axis=1)
     v = v[mask, :]
     eb = eb[mask]
     # sorted_indices = np.argsort(eb)
@@ -344,7 +341,7 @@ def fit_block(
     comm=None,
 ):
     hyb_trace = -np.imag(np.sum(np.diagonal(hyb, axis1=0, axis2=1), axis=1))
-    n_bath_states = bath_states_per_orbital #  * hyb.shape[0]
+    n_bath_states = bath_states_per_orbital  #  * hyb.shape[0]
     de = w[1] - w[0]
     # widths is the peak widths we are interested in, in units of de = w[1] - w[0]
     max_width = bath_states_per_orbital * int(delta / de)
@@ -395,9 +392,8 @@ def fit_block_new(
     realvalue_v,
     w0=0,
     comm=None,
-    new_v = False,
+    new_v=False,
 ):
-
     def weight(peak):
         return np.exp(-2 * np.abs(w[peak] - w0))
 
@@ -407,36 +403,47 @@ def fit_block_new(
     de = w[1] - w[0]
 
     if n_bath_states == 0:
-        return np.empty((0,n_orb )), np.empty((0, n_orb), dtype = complex)
+        return np.empty((0, n_orb)), np.empty((0, n_orb), dtype=complex)
 
-    bath_energies = np.empty((n_bath_states), dtype = float)
+    bath_energies = np.empty((n_bath_states), dtype=float)
     found_bath_states = 0
     fit_hyb = np.zeros_like(hyb)
     while found_bath_states < n_bath_states:
         fit_trace = -np.imag(np.sum(np.diagonal(fit_hyb, axis1=0, axis2=1), axis=1))
         peaks, _ = find_peaks(
             hyb_trace - fit_trace,
-            distance = int(delta / de),
-            width = int(delta / de),
+            distance=int(delta / de),
+            width=int(delta / de),
         )
-        scores = weight(peaks)*(hyb_trace - fit_trace)[peaks]
+        scores = weight(peaks) * (hyb_trace - fit_trace)[peaks]
         sorted_indices = np.argsort(scores)
         sorted_peaks = peaks[sorted_indices]
         sorted_energies = w[sorted_peaks]
-        n_b = min(len(sorted_energies), (n_bath_states - found_bath_states)//n_orb)
-        bath_energies[found_bath_states: found_bath_states + n_b*n_orb] = np.repeat(sorted_energies[-n_b:], n_orb)
+        n_b = min(
+            len(sorted_energies) - 1, (n_bath_states - found_bath_states) // n_orb
+        )
+        if comm.rank == 0:
+            print(f"Fitting {n_b} bath states at once")
+        bath_energies[found_bath_states : found_bath_states + n_b * n_orb] = np.repeat(
+            sorted_energies[-n_b:], n_orb
+        )
+        found_bath_states += n_b * n_orb
         try_again = True
         while try_again:
             v, cost = get_v_new(
-                    w + delta * 1j,
-                    hyb,
-                    bath_energies,
-                    gamma = gamma,
-                    imag_only = imag_only,
-                    realvalue_v = realvalue_v,
-                    )
-            try_again = np.any([np.all(np.abs(v[i:i+n_orb, :])**2 < 1e-8) for i in range(0, v.shape[0], n_orb)])
-        found_bath_states += n_b*n_orb
+                w + delta * 1j,
+                hyb,
+                bath_energies[:found_bath_states],
+                gamma=gamma,
+                imag_only=imag_only,
+                realvalue_v=realvalue_v,
+            )
+            try_again = np.any(
+                [
+                    np.all(np.abs(v[i : i + n_orb, :]) ** 2 < 1e-8)
+                    for i in range(0, v.shape[0], n_orb)
+                ]
+            )
         fit_hyb = get_hyb(w + delta * 1j, bath_energies[:found_bath_states], v)
     v_best = v
     min_cost = np.abs(cost)
@@ -499,7 +506,7 @@ def fit_block_new(
     #     #     plt.ylim(bottom = -np.max(-np.imag(np.diagonal(hyb, axis1 = 0, axis2 = 1))), top = np.max(-np.imag(np.diagonal(hyb, axis1 = 0, axis2 = 1))))
     #     #     plt.show()
 
-    for _ in range(100):
+    for _ in range(min(1000 // comm.size, 2)):
         try_again = True
         while try_again:
             if new_v:
@@ -510,7 +517,7 @@ def fit_block_new(
                     gamma=gamma,
                     imag_only=imag_only,
                     realvalue_v=realvalue_v,
-                    )
+                )
             else:
                 v, cost = get_v(
                     w + delta * 1j,
@@ -519,15 +526,16 @@ def fit_block_new(
                     gamma=gamma,
                     imag_only=imag_only,
                     realvalue_v=realvalue_v,
-                    )
-            try_again = np.any([np.all(np.abs(v[i:i+n_orb, :])**2 < 1e-8) for i in range(0, v.shape[0], n_orb)])
+                )
+            try_again = np.any(
+                [
+                    np.all(np.abs(v[i : i + n_orb, :]) ** 2 < 1e-8)
+                    for i in range(0, v.shape[0], n_orb)
+                ]
+            )
         if abs(cost) < min_cost:
             v_best = v
             min_cost = abs(cost)
-    bath_energies, v, _ = comm.allreduce((bath_energies, v_best, min_cost), op = v_opt_op)
-    if comm.rank == 0:
-        print ("Clever" if new_v else "Random")
-        print (f"{bath_energies=}")
-        print (f"{v=}", flush = True)
+    bath_energies, v, _ = comm.allreduce((bath_energies, v_best, min_cost), op=v_opt_op)
 
     return bath_energies, v

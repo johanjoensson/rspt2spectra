@@ -65,16 +65,20 @@ def get_Slater_F(r, f1, f2, k):
     """
     # Define integration trapezoidal integration weights
     dr = np.zeros_like(r)
-    dr[1:-1] = (r[2:] - r[:-2]) / 2.
-    dr[0] = (r[1] - r[0]) / 2.
-    dr[-1] = (r[-1] - r[-2]) / 2.
+    dr[1:-1] = (r[2:] - r[:-2]) / 2.0
+    dr[0] = (r[1] - r[0]) / 2.0
+    dr[-1] = (r[-1] - r[-2]) / 2.0
     n = len(r)
     s = 0
     for i in range(n):
         for j in range(n):
-            s += (dr[i] * dr[j] * (r[i] * r[j] * f1[i] * f2[j]) ** 2
-                  * min(r[i], r[j]) ** k
-                  / max(r[i], r[j]) ** (k + 1))
+            s += (
+                dr[i]
+                * dr[j]
+                * (r[i] * r[j] * f1[i] * f2[j]) ** 2
+                * min(r[i], r[j]) ** k
+                / max(r[i], r[j]) ** (k + 1)
+            )
     return s
 
 
@@ -127,15 +131,22 @@ def get_Slater_G(r, f1, f2, k):
     """
     # Define integration trapezoidal integration weights
     dr = np.zeros_like(r)
-    dr[1:-1] = (r[2:] - r[:-2]) / 2.
-    dr[0] = (r[1] - r[0]) / 2.
-    dr[-1] = (r[-1] - r[-2]) / 2.
+    dr[1:-1] = (r[2:] - r[:-2]) / 2.0
+    dr[0] = (r[1] - r[0]) / 2.0
+    dr[-1] = (r[-1] - r[-2]) / 2.0
     n = len(r)
     s = 0
     for i in range(n):
         for j in range(n):
-            s += (dr[i] * dr[j] * (r[i] * r[j]) ** 2
-                  * f1[i] * f2[i] * f1[j] * f2[j]
-                  * min(r[i], r[j]) ** k
-                  / max(r[i], r[j]) ** (k + 1))
+            s += (
+                dr[i]
+                * dr[j]
+                * (r[i] * r[j]) ** 2
+                * f1[i]
+                * f2[i]
+                * f1[j]
+                * f2[j]
+                * min(r[i], r[j]) ** k
+                / max(r[i], r[j]) ** (k + 1)
+            )
     return s

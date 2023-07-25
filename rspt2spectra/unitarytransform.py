@@ -182,7 +182,7 @@ def rotate(d, r_left, r_right):
     # in the rotated coordinate system
     dmp = np.dot(np.transpose(np.conj(r_left)), np.dot(dm, r_right))
     # Add spin
-    dp = np.zeros(2*np.array(np.shape(dmp)), dtype=complex)
+    dp = np.zeros(2 * np.array(np.shape(dmp)), dtype=complex)
     dp[::2, ::2] = dmp
     dp[1::2, 1::2] = dmp
     return dp
@@ -215,26 +215,26 @@ def get_spherical_2_cubic_matrix(spinpol=False, l=2):
     """
     if l == 1:
         u = np.zeros((3, 3), dtype=complex)
-        u[0, 0] = 1j/np.sqrt(2)
-        u[2, 0] = 1j/np.sqrt(2)
-        u[0, 1] = 1/np.sqrt(2)
-        u[2, 1] = -1/np.sqrt(2)
+        u[0, 0] = 1j / np.sqrt(2)
+        u[2, 0] = 1j / np.sqrt(2)
+        u[0, 1] = 1 / np.sqrt(2)
+        u[2, 1] = -1 / np.sqrt(2)
         u[1, 2] = 1
     elif l == 2:
         u = np.zeros((5, 5), dtype=complex)
         u[2, 0] = 1
-        u[[0, -1], 1] = 1/np.sqrt(2)
-        u[1, 2] = -1j/np.sqrt(2)
-        u[-2, 2] = -1j/np.sqrt(2)
-        u[1, 3] = 1/np.sqrt(2)
-        u[-2, 3] = -1/np.sqrt(2)
-        u[0, 4] = 1j/np.sqrt(2)
-        u[-1, 4] = -1j/np.sqrt(2)
+        u[[0, -1], 1] = 1 / np.sqrt(2)
+        u[1, 2] = -1j / np.sqrt(2)
+        u[-2, 2] = -1j / np.sqrt(2)
+        u[1, 3] = 1 / np.sqrt(2)
+        u[-2, 3] = -1 / np.sqrt(2)
+        u[0, 4] = 1j / np.sqrt(2)
+        u[-1, 4] = -1j / np.sqrt(2)
     else:
-        sys.exit('This angular momentum is not implemented yet')
+        sys.exit("This angular momentum is not implemented yet")
     if spinpol:
         n, m = np.shape(u)
-        uSpin = np.zeros((2*n, 2*m), dtype=complex)
+        uSpin = np.zeros((2 * n, 2 * m), dtype=complex)
         uSpin[:n, :m] = u
         uSpin[n:, m:] = u
         u = uSpin
@@ -263,10 +263,10 @@ def get_spinpol_and_ls(n, m):
     """
     if n % 2 == 0:
         spinpol = True
-        ls = [(n/2-1)/2, (m/2-1)/2]
+        ls = [(n / 2 - 1) / 2, (m / 2 - 1) / 2]
     else:
         spinpol = False
-        ls = [(n-1)/2, (m-1)/2]
+        ls = [(n - 1) / 2, (m - 1) / 2]
     return spinpol, ls
 
 
@@ -291,7 +291,7 @@ def spherical_2_cubic(a):
     spinpol, ls = get_spinpol_and_ls(*np.shape(a))
     u_bra = get_spherical_2_cubic_matrix(spinpol=spinpol, l=ls[0])
     u_ket = get_spherical_2_cubic_matrix(spinpol=spinpol, l=ls[1])
-    at = np.dot(np.transpose(np.conj(u_bra)),np.dot(a, u_ket))
+    at = np.dot(np.transpose(np.conj(u_bra)), np.dot(a, u_ket))
     return at
 
 
@@ -316,5 +316,5 @@ def cubic_2_spherical(at):
     spinpol, ls = get_spinpol_and_ls(*np.shape(at))
     u_bra = get_spherical_2_cubic_matrix(spinpol=spinpol, l=ls[0])
     u_ket = get_spherical_2_cubic_matrix(spinpol=spinpol, l=ls[1])
-    a = np.dot(u_bra, np.dot(at,np.transpose(np.conj(u_ket))))
+    a = np.dot(u_bra, np.dot(at, np.transpose(np.conj(u_ket))))
     return a

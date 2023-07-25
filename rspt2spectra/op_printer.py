@@ -14,14 +14,17 @@ def key_to_string(key):
     ((state1, _), (state2, _)) = key
     return repr(state1) + " " + repr(state2)
 
+
 def value_to_string(value):
     return repr(value.real) + " " + repr(value.imag)
+
 
 def key_value_to_string(key, value):
     return key_to_string(key) + " " + value_to_string(value) + "\n"
 
+
 def write_operator_to_file(operator, filename):
-    with open(filename, 'w+'):
+    with open(filename, "w+"):
         pass
 
     strings = []
@@ -30,5 +33,5 @@ def write_operator_to_file(operator, filename):
         for key, value in op.items():
             s += key_value_to_string(key, value)
         strings.append(s)
-    with open(filename, 'a') as f:
+    with open(filename, "a") as f:
         f.write("\n".join(strings))

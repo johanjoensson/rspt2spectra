@@ -34,25 +34,25 @@ def hyb(file_re, file_im, spinpol=True, only_diagonal_part=False):
 
     """
     # Read all (diagonal and off-diagonal) hybridization functions.
-    re = eV*np.loadtxt(file_re)
-    im = eV*np.loadtxt(file_im)
+    re = eV * np.loadtxt(file_re)
+    im = eV * np.loadtxt(file_im)
     # Energy mesh.
     w = re[:, 0]
     # Real part of hybridization functions, as column vectors.
-    re = re[:,1:]
+    re = re[:, 1:]
     # Imaginary part of hybridization functions, as column vectors.
-    im = im[:,1:]
+    im = im[:, 1:]
     # Hybridization functions, as column vectors.
-    hyb_c = re + 1j*im
+    hyb_c = re + 1j * im
     # Read which orbitals the hybridization functions belong to.
     read_mask = False
     f = open(file_re, "r")
     mask = []
     for line in f.readlines():
-        if line[0] == '#':
+        if line[0] == "#":
             if read_mask:
                 mask.append([int(i) for i in line[1:].split()])
-            elif 'indexmap' in line:
+            elif "indexmap" in line:
                 read_mask = True
         else:
             break
@@ -66,16 +66,16 @@ def hyb(file_re, file_im, spinpol=True, only_diagonal_part=False):
     # Fill hybridization matrix.
     for i in range(n_imp):
         for j in range(n_imp):
-            if mask[i,j] != 0:
+            if mask[i, j] != 0:
                 # The offset of minus two is because
                 # of Python counting from zero and because
                 # hyb_c does not contain the energy column,
                 # which is present in the file.
-                hyb[i,j,:] = hyb_c[:, mask[i,j]-2]
+                hyb[i, j, :] = hyb_c[:, mask[i, j] - 2]
     # Number of non-equivalent correlated spin-orbitals
-    nc = n_imp if spinpol else n_imp//2
+    nc = n_imp if spinpol else n_imp // 2
     # Only study one spin sector if no spin-polarization.
-    hyb = hyb[:nc,:nc,:]
+    hyb = hyb[:nc, :nc, :]
     if only_diagonal_part:
         return w, np.diagonal(hyb).T
     else:
@@ -97,13 +97,13 @@ def self_energy(file_re, file_im, spinpol, file_re_off=None, file_im_off=None):
     re = np.loadtxt(file_re)
     im = np.loadtxt(file_im)
     # Energy mesh.
-    w = eV*re[:,0]
+    w = eV * re[:, 0]
     # Diagonal
-    sig_diagonal = eV*(re[:, 4:] + 1j*im[:, 4:]).T
+    sig_diagonal = eV * (re[:, 4:] + 1j * im[:, 4:]).T
     # Number of non-equivalent correlated spin-orbitals,
     # and the number of energy mesh points.
     nc, nw = np.shape(sig_diagonal)
-    norb = nc//2 if spinpol else nc
+    norb = nc // 2 if spinpol else nc
     # Read off-diagonal part of the self-energy
     re = eV * np.loadtxt(file_re_off)[:, 1:]
     im = eV * np.loadtxt(file_im_off)[:, 1:]
@@ -113,20 +113,20 @@ def self_energy(file_re, file_im, spinpol, file_re_off=None, file_im_off=None):
     for i in range(nc):
         sig[i, i, :] = sig_diagonal[i, :]
     # Fill in off-diagonal functions.
-    sys.exit('Implementation not complete...')
+    sys.exit("Implementation not complete...")
     # Replace code below with something similar to the code for
     # the hybridization function.
     n = 0
     for j in range(nc):
         if spinpol:
             if j < norb:
-                irange = range(j) + range(j+1, norb)
+                irange = range(j) + range(j + 1, norb)
             else:
-                irange = range(norb, j) + range(j+1, nc)
+                irange = range(norb, j) + range(j + 1, nc)
         else:
-            irange = range(j) + range(j+1, norb)
+            irange = range(j) + range(j + 1, norb)
         for i in irange:
-            sig[i, j, :] = re[:, n] + im[:, n]*1j
+            sig[i, j, :] = re[:, n] + im[:, n] * 1j
             n += 1
     return w, sig_diagonal, sig
 
@@ -138,12 +138,12 @@ def pdos(filename, norb, spinpol):
 
     """
     # Number of non-equivalent correlated spin-orbitals
-    nc = 2*norb if spinpol else norb
+    nc = 2 * norb if spinpol else norb
     tmp = np.loadtxt(filename)
     # Energy mesh.
-    w = eV*tmp[:,0]
+    w = eV * tmp[:, 0]
     p = np.zeros((nc, len(w)))
     k = 7 if spinpol else 2
     for i in range(nc):
-        p[i, :] = tmp[:, k + i]/eV
+        p[i, :] = tmp[:, k + i] / eV
     return w, p

@@ -6,12 +6,14 @@ from rspt2spectra import energies
 from rspt2spectra import h2imp
 
 
-def run(hyb, hdft, e_wins, blocks, bath_states, rot_spherical, w, eim, wsparse = 1, gamma = 0.01):
+def run(
+    hyb, hdft, e_wins, blocks, bath_states, rot_spherical, w, eim, wsparse=1, gamma=0.01
+):
     """
     Calculate h0. In block form h0 can be written
     [ hlda  V^+ ]
     [  V     Eb ]
-    This function will fit the bath energies (Eb) and the hopping (V, V^+ ) 
+    This function will fit the bath energies (Eb) and the hopping (V, V^+ )
     to the real energy hybridization function (hyb).
     Parameters:
     hyb           -- The real frequency hybridiaztion function. Used to fit the bath states.
@@ -31,23 +33,31 @@ def run(hyb, hdft, e_wins, blocks, bath_states, rot_spherical, w, eim, wsparse =
     n_orb = sum(len(block) for block in blocks)
 
     # Calculate bath and hopping parameters.
-    eb, v = offdiagonal.get_eb_v(w, eim, hyb, blocks, w_sparse,
-                                 e_wins,
-                                 n_bath_states,
-                                 (w[0], w[-1]), False, gamma)
-    print('\n \n')
-    print('Bath state energies')
+    eb, v = offdiagonal.get_eb_v(
+        w,
+        eim,
+        hyb,
+        blocks,
+        w_sparse,
+        e_wins,
+        n_bath_states,
+        (w[0], w[-1]),
+        False,
+        gamma,
+    )
+    print("\n \n")
+    print("Bath state energies")
     print(np.array_str(eb, max_line_width=1000, precision=3, suppress_small=True))
-    print('Hopping parameters')
+    print("Hopping parameters")
     print(np.array_str(v, max_line_width=1000, precision=3, suppress_small=True))
-    print('Shape of bath state energies:', np.shape(eb))
-    print('Shape of hopping parameters:', np.shape(v))
+    print("Shape of bath state energies:", np.shape(eb))
+    print("Shape of hopping parameters:", np.shape(v))
 
     eig_dft = np.linalg.eigvalsh(hdft)
-    print ('Eigenvalues of the DFT hamiltonian')
-    print (eig_dft)
+    print("Eigenvalues of the DFT hamiltonian")
+    print(eig_dft)
 
-    h = np.zeros((n_imp+len(eb),n_imp+len(eb)), dtype=complex)
+    h = np.zeros((n_imp + len(eb), n_imp + len(eb)), dtype=complex)
     h[:n_orb, :n_orb] = hdft
     h[:n_orb, n_orb:] = np.conj(v.T)
     h[n_orb:, :n_orb] = v
@@ -59,7 +69,7 @@ def run(hyb, hdft, e_wins, blocks, bath_states, rot_spherical, w, eim, wsparse =
     h_sph = np.dot(np.transpose(np.conj(u)), np.dot(h, u))
     assert np.sum(np.abs(h_sph - np.conj(h_sph.T))) < 1e-10
 
-    h_op = h2imp.get_H_operator_from_dense_rspt_H_matrix(h_sph,
-                                                          ang=(n_orb//2-1)//2)
+    h_op = h2imp.get_H_operator_from_dense_rspt_H_matrix(
+        h_sph, ang=(n_orb // 2 - 1) // 2
+    )
     return h_op
-

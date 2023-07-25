@@ -20,8 +20,8 @@ from rspt2spectra.energies import print_matrix
 # Helpful function when generating a rotated basis
 # for the localized orbitals in RSPt
 
-def write_proj_file(x, spinpol=False, filename='proj-LABEL-IrrXXXX.inp',
-                    tol=1e-11):
+
+def write_proj_file(x, spinpol=False, filename="proj-LABEL-IrrXXXX.inp", tol=1e-11):
     """
     Return the rotation/projection file needed to rotate
     a local basis in RSPt.
@@ -44,30 +44,40 @@ def write_proj_file(x, spinpol=False, filename='proj-LABEL-IrrXXXX.inp',
     n = len(x[:, 0])
     m = len(x[0, :])
     if n != m:
-        sys.exit('Square matrix expected')
+        sys.exit("Square matrix expected")
     counter = 0
     for j in range(m):
         for i in range(n):
             if np.abs(x[i, j]) > tol:
                 counter += 1
-    with open(filename, 'w') as f:
+    with open(filename, "w") as f:
         if spinpol:
-            f.write('{:d} {:d} {:d}'.format(n, n, counter))
+            f.write("{:d} {:d} {:d}".format(n, n, counter))
         else:
-            f.write('{:d} {:d} {:d}'.format(n, 2 * n, counter))
-        f.write(' ! presize, dmftsize, #lines, each row has'
-                ' (i,j,Re v[i,j],Im v[i,j]).')
-        f.write('Eigenvectors on columns. \n')
+            f.write("{:d} {:d} {:d}".format(n, 2 * n, counter))
+        f.write(
+            " ! presize, dmftsize, #lines, each row has" " (i,j,Re v[i,j],Im v[i,j])."
+        )
+        f.write("Eigenvectors on columns. \n")
         for j in range(m):
             for i in range(n):
                 if np.abs(x[i, j]) > tol:
                     f.write(
-                        '{:d} {:d} {:20.15f} {:20.15f} \n'.format(
-                            i + 1, j + 1, x[i, j].real, x[i, j].imag))
+                        "{:d} {:d} {:20.15f} {:20.15f} \n".format(
+                            i + 1, j + 1, x[i, j].real, x[i, j].imag
+                        )
+                    )
 
-def get_u_transformation(n, basis_tag, ang, irr_flag='',
-                         spherical_bath_basis=False, spinpol=True,
-                         verbose_text=False):
+
+def get_u_transformation(
+    n,
+    basis_tag,
+    ang,
+    irr_flag="",
+    spherical_bath_basis=False,
+    spinpol=True,
+    verbose_text=False,
+):
     """
     Return the unitary matrix to rotate to spherical harmonics basis.
 
@@ -95,13 +105,13 @@ def get_u_transformation(n, basis_tag, ang, irr_flag='',
 
     """
     # Number of spin-orbitals
-    n_imp = 2*(2*ang+1)
+    n_imp = 2 * (2 * ang + 1)
     # Number of non-equivalent spin-orbitals.
-    nc = n_imp if spinpol else n_imp//2
+    nc = n_imp if spinpol else n_imp // 2
     # Number of bath states
     nb = n - n_imp
     # If the diagonal Hamiltonian is due to the use of cubic harmonics
-    cubic_basis = (basis_tag[-2:] == '03' or basis_tag[-6:] == '03-obs')
+    cubic_basis = basis_tag[-2:] == "03" or basis_tag[-6:] == "03-obs"
 
     # Obtain eigenvectors used to rotate from spherical harmonics to the
     # transformed basis.
@@ -110,15 +120,16 @@ def get_u_transformation(n, basis_tag, ang, irr_flag='',
         vtr = unitarytransform.get_spherical_2_cubic_matrix(spinpol, ang)
     elif irr_flag:
         vtr = np.zeros((nc, nc), dtype=complex)
-        filename = 'proj-' + basis_tag + '-' + irr_flag + '.inp'
+        filename = "proj-" + basis_tag + "-" + irr_flag + ".inp"
         print("Read rotation transformation from file:", filename)
-        with open(filename, 'r') as fr:
+        with open(filename, "r") as fr:
             content = fr.readlines()
         for row in content[1:]:
             lst = row.split()
-            if lst :
-                vtr[int(lst[0])-1, int(lst[1])-1] = ( float(lst[2])
-                                                     +1j*float(lst[3]))
+            if lst:
+                vtr[int(lst[0]) - 1, int(lst[1]) - 1] = float(lst[2]) + 1j * float(
+                    lst[3]
+                )
     else:
         # No unitary transformation needed
         # Spherical harmonics to spherical harmonics.
@@ -140,14 +151,22 @@ def get_u_transformation(n, basis_tag, ang, irr_flag='',
     # Transformation of bath states
     if spherical_bath_basis:
         # Number of bath sets
-        nb_sets = n//n_imp - 1
+        nb_sets = n // n_imp - 1
         if spinpol:
             for i in range(nb_sets):
-                u[nc*(1+i):nc*(1+i+1), nc*(1+i):nc*(1+i+1)] = utr
+                u[
+                    nc * (1 + i) : nc * (1 + i + 1), nc * (1 + i) : nc * (1 + i + 1)
+                ] = utr
         else:
             for i in range(nb_sets):
-                u[2*nc*(1+i):2*nc*(1+i)+nc, 2*nc*(1+i):2*nc*(1+i)+nc] = utr
-                u[2*nc*(1+i)+nc:2*nc*(2+i), 2*nc*(1+i)+nc:2*nc*(2+i)] = utr
+                u[
+                    2 * nc * (1 + i) : 2 * nc * (1 + i) + nc,
+                    2 * nc * (1 + i) : 2 * nc * (1 + i) + nc,
+                ] = utr
+                u[
+                    2 * nc * (1 + i) + nc : 2 * nc * (2 + i),
+                    2 * nc * (1 + i) + nc : 2 * nc * (2 + i),
+                ] = utr
     else:
         # Bath states are untouched
         np.fill_diagonal(u[n_imp:, n_imp:], 1)
@@ -157,5 +176,5 @@ def get_u_transformation(n, basis_tag, ang, irr_flag='',
         u[:nc, :nc] = utr
     else:
         u[:nc, :nc] = utr
-        u[nc:2*nc, nc:2*nc] = utr
+        u[nc : 2 * nc, nc : 2 * nc] = utr
     return u

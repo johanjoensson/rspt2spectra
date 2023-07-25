@@ -19,8 +19,9 @@ from .energies import cog
 from .constants import eV
 
 
-def get_wborders(n_val=10, n_con=1, wlim_val=(-8, 0), wlim_con=(0, 2), n_orb=5,
-                 spinpol=False):
+def get_wborders(
+    n_val=10, n_con=1, wlim_val=(-8, 0), wlim_con=(0, 2), n_orb=5, spinpol=False
+):
     """
     Return energy window borders.
 
@@ -34,19 +35,22 @@ def get_wborders(n_val=10, n_con=1, wlim_val=(-8, 0), wlim_con=(0, 2), n_orb=5,
 
     """
     # Number of non-equivalent correlated spin-orbitals
-    nc = 2*n_orb if spinpol else n_orb
+    nc = 2 * n_orb if spinpol else n_orb
+
     def borders_to_sections(bs):
         section = []
         for i in range(len(bs[:-1])):
-            section.append([bs[i], bs[i+1]])
+            section.append([bs[i], bs[i + 1]])
         return section
+
     wborders = []
-    b_val = np.linspace(wlim_val[0], wlim_val[1], n_val+1)
-    b_con = np.linspace(wlim_con[0], wlim_con[1], n_con+1)
+    b_val = np.linspace(wlim_val[0], wlim_val[1], n_val + 1)
+    b_con = np.linspace(wlim_con[0], wlim_con[1], n_con + 1)
     for i_orb in range(nc):
         wborders.append(borders_to_sections(b_val) + borders_to_sections(b_con))
     wborders = np.array(wborders)
     return wborders
+
 
 def plot_hyb(w, hyb, xlim, spinpol):
     """
@@ -63,43 +67,43 @@ def plot_hyb(w, hyb, xlim, spinpol):
     # Number of spin orbitals
     nc = np.shape(hyb)[0]
     if spinpol:
-        norb = nc//2
+        norb = nc // 2
     else:
         norb = nc
     mask = np.logical_and(xlim[0] < w, w < xlim[1])
     w = w[mask]
     # Total hybridization
     plt.figure()
-    plt.plot(w, -1/pi*np.sum(hyb[:, mask].imag, axis=0))
-    plt.xlabel('$\omega$   (eV)')
-    plt.ylabel(r'$\frac{-1}{\pi}$ Im $\Delta(\omega)$   (eV)')
+    plt.plot(w, -1 / pi * np.sum(hyb[:, mask].imag, axis=0))
+    plt.xlabel("$\omega$   (eV)")
+    plt.ylabel(r"$\frac{-1}{\pi}$ Im $\Delta(\omega)$   (eV)")
     plt.xlim(xlim)
-    plt.grid(color='0.9')
+    plt.grid(color="0.9")
     plt.title("Total hybridzation function")
     plt.show()
     if spinpol:
         # Spin up and down
         plt.figure()
-        hyb_dn = -1/pi*np.sum(hyb[:norb, mask], axis=0)
-        plt.plot(w, -hyb_dn, c='C0')
-        hyb_up = -1/pi*np.sum(hyb[norb:, mask], axis=0)
-        plt.plot(w, hyb_up, c='C0')
-        plt.xlabel('$\omega$   (eV)')
-        plt.ylabel(r'$\frac{-1}{\pi}$ Im $\Delta(\omega)$')
+        hyb_dn = -1 / pi * np.sum(hyb[:norb, mask], axis=0)
+        plt.plot(w, -hyb_dn, c="C0")
+        hyb_up = -1 / pi * np.sum(hyb[norb:, mask], axis=0)
+        plt.plot(w, hyb_up, c="C0")
+        plt.xlabel("$\omega$   (eV)")
+        plt.ylabel(r"$\frac{-1}{\pi}$ Im $\Delta(\omega)$")
         plt.xlim(xlim)
-        plt.grid(color='0.9')
+        plt.grid(color="0.9")
         plt.title("Hybridization function, spin resolved")
         plt.show()
         # Orbital resolved
         fig = plt.figure()
         for i in range(norb):
-            hyb_dn = -1/pi*hyb[i, mask]
-            hyb_up = -1/pi*hyb[norb+i, mask]
-            plt.plot(w, hyb_dn + hyb_up, c='C' + str(i), label=str(i))
-        plt.ylabel(r'$\frac{-1}{\pi}$ Im $\Delta(\omega)$')
-        plt.grid(color='0.9')
+            hyb_dn = -1 / pi * hyb[i, mask]
+            hyb_up = -1 / pi * hyb[norb + i, mask]
+            plt.plot(w, hyb_dn + hyb_up, c="C" + str(i), label=str(i))
+        plt.ylabel(r"$\frac{-1}{\pi}$ Im $\Delta(\omega)$")
+        plt.grid(color="0.9")
         plt.legend()
-        plt.xlabel('$\omega$   (eV)')
+        plt.xlabel("$\omega$   (eV)")
         plt.xlim(xlim)
         plt.tight_layout()
         plt.title("Hybridization function, orbital resolved")
@@ -108,14 +112,14 @@ def plot_hyb(w, hyb, xlim, spinpol):
         fig = plt.figure()
         for i in range(norb):
             # Plot down spin with minus sign
-            hyb_dn = -1/pi*hyb[i, mask]
-            hyb_up = -1/pi*hyb[norb+i, mask]
-            plt.plot(w, -hyb_dn, c='C' + str(i), label=str(i))
-            plt.plot(w, hyb_up, c='C' + str(i))
-        plt.ylabel(r'$\frac{-1}{\pi}$ Im $\Delta(\omega)$')
-        plt.grid(color='0.9')
+            hyb_dn = -1 / pi * hyb[i, mask]
+            hyb_up = -1 / pi * hyb[norb + i, mask]
+            plt.plot(w, -hyb_dn, c="C" + str(i), label=str(i))
+            plt.plot(w, hyb_up, c="C" + str(i))
+        plt.ylabel(r"$\frac{-1}{\pi}$ Im $\Delta(\omega)$")
+        plt.grid(color="0.9")
         plt.legend()
-        plt.xlabel('$\omega$   (eV)')
+        plt.xlabel("$\omega$   (eV)")
         plt.xlim(xlim)
         plt.tight_layout()
         plt.title("Hybridization function, spin and orbital resolved")
@@ -124,14 +128,14 @@ def plot_hyb(w, hyb, xlim, spinpol):
         fig, axes = plt.subplots(nrows=norb, sharex=True, sharey=True)
         for i, ax in enumerate(axes):
             # Plot down spin with thinner line
-            hyb_dn = -1/pi*hyb[i, mask]
-            hyb_up = -1/pi*hyb[norb+i, mask]
-            ax.plot(w, hyb_dn, lw=0.7, c='C' + str(i))
-            ax.plot(w, hyb_up, c='C' + str(i), label=str(i))
-            ax.grid(color='0.9')
+            hyb_dn = -1 / pi * hyb[i, mask]
+            hyb_up = -1 / pi * hyb[norb + i, mask]
+            ax.plot(w, hyb_dn, lw=0.7, c="C" + str(i))
+            ax.plot(w, hyb_up, c="C" + str(i), label=str(i))
+            ax.grid(color="0.9")
             ax.legend()
-        axes[-1].set_ylabel(r'$\frac{-1}{\pi}$ Im $\Delta(\omega)$')
-        axes[-1].set_xlabel('$\omega$   (eV)')
+        axes[-1].set_ylabel(r"$\frac{-1}{\pi}$ Im $\Delta(\omega)$")
+        axes[-1].set_xlabel("$\omega$   (eV)")
         axes[-1].set_xlim(xlim)
         plt.tight_layout()
         axes[0].set_title("Hybridization function, spin and orbital resolved")
@@ -140,134 +144,132 @@ def plot_hyb(w, hyb, xlim, spinpol):
         # Orbital resolved
         fig = plt.figure()
         for i in range(nc):
-            hyb_i = -1/pi*hyb[i, mask].imag
+            hyb_i = -1 / pi * hyb[i, mask].imag
             plt.plot(w, hyb_i, label=str(i))
-        plt.ylabel(r'$\frac{-1}{\pi}$ Im $\Delta(\omega)$')
-        plt.grid(color='0.9')
+        plt.ylabel(r"$\frac{-1}{\pi}$ Im $\Delta(\omega)$")
+        plt.grid(color="0.9")
         plt.legend()
-        plt.xlabel('$\omega$   (eV)')
+        plt.xlabel("$\omega$   (eV)")
         plt.xlim(xlim)
         plt.tight_layout()
         plt.title("Orbital resolved hybridzation function")
         plt.show()
 
 
-def plot_discrete_hyb(w, hyb_im, hyb_im_rspt, eb, vb, wborder, nc, spinpol,
-                      xlim):
+def plot_discrete_hyb(w, hyb_im, hyb_im_rspt, eb, vb, wborder, nc, spinpol, xlim):
     """
     Plot discretized hybridization functions.
     """
     nb = np.shape(eb)[1]
-    fig, axarr = plt.subplots(nc, figsize=(5, 6), sharex=True,
-                              sharey=True)
+    fig, axarr = plt.subplots(nc, figsize=(5, 6), sharex=True, sharey=True)
     scale_factor_hyb = 1.06
     scale_factor_v = 3
-    v_max_plot = int(scale_factor_v*np.max(vb))
+    v_max_plot = int(scale_factor_v * np.max(vb))
     # Loop over non-equivalent correlated spin-orbitals
     for i, ax in enumerate(axarr):
         color = iter(plt.cm.rainbow(np.linspace(0, 1, nb)))
         ax_v = ax.twinx()
-        if i == nc//2 :
-            ax_v.set_ylabel('$v_{b}$  (eV)', color='b')
-        ax_v.tick_params('y', colors='b')
+        if i == nc // 2:
+            ax_v.set_ylabel("$v_{b}$  (eV)", color="b")
+        ax_v.tick_params("y", colors="b")
         # Loop over bath states
         for ebath, v, wb, c in zip(eb[i], vb[i], wborder[i], color):
-            ax_v.plot([ebath, ebath], [0, v], c='b')
-            #ax_v.plot([wb[0], wb[0]], [0, v], '--', c='0.8') # c=c
-            #ax_v.plot([wb[1], wb[1]], [0, v], '--', c='0.8') # c=c
+            ax_v.plot([ebath, ebath], [0, v], c="b")
+            # ax_v.plot([wb[0], wb[0]], [0, v], '--', c='0.8') # c=c
+            # ax_v.plot([wb[1], wb[1]], [0, v], '--', c='0.8') # c=c
         # Plot discretized hybridization function
-        ax.plot(w, -1/pi*hyb_im[i, :], c='r', label='discrete')
+        ax.plot(w, -1 / pi * hyb_im[i, :], c="r", label="discrete")
         ax_v.set_ylim([0, v_max_plot])
-        #ax.grid(color='0.92')
-    axarr[nc//2].set_ylabel(r'-$\frac{1}{\pi}\mathrm{Im}'
-                                  '\Delta(\omega)$      (eV)')
+        # ax.grid(color='0.92')
+    axarr[nc // 2].set_ylabel(r"-$\frac{1}{\pi}\mathrm{Im}" "\Delta(\omega)$      (eV)")
     # Plot continues hybridization function
     for i, ax in enumerate(axarr):
-        ax.plot(w, -1/pi*hyb_im_rspt[i], '-k', label='RSPt')
-    hyb_max_plot = scale_factor_hyb*np.max(-1/pi*hyb_im_rspt)
+        ax.plot(w, -1 / pi * hyb_im_rspt[i], "-k", label="RSPt")
+    hyb_max_plot = scale_factor_hyb * np.max(-1 / pi * hyb_im_rspt)
     axarr[0].set_ylim([0, hyb_max_plot])
-    axarr[-1].set_xlabel('E   (eV)')
+    axarr[-1].set_xlabel("E   (eV)")
     axarr[0].set_xlim(xlim)
-    axarr[0].legend(loc='best')
+    axarr[0].legend(loc="best")
     if spinpol:
         axarr[0].set_title("Spin and orbital resolved hybridization")
     else:
         axarr[0].set_title("Orbital resolved hybridization")
-    plt.subplots_adjust(left=0.12, bottom=0.07, right=0.91,
-                        top=0.95, hspace=0.0, wspace=0)
+    plt.subplots_adjust(
+        left=0.12, bottom=0.07, right=0.91, top=0.95, hspace=0.0, wspace=0
+    )
     plt.show()
 
     if spinpol:
-        norb = nc//2
+        norb = nc // 2
         fig, axarr = plt.subplots(norb, figsize=(6, 7), sharex=True)
         # Loop over axes
         for i, ax in enumerate(axarr):
             ax_v = ax.twinx()
-            ax_v.set_ylabel('$v_{b}$  (eV)', color='r')
-            ax_v.tick_params('y', colors='r')
+            ax_v.set_ylabel("$v_{b}$  (eV)", color="r")
+            ax_v.tick_params("y", colors="r")
 
             for j, s in zip([i, norb + i], [-1, 1]):
                 color = iter(plt.cm.rainbow(np.linspace(0, 1, nb)))
                 # Loop over bath states
-                for ebath, v, wb, c in zip(eb[j], vb[j],
-                                           wborder[j], color):
-                    ax_v.plot([ebath, ebath], [0, s * v], c='r')
-                    ax_v.plot([wb[0], wb[0]], [0, s * v], '--', c=c)
-                    ax_v.plot([wb[1], wb[1]], [0, s * v], '--', c=c)
+                for ebath, v, wb, c in zip(eb[j], vb[j], wborder[j], color):
+                    ax_v.plot([ebath, ebath], [0, s * v], c="r")
+                    ax_v.plot([wb[0], wb[0]], [0, s * v], "--", c=c)
+                    ax_v.plot([wb[1], wb[1]], [0, s * v], "--", c=c)
             # Plot discretized hybridization function
-            ax.plot(w, --1/pi*hyb_im[i, :],
-                    c='0.8', label='discrete')
-            ax.plot(w, -1/pi*hyb_im[norb + i, :], c='0.8')
+            ax.plot(w, --1 / pi * hyb_im[i, :], c="0.8", label="discrete")
+            ax.plot(w, -1 / pi * hyb_im[norb + i, :], c="0.8")
             v_max_dn = 1.1 * np.max(vb[i])
             v_max_up = 1.1 * np.max(vb[norb + i])
             v_max = max(v_max_dn, v_max_up)
             ax_v.set_ylim([-v_max, v_max])
-            ax.grid(color='0.92')
-        axarr[2].set_ylabel(r'-$\frac{1}{\pi}\mathrm{Im}'
-                            '\Delta(\omega)$      (eV)')
+            ax.grid(color="0.92")
+        axarr[2].set_ylabel(r"-$\frac{1}{\pi}\mathrm{Im}" "\Delta(\omega)$      (eV)")
         # Plot RSPt hybridization function
         for i, ax in enumerate(axarr):
-            hyb_max_dn = 1.4 * np.max(-1/pi*hyb_im_rspt[i])
-            hyb_max_up = 1.4 * np.max(-1/pi*hyb_im_rspt[norb + i])
+            hyb_max_dn = 1.4 * np.max(-1 / pi * hyb_im_rspt[i])
+            hyb_max_up = 1.4 * np.max(-1 / pi * hyb_im_rspt[norb + i])
             hyb_max = max(hyb_max_dn, hyb_max_up)
             ax.set_ylim([-hyb_max, hyb_max])
-            ax.plot(w, --1/pi*hyb_im_rspt[i], '-r', label='RSPt')
-            ax.plot(w, -1/pi*hyb_im_rspt[norb + i], '-r')
-        axarr[-1].set_xlabel('E   (eV)')
+            ax.plot(w, --1 / pi * hyb_im_rspt[i], "-r", label="RSPt")
+            ax.plot(w, -1 / pi * hyb_im_rspt[norb + i], "-r")
+        axarr[-1].set_xlabel("E   (eV)")
         axarr[0].set_xlim(xlim)
-        axarr[0].legend(loc='best')
+        axarr[0].legend(loc="best")
         axarr[0].set_title("Spin and orbital resolved hybridization")
-        plt.subplots_adjust(left=0.17, bottom=0.10, right=0.83,
-                            top=0.98, hspace=0.0, wspace=0)
+        plt.subplots_adjust(
+            left=0.17, bottom=0.10, right=0.83, top=0.98, hspace=0.0, wspace=0
+        )
         plt.show()
         # New figure
         fig, axarr = plt.subplots(norb, figsize=(6, 7), sharex=True)
         # Loop over axes
         for i, ax in enumerate(axarr):
             # Down spin has negative sign
-            ax.plot(w, --1/pi*hyb_im[i, :], c='0.8')
-            ax.plot(w, --1/pi*hyb_im_rspt[i], '-r')
+            ax.plot(w, --1 / pi * hyb_im[i, :], c="0.8")
+            ax.plot(w, --1 / pi * hyb_im_rspt[i], "-r")
             # Up spin has positive sign
-            ax.plot(w, -1/pi*hyb_im[norb + i, :],
-                    c='0.8', label='discrete')
-            ax.plot(w, -1/pi*hyb_im_rspt[norb + i],
-                    '-r', label='RSPt')
-            y_max_dn = 1.4 * np.min(-1/pi*hyb_im_rspt[i])
-            y_max_up = 1.4 * np.max(-1/pi*hyb_im_rspt[norb + i])
+            ax.plot(w, -1 / pi * hyb_im[norb + i, :], c="0.8", label="discrete")
+            ax.plot(w, -1 / pi * hyb_im_rspt[norb + i], "-r", label="RSPt")
+            y_max_dn = 1.4 * np.min(-1 / pi * hyb_im_rspt[i])
+            y_max_up = 1.4 * np.max(-1 / pi * hyb_im_rspt[norb + i])
             y_max = max(y_max_dn, y_max_up)
-            ax.text(0, 2, i, fontsize=8,
-                    fontweight='normal',
-                    bbox={'facecolor': 'white', 'alpha': 0.9,
-                          'pad': 2})
+            ax.text(
+                0,
+                2,
+                i,
+                fontsize=8,
+                fontweight="normal",
+                bbox={"facecolor": "white", "alpha": 0.9, "pad": 2},
+            )
             ax.set_ylim([-y_max, y_max])
-        axarr[2].set_ylabel(r'-$\frac{1}{\pi}\mathrm{Im}'
-                            '\Delta(\omega)$  (eV)')
-        axarr[-1].set_xlabel('E   (eV)')
+        axarr[2].set_ylabel(r"-$\frac{1}{\pi}\mathrm{Im}" "\Delta(\omega)$  (eV)")
+        axarr[-1].set_xlabel("E   (eV)")
         axarr[0].set_xlim(xlim)
         axarr[0].legend(loc=1)
         axarr[0].set_title("Spin and orbital resolved hybridization")
-        plt.subplots_adjust(left=0.16, bottom=0.16, right=0.99,
-                            top=0.99, hspace=0, wspace=0)
+        plt.subplots_adjust(
+            left=0.16, bottom=0.16, right=0.99, top=0.99, hspace=0, wspace=0
+        )
         plt.show()
 
 
@@ -289,13 +291,13 @@ def plot_hyb_off_diagonal(w, hyb, nc, xlim):
     """
     plt.figure()
     for i in range(nc):
-        plt.plot(w, -np.imag(hyb[i, i, :]), '-k')
+        plt.plot(w, -np.imag(hyb[i, i, :]), "-k")
     for i in range(nc):
         for j in range(nc):
             if i != j:
-                plt.plot(w, -np.imag(hyb[i, j, :]), '-r')
-    plt.plot([], [], '-k', label='diagonal')
-    plt.plot([], [], '-r', label='off-diagonal')
+                plt.plot(w, -np.imag(hyb[i, j, :]), "-r")
+    plt.plot([], [], "-k", label="diagonal")
+    plt.plot([], [], "-r", label="off-diagonal")
     plt.legend()
     plt.xlim(xlim)
     plt.show()
@@ -325,9 +327,9 @@ def get_v_simple(w, hyb, eb, width=0.5):
         # Loop over bath states
         for e in eb[i]:
             mask = np.logical_and(e - width / 2 < w, w < e + width / 2)
-            vb[i].append(
-                np.sqrt(np.trapz(-hyb[mask, i], w[mask]) / np.pi))
+            vb[i].append(np.sqrt(np.trapz(-hyb[mask, i], w[mask]) / np.pi))
     return np.array(vb)
+
 
 def get_vb_and_eb(w, hyb, wborder):
     """
@@ -357,25 +359,25 @@ def get_vb_and_eb(w, hyb, wborder):
         Bath energies.
 
     """
-    nb = len(wborder[0,:,0])
+    nb = len(wborder[0, :, 0])
     # Check so that energy windows do not overlap
     # Loop over correlated orbitals
     for i in range(np.shape(wborder)[0]):
-        s = np.argsort(wborder[i,:,0])
+        s = np.argsort(wborder[i, :, 0])
         for j in range(nb):
-            assert wborder[i,s[j],0] < wborder[i,s[j],1]
-            if j < nb-1:
-                assert wborder[i,s[j],1] <= wborder[i,s[j+1],0]
-    vb = np.zeros(np.shape(wborder)[:2],dtype=float)
+            assert wborder[i, s[j], 0] < wborder[i, s[j], 1]
+            if j < nb - 1:
+                assert wborder[i, s[j], 1] <= wborder[i, s[j + 1], 0]
+    vb = np.zeros(np.shape(wborder)[:2], dtype=float)
     eb = np.zeros_like(vb)
     # Loop over correlated orbitals
     for i in range(np.shape(wborder)[0]):
         # Loop over bath states
         for j in range(len(wborder[i])):
-            kmin = np.argmin(np.abs(w - wborder[i,j][0]))
-            kmax = np.argmin(np.abs(w - wborder[i,j][1]))
-            vb[i,j] = np.sqrt(np.trapz(-hyb[i, kmin:kmax], w[kmin:kmax])/pi)
-            eb[i,j] = cog(w[kmin:kmax],-hyb[i, kmin:kmax])
+            kmin = np.argmin(np.abs(w - wborder[i, j][0]))
+            kmax = np.argmin(np.abs(w - wborder[i, j][1]))
+            vb[i, j] = np.sqrt(np.trapz(-hyb[i, kmin:kmax], w[kmin:kmax]) / pi)
+            eb[i, j] = cog(w[kmin:kmax], -hyb[i, kmin:kmax])
     return vb, eb
 
 
@@ -424,15 +426,14 @@ def get_vb_and_new_eb(w, hyb, eb, accept1=0.1, accept2=0.5, nbig=20):
     # Loop over correlated orbitals
     for i in range(np.shape(eb)[0]):
         # Get energy window border indices
-        kmins, kmaxs = get_border_index(w, -hyb[i, :], eb[i,:],
-                                        accept1, accept2, nbig)
+        kmins, kmaxs = get_border_index(w, -hyb[i, :], eb[i, :], accept1, accept2, nbig)
         # Loop over bath states
-        for j in range(len(eb[i,:])):
+        for j in range(len(eb[i, :])):
             kmin = kmins[j]
             kmax = kmaxs[j]
-            wborder[i,j,:] = [w[kmin], w[kmax]]
-            vb[i,j] = np.sqrt(np.trapz(-hyb[i, kmin:kmax], w[kmin:kmax])/pi)
-            eb_new[i,j] = cog(w[kmin:kmax],-hyb[i, kmin:kmax])
+            wborder[i, j, :] = [w[kmin], w[kmax]]
+            vb[i, j] = np.sqrt(np.trapz(-hyb[i, kmin:kmax], w[kmin:kmax]) / pi)
+            eb_new[i, j] = cog(w[kmin:kmax], -hyb[i, kmin:kmax])
     return vb, eb_new, wborder
 
 
@@ -520,10 +521,10 @@ def get_border_index(x, y, eb, accept1, accept2, nbig):
         other_peaks = np.delete(np.array(eb), e_index)
         # Find left border
         if np.any(other_peaks < e):
-            left_peak_index = np.argmin(np.abs(
-                e - other_peaks[other_peaks < e]))
-            k_left = np.argmin(np.abs(
-                other_peaks[other_peaks < e][left_peak_index] - x))
+            left_peak_index = np.argmin(np.abs(e - other_peaks[other_peaks < e]))
+            k_left = np.argmin(
+                np.abs(other_peaks[other_peaks < e][left_peak_index] - x)
+            )
         else:
             k_left = 0
         # Check if bath state is an edge bath state
@@ -556,15 +557,14 @@ def get_border_index(x, y, eb, accept1, accept2, nbig):
                         kmin = np.argmin(np.abs(x - (e - de)))
                     else:
                         # Pick point halfway between them.
-                        kmin = np.argmin(np.abs(
-                            x - (x[k_left] + x[kc]) / 2))
+                        kmin = np.argmin(np.abs(x - (x[k_left] + x[kc]) / 2))
 
         # find right border
         if np.any(other_peaks > e):
-            right_peak_index = np.argmin(np.abs(
-                e - other_peaks[other_peaks > e]))
-            k_right = np.argmin(np.abs(
-                other_peaks[other_peaks > e][right_peak_index] - x))
+            right_peak_index = np.argmin(np.abs(e - other_peaks[other_peaks > e]))
+            k_right = np.argmin(
+                np.abs(other_peaks[other_peaks > e][right_peak_index] - x)
+            )
         else:
             k_right = len(x) - 1
         # Check if bath state is an edge bath state
@@ -597,8 +597,7 @@ def get_border_index(x, y, eb, accept1, accept2, nbig):
                         kmax = np.argmin(np.abs(x - (e + de)))
                     else:
                         # Pick point halfway between them.
-                        kmax = np.argmin(np.abs(
-                            x - (x[kc] + x[k_right]) / 2))
+                        kmax = np.argmin(np.abs(x - (x[kc] + x[k_right]) / 2))
         kmins.append(kmin)
         kmaxs.append(kmax)
     # copy the lists
@@ -610,12 +609,14 @@ def get_border_index(x, y, eb, accept1, accept2, nbig):
         for i in chain(range(e_index), range(e_index + 1, len(eb))):
             # check for overlap to the left
             if eb[i] < e and kmin < kmaxs[i]:
-                kmins_new[e_index] = np.argmin(np.abs(
-                    x - (x[kmin] + x[kmaxs[i]]) / 2.))
+                kmins_new[e_index] = np.argmin(
+                    np.abs(x - (x[kmin] + x[kmaxs[i]]) / 2.0)
+                )
             # check for overlap to the right
             if eb[i] > e and kmax > kmins[i]:
-                kmaxs_new[e_index] = np.argmin(np.abs(
-                    x - (x[kmax] + x[kmins[i]]) / 2.))
+                kmaxs_new[e_index] = np.argmin(
+                    np.abs(x - (x[kmax] + x[kmins[i]]) / 2.0)
+                )
     return kmins_new, kmaxs_new
 
 

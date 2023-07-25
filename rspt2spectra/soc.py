@@ -32,13 +32,13 @@ def parse_core_energies(path):
 
     path - path to RSPt out file to parse.
     """
-    with open(path, 'r') as f:
+    with open(path, "r") as f:
         data = f.readlines()
     its = []  # indices for the different types
     ts = []  # types
     # For each type, find first row about core energies
     for i, row in enumerate(data):
-        if 'type:' in row:
+        if "type:" in row:
             its.append(i)
             t = int(row.split()[1])
             ts.append(t)

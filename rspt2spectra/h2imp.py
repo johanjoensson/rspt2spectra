@@ -16,13 +16,15 @@ import pickle
 from collections import OrderedDict
 from rspt2spectra import op_printer
 
-def write_to_file(d, filename='h0_Op'):
+
+def write_to_file(d, filename="h0_Op"):
     """
     Write variable to disk.
     """
-    with open(filename+".pickle", 'wb') as handle:
+    with open(filename + ".pickle", "wb") as handle:
         pickle.dump(d, handle)
-    op_printer.write_operator_to_file( [d], filename+'.dict')
+    op_printer.write_operator_to_file([d], filename + ".dict")
+
 
 def get_H_operator_from_dense_rspt_H_matrix(h, ang=2):
     """
@@ -52,15 +54,16 @@ def get_H_operator_from_dense_rspt_H_matrix(h, ang=2):
     n = np.shape(h)[0]
     # Specify how many bath states are present.
     nBaths = OrderedDict()
-    nBaths[ang] = n - 2*(2*ang+1)
+    nBaths[ang] = n - 2 * (2 * ang + 1)
     hOp = {}
     for i in range(n):
         for j in range(n):
-            if h[i,j] != 0:
+            if h[i, j] != 0:
                 spin_orb_i = rspt_i2c(nBaths, i)
                 spin_orb_j = rspt_i2c(nBaths, j)
-                hOp[((spin_orb_i, 'c'), (spin_orb_j, 'a'))] = h[i,j]
+                hOp[((spin_orb_i, "c"), (spin_orb_j, "a"))] = h[i, j]
     return hOp
+
 
 def rspt_i2c(nBaths, i):
     """
@@ -91,24 +94,24 @@ def rspt_i2c(nBaths, i):
     for lp in nBaths.keys():
         if isinstance(lp, int):
             # Check if index "i" belong to impurity spin-orbital having lp.
-            if i - k < 2*(2*lp+1):
+            if i - k < 2 * (2 * lp + 1):
                 for sp in range(2):
-                    for mp in range(-lp, lp+1):
+                    for mp in range(-lp, lp + 1):
                         if k == i:
                             return (lp, sp, mp)
                         k += 1
-            k += 2*(2*lp+1)
+            k += 2 * (2 * lp + 1)
         elif isinstance(lp, tuple):
             # Loop over all different angular momenta in lp.
             for lp_int in lp:
                 # Check if index "i" belong to impurity spin-orbital having lp_int.
-                if i - k < 2*(2*lp_int+1):
+                if i - k < 2 * (2 * lp_int + 1):
                     for sp in range(2):
-                        for mp in range(-lp_int, lp_int+1):
+                        for mp in range(-lp_int, lp_int + 1):
                             if k == i:
                                 return (lp_int, sp, mp)
                             k += 1
-                k += 2*(2*lp_int+1)
+                k += 2 * (2 * lp_int + 1)
     # If reach this point it means index "i" belong to a bath state.
     # Need to figure out which one.
     for lp, nBath in nBaths.items():
@@ -119,4 +122,4 @@ def rspt_i2c(nBaths, i):
             return (lp, b)
         k += nBath
     print(i)
-    sys.exit('Can not find spin-orbital state corresponding to index.')
+    sys.exit("Can not find spin-orbital state corresponding to index.")

@@ -18,6 +18,7 @@ from time import perf_counter
 
 from .energies import cog
 
+
 def plot_diagonal_and_offdiagonal(w, hyb_diagonal, hyb, xlim):
     """
     Plot diagonal and offdiagonal hybridization functions separately.
@@ -31,48 +32,50 @@ def plot_diagonal_and_offdiagonal(w, hyb_diagonal, hyb, xlim):
     # Real part
     plt.figure()
     for i in range(n_imp):
-        plt.plot(w[mask], hyb_diagonal[i,mask].real, label=str(i))
+        plt.plot(w[mask], hyb_diagonal[i, mask].real, label=str(i))
     plt.legend()
     plt.xlim(xlim)
-    #plt.ylim(ylim)
-    plt.title('Diagonal functions, real part')
-    #plt.show()
-    plt.savefig('diag_real.png')
+    # plt.ylim(ylim)
+    plt.title("Diagonal functions, real part")
+    # plt.show()
+    plt.savefig("diag_real.png")
     # -Imag part
     plt.figure()
     for i in range(n_imp):
-        plt.plot(w[mask], -hyb_diagonal[i,mask].imag, label=str(i))
+        plt.plot(w[mask], -hyb_diagonal[i, mask].imag, label=str(i))
     plt.legend()
     plt.xlim(xlim)
-    #plt.ylim(ylim)
-    plt.title('Diagonal functions, -imag part')
-    #plt.show()
-    plt.savefig('diag_imag.png')
+    # plt.ylim(ylim)
+    plt.title("Diagonal functions, -imag part")
+    # plt.show()
+    plt.savefig("diag_imag.png")
 
     # Off diagonal functions
     # Real part
     plt.figure()
     for i in range(n_imp):
-        for j in list(range(i)) + list(range(i+1, n_imp)):
-            plt.plot(w[mask], hyb[i,j,mask].real)
+        for j in list(range(i)) + list(range(i + 1, n_imp)):
+            plt.plot(w[mask], hyb[i, j, mask].real)
     plt.xlim(xlim)
-    #plt.ylim(ylim)
-    plt.title('Off diagonal functions, real part')
-    #plt.show()
-    plt.savefig('offdiag_real.png')
+    # plt.ylim(ylim)
+    plt.title("Off diagonal functions, real part")
+    # plt.show()
+    plt.savefig("offdiag_real.png")
     # -Imag part
     plt.figure()
     for i in range(n_imp):
-        for j in list(range(i)) + list(range(i+1, n_imp)):
-            plt.plot(w[mask], -hyb[i,j,mask].imag)
+        for j in list(range(i)) + list(range(i + 1, n_imp)):
+            plt.plot(w[mask], -hyb[i, j, mask].imag)
     plt.xlim(xlim)
-    #plt.ylim(ylim)
-    plt.title('Off diagonal functions, -imag part')
-    #plt.show()
-    plt.savefig('offdiag_imag.png')
+    # plt.ylim(ylim)
+    plt.title("Off diagonal functions, -imag part")
+    # plt.show()
+    plt.savefig("offdiag_imag.png")
 
 
 label = -1
+
+
 def plot_all_orbitals(w, hyb_orig, hyb_model=None, xlim=None):
     """
     Plot functions for all orbitals, for both hyb and hyb_model.
@@ -95,93 +98,103 @@ def plot_all_orbitals(w, hyb_orig, hyb_model=None, xlim=None):
         fig, axes = plt.subplots(nrows=n, ncols=n, sharex=True, sharey=True)
         for i in range(n):
             for j in range(n):
-                axes[i,j].plot(w[mask], hyb_orig[i,j,mask].real, label='original')
+                axes[i, j].plot(w[mask], hyb_orig[i, j, mask].real, label="original")
                 if hyb_model is not None:
-                    axes[i,j].plot(w[mask], hyb_model[i,j,mask].real, label='model')
-                #axes[i,j].grid()
+                    axes[i, j].plot(w[mask], hyb_model[i, j, mask].real, label="model")
+                # axes[i,j].grid()
         if xlim is not None:
             plt.xlim(xlim)
-        #plt.ylim(ylim)
-        axes[0,n//2].set_title('Real part')
-        #plt.tight_layout()
-        plt.subplots_adjust(top=0.95,right=0.98, wspace=0.03, hspace=0.03)
-        #plt.show()
+        # plt.ylim(ylim)
+        axes[0, n // 2].set_title("Real part")
+        # plt.tight_layout()
+        plt.subplots_adjust(top=0.95, right=0.98, wspace=0.03, hspace=0.03)
+        # plt.show()
         if label >= 0:
-                plt.savefig('real_orbital_' + repr(label) + '.png')
+            plt.savefig("real_orbital_" + repr(label) + ".png")
         else:
-                plt.savefig('real_orbitals.png')
-
+            plt.savefig("real_orbitals.png")
 
         # All -imag functions
         fig, axes = plt.subplots(nrows=n, ncols=n, sharex=True, sharey=True)
         for i in range(n):
             for j in range(n):
-                axes[i,j].plot(w[mask], -hyb_orig[i,j,mask].imag, label='original')
+                axes[i, j].plot(w[mask], -hyb_orig[i, j, mask].imag, label="original")
                 if hyb_model is not None:
-                    axes[i,j].plot(w[mask], -hyb_model[i,j,mask].imag, label='model')
-                #axes[i,j].grid()
+                    axes[i, j].plot(w[mask], -hyb_model[i, j, mask].imag, label="model")
+                # axes[i,j].grid()
         if xlim is not None:
             plt.xlim(xlim)
-        #plt.ylim(ylim)
-        axes[0,-1].legend()
-        axes[0,n//2].set_title('- Imag part')
-        #plt.tight_layout()
-        plt.subplots_adjust(top=0.95,right=0.98, wspace=0.03, hspace=0.03)
-        #plt.show()
+        # plt.ylim(ylim)
+        axes[0, -1].legend()
+        axes[0, n // 2].set_title("- Imag part")
+        # plt.tight_layout()
+        plt.subplots_adjust(top=0.95, right=0.98, wspace=0.03, hspace=0.03)
+        # plt.show()
         if label >= 0:
-                plt.savefig('imag_orbital_' + repr(label) + '.png')
+            plt.savefig("imag_orbital_" + repr(label) + ".png")
         else:
-                plt.savefig('imag_orbitals.png')
+            plt.savefig("imag_orbitals.png")
     elif n == 1:
         # All real functions
         fig = plt.figure()
         for i in range(n):
             for j in range(n):
-                plt.plot(w[mask], hyb_orig[i,j,mask].real, label='original')
+                plt.plot(w[mask], hyb_orig[i, j, mask].real, label="original")
                 if hyb_model is not None:
-                    plt.plot(w[mask], hyb_model[i,j,mask].real, label='model')
-                #plt.grid()
+                    plt.plot(w[mask], hyb_model[i, j, mask].real, label="model")
+                # plt.grid()
         if xlim is not None:
             plt.xlim(xlim)
-        #plt.ylim(ylim)
-        plt.title('Real part')
+        # plt.ylim(ylim)
+        plt.title("Real part")
         plt.tight_layout()
-        #plt.subplots_adjust(top=0.95,right=0.98, wspace=0.03, hspace=0.03)
-        #plt.show()
+        # plt.subplots_adjust(top=0.95,right=0.98, wspace=0.03, hspace=0.03)
+        # plt.show()
         if label >= 0:
-                plt.savefig('real_orbital_' + repr(label) + '.png')
+            plt.savefig("real_orbital_" + repr(label) + ".png")
         else:
-                plt.savefig('real_orbitals.png')
+            plt.savefig("real_orbitals.png")
 
         # All -imag functions
         fig = plt.figure()
         for i in range(n):
             for j in range(n):
-                plt.plot(w[mask], -hyb_orig[i,j,mask].imag, label='original')
+                plt.plot(w[mask], -hyb_orig[i, j, mask].imag, label="original")
                 if hyb_model is not None:
-                    plt.plot(w[mask], -hyb_model[i,j,mask].imag, label='model')
-                #plt.grid()
+                    plt.plot(w[mask], -hyb_model[i, j, mask].imag, label="model")
+                # plt.grid()
         if xlim is not None:
             plt.xlim(xlim)
-        #plt.ylim(ylim)
+        # plt.ylim(ylim)
         plt.legend()
-        plt.title('- Imag part')
+        plt.title("- Imag part")
         plt.tight_layout()
-        #plt.subplots_adjust(top=0.95,right=0.98, wspace=0.03, hspace=0.03)
-        #plt.show()
+        # plt.subplots_adjust(top=0.95,right=0.98, wspace=0.03, hspace=0.03)
+        # plt.show()
         if label >= 0:
-                plt.savefig('imag_orbital_' + repr(label) + '.png')
+            plt.savefig("imag_orbital_" + repr(label) + ".png")
         else:
-                plt.savefig('imag_orbitals.png')
+            plt.savefig("imag_orbitals.png")
     else:
-        sys.exit('Positive number of impurity orbitals required.')
+        sys.exit("Positive number of impurity orbitals required.")
 
     label += 1
 
 
-def get_eb_v_for_one_block(w, eim, hyb, block, wsparse, wborders,
-                           n_bath_sets_foreach_window, xlim=None,
-                           verbose_fig=False, gamma=0., imag_only = True, v_cutoff = None):
+def get_eb_v_for_one_block(
+    w,
+    eim,
+    hyb,
+    block,
+    wsparse,
+    wborders,
+    n_bath_sets_foreach_window,
+    xlim=None,
+    verbose_fig=False,
+    gamma=0.0,
+    imag_only=True,
+    v_cutoff=None,
+):
     """
     Return bath energies and hybridization hopping parameters
     for a specific block.
@@ -191,46 +204,47 @@ def get_eb_v_for_one_block(w, eim, hyb, block, wsparse, wborders,
         v_cutoff = 0
     # Select energies in real axis mesh.
     w_select = w[::wsparse]
-    assert w_select[1] - w_select[0] < 2*eim
+    assert w_select[1] - w_select[0] < 2 * eim
     # For each block, fit a discretized hybridization function to
     # the original hybridization function.
     # Number of bath orbitals, for each energy window.
-    n_bath_foreach_window = np.array(n_bath_sets_foreach_window)*len(block)
+    n_bath_foreach_window = np.array(n_bath_sets_foreach_window) * len(block)
     # Select a subset of all impurity orbitals
     hyb_block = hyb[np.ix_(block, block, w == w_select)]
     ebs, w_index = get_ebs(w_select, hyb_block, wborders, n_bath_foreach_window)
-    mask_tmp = np.logical_and(np.min(wborders) < w_select,
-                              w_select < np.max(wborders))
-    n_data_points = len(block)**2*len(w_select[mask_tmp])
-    print('Fit to approx {:d} data points.'.format(n_data_points))
-    n_param = np.sum(n_bath_foreach_window)*len(block)*2
-    print('Use {:d} real-valued parameters in the fit.'.format(n_param))
-    vs, costs = get_vs(w_select+1j*eim, hyb_block, wborders, ebs, gamma=gamma, imag_only = imag_only)
-    print('Cost function values (without regularization):')
+    mask_tmp = np.logical_and(np.min(wborders) < w_select, w_select < np.max(wborders))
+    n_data_points = len(block) ** 2 * len(w_select[mask_tmp])
+    print("Fit to approx {:d} data points.".format(n_data_points))
+    n_param = np.sum(n_bath_foreach_window) * len(block) * 2
+    print("Use {:d} real-valued parameters in the fit.".format(n_param))
+    vs, costs = get_vs(
+        w_select + 1j * eim, hyb_block, wborders, ebs, gamma=gamma, imag_only=imag_only
+    )
+    print("Cost function values (without regularization):")
     print(costs)
     eb = merge_ebs(ebs)
     print(eb)
     v = merge_vs(vs)
     v_max = np.max(np.abs(v))
-    mask = np.any(np.abs(v) > v_cutoff*v_max, axis = 1)
+    mask = np.any(np.abs(v) > v_cutoff * v_max, axis=1)
     if verbose_fig:
-        hyb_model = get_hyb(w_select+1j*eim, eb, v)
-        print('Plot model and original hybridization functions..')
+        hyb_model = get_hyb(w_select + 1j * eim, eb, v)
+        print("Plot model and original hybridization functions..")
         plot_all_orbitals(w_select, hyb_block, hyb_model, xlim)
         # Distribution of hopping parameters
         plt.figure()
-        plt.hist(np.abs(v).flatten()/np.max(np.abs(v)),bins=30)
-        plt.xlabel('|v|/max(|v|)')
+        plt.hist(np.abs(v).flatten() / np.max(np.abs(v)), bins=30)
+        plt.xlabel("|v|/max(|v|)")
         plt.show()
         # Absolute values of the hopping parameters
         plt.figure()
-        plt.plot(sorted(np.abs(v).flatten())/np.max(np.abs(v)),'o')
-        plt.plot( [v_cutoff]*len(v.flatten()),'--', color = 'tab:red')
-        plt.ylabel('|v|/max(|v|)')
+        plt.plot(sorted(np.abs(v).flatten()) / np.max(np.abs(v)), "o")
+        plt.plot([v_cutoff] * len(v.flatten()), "--", color="tab:red")
+        plt.ylabel("|v|/max(|v|)")
         plt.show()
         # plt.savefig('hopping_distribution.png')
         plt.close()
-        print('{:d} elements in v.'.format(v.size))
+        print("{:d} elements in v.".format(v.size))
         v_mean = np.mean(np.abs(v))
         v_median = np.median(np.abs(v))
     # v[np.abs(v) < r_cutoff*v_max] = 0
@@ -241,9 +255,20 @@ def get_eb_v_for_one_block(w, eim, hyb, block, wsparse, wborders,
     return eb[mask], v[mask], w_index
 
 
-def get_eb_v(w, eim, hyb, blocks, wsparse, wborders,
-             n_bath_sets_foreach_block_and_window, xlim=None,
-             verbose_fig=False, gamma=0., imag_only = True, v_cutoff = None):
+def get_eb_v(
+    w,
+    eim,
+    hyb,
+    blocks,
+    wsparse,
+    wborders,
+    n_bath_sets_foreach_block_and_window,
+    xlim=None,
+    verbose_fig=False,
+    gamma=0.0,
+    imag_only=True,
+    v_cutoff=None,
+):
     """
     Return bath and hopping parameters by discretizing hybridization functions.
     """
@@ -256,13 +281,24 @@ def get_eb_v(w, eim, hyb, blocks, wsparse, wborders,
     # Hopping parameters
     v = []
     # Loop over blocks
-    for block_i, (block, n_bath_sets_foreach_window) in enumerate(zip(blocks, n_bath_sets_foreach_block_and_window)):
+    for block_i, (block, n_bath_sets_foreach_window) in enumerate(
+        zip(blocks, n_bath_sets_foreach_block_and_window)
+    ):
         # Calculate bath energies and hopping parameters for each block.
-        eb_block, v_block, window_index_block = get_eb_v_for_one_block(w, eim, hyb, block, wsparse,
-                                                   wborders,
-                                                   n_bath_sets_foreach_window,
-                                                   xlim, verbose_fig,
-                                                   gamma=gamma, imag_only = imag_only, v_cutoff = v_cutoff)
+        eb_block, v_block, window_index_block = get_eb_v_for_one_block(
+            w,
+            eim,
+            hyb,
+            block,
+            wsparse,
+            wborders,
+            n_bath_sets_foreach_window,
+            xlim,
+            verbose_fig,
+            gamma=gamma,
+            imag_only=imag_only,
+            v_cutoff=v_cutoff,
+        )
         eb.append(eb_block)
         v_sparse = np.zeros((len(eb_block), n_imp), dtype=complex)
         v_sparse[:, block] = v_block
@@ -300,7 +336,7 @@ def reshuffle(eb, v, wborders, w_indices):
         # mask = np.logical_and(np.logical_and(wborder[0] <= eb, eb < wborder[1]), w_indices == i)
         mask = np.logical_and(wborder[0] <= eb, eb < wborder[1])
         eb_new.append(eb[mask.flatten()])
-        v_new.append(v[mask.flatten(),:])
+        v_new.append(v[mask.flatten(), :])
     eb_new = np.hstack(eb_new)
     v_new = np.vstack(v_new)
     return eb_new, v_new
@@ -330,12 +366,12 @@ def get_eb(w, hyb, n_b):
     eb = np.zeros(n_b, dtype=float)
     # Selection of bath energies depends on how many
     # bath orbitals have compared to the number of
-    #impurity orbitals.
+    # impurity orbitals.
     if n_b < 0:
-        sys.exit('Positive number of bath energies expected.')
+        sys.exit("Positive number of bath energies expected.")
     elif n_b == 0:
         # No bath orbitals
-        print ("Skipping orbital with no bath states")
+        print("Skipping orbital with no bath states")
     elif n_b == 1:
         # Bath energy at the center of gravity of the imaginary part
         # of the hybridization function trace.
@@ -347,18 +383,18 @@ def get_eb(w, hyb, n_b):
             # Bath energies at the center of gravities of each
             # diagonal hybridization function (its imaginary part).
             for i in range(n_b):
-                eb[i] = cog(w, -hyb[i,i,:].imag)
+                eb[i] = cog(w, -hyb[i, i, :].imag)
         else:
             # Uniformly distribute n_b // n_imp energies on the mesh.
-            dw = (w[-1] - w[0])/(n_b/n_imp + 1)
-            es = np.linspace(w[0]+dw, w[-1]-dw, n_b//n_imp)
+            dw = (w[-1] - w[0]) / (n_b / n_imp + 1)
+            es = np.linspace(w[0] + dw, w[-1] - dw, n_b // n_imp)
             # Give each energy degeneracy n_imp.
             for i, e in enumerate(es):
-                eb[n_imp*i:n_imp*(1+i)] = e
+                eb[n_imp * i : n_imp * (1 + i)] = e
     else:
         # Uniformly distribute the bath energies on the mesh.
-        dw = (w[-1] - w[0])/(n_b + 1)
-        eb = np.linspace(w[0]+dw, w[-1]-dw, n_b)
+        dw = (w[-1] - w[0]) / (n_b + 1)
+        eb = np.linspace(w[0] + dw, w[-1] - dw, n_b)
     return eb
 
 
@@ -389,16 +425,16 @@ def get_ebs(w, hyb, wborders, n_b):
     n_w = len(w)
     n_imp = np.shape(hyb)[0]
     n_windows = np.shape(wborders)[0]
-    #ebs = np.zeros((n_windows, n_b), dtype=float)
+    # ebs = np.zeros((n_windows, n_b), dtype=float)
     ebs = []
     w_index = []
     # Treat each energy window as seperate.
     for a, wborder in enumerate(wborders):
-        mask = np.logical_and(wborder[0]<= w, w <= wborder[1])
-        #ebs[a,:] = get_eb(w[mask], hyb[:,:,mask], n_b)
-        ebs.append(get_eb(w[mask], hyb[:,:,mask], n_b[a]))
-        #if(n_b[a] > 0):
-        w_index += [a]*n_b[a]
+        mask = np.logical_and(wborder[0] <= w, w <= wborder[1])
+        # ebs[a,:] = get_eb(w[mask], hyb[:,:,mask], n_b)
+        ebs.append(get_eb(w[mask], hyb[:, :, mask], n_b[a]))
+        # if(n_b[a] > 0):
+        w_index += [a] * n_b[a]
     return ebs, w_index
 
 
@@ -425,13 +461,13 @@ def get_hyb(z, eb, v):
     n_b, n_imp = np.shape(v)
     hyb = np.zeros((n_imp, n_imp, n_w), dtype=complex)
 
-    
     # Loop over all bath energies
     for b, e in enumerate(eb):
         # Add contributions from each bath
-        hyb += np.outer(v[b,:].conj(), v[b,:])[:,:,np.newaxis]*(1/(z-e))
+        hyb += np.outer(v[b, :].conj(), v[b, :])[:, :, np.newaxis] * (1 / (z - e))
 
     return hyb
+
 
 def get_hyb_2(z, eb, v):
     """
@@ -453,13 +489,16 @@ def get_hyb_2(z, eb, v):
 
     """
     # return np.einsum("li, nk, lj -> ijn", np.conj(v), 1/(z[:, np.newaxis] - eb[np.newaxis, :]), v, optimize = True)
-    return np.moveaxis(np.conj(v.T)[np.newaxis, :, :] @ 
-                       np.array([np.diag(d) for d in 1/(z[:, np.newaxis] - eb[np.newaxis, :])]) @
-                       v[np.newaxis, :, :],
-                       0, -1)
+    return np.moveaxis(
+        np.conj(v.T)[np.newaxis, :, :]
+        @ np.array([np.diag(d) for d in 1 / (z[:, np.newaxis] - eb[np.newaxis, :])])
+        @ v[np.newaxis, :, :],
+        0,
+        -1,
+    )
 
 
-def get_vs(z, hyb, wborders, ebs, gamma=0., imag_only = True):
+def get_vs(z, hyb, wborders, ebs, gamma=0.0, imag_only=True):
     """
     Return optimized hopping parameters.
 
@@ -489,60 +528,80 @@ def get_vs(z, hyb, wborders, ebs, gamma=0., imag_only = True):
     """
     n_w = len(z)
     n_imp = np.shape(hyb)[0]
-    #n_windows, n_b = np.shape(ebs)
+    # n_windows, n_b = np.shape(ebs)
     n_windows = len(ebs)
     # Hopping parameters
-    #vs = np.zeros((n_windows, n_b, n_imp), dtype=complex)
+    # vs = np.zeros((n_windows, n_b, n_imp), dtype=complex)
     vs = []
     # Cost function values
     costs = np.zeros(n_windows, dtype=float)
     # Treat each energy window as seperate.
     for a, wborder in enumerate(wborders):
-        if (len(ebs[a]) > 0):
-           mask = np.logical_and(wborder[0]<= z.real, z.real <= wborder[1])
-           #vs[a,:,:], costs[a] = get_v(z[mask], hyb[:,:,mask], ebs[a,:], gamma)
-           v, costs[a] = get_v(z[mask], hyb[:,:,mask], ebs[a], gamma, imag_only = imag_only)
+        if len(ebs[a]) > 0:
+            mask = np.logical_and(wborder[0] <= z.real, z.real <= wborder[1])
+            # vs[a,:,:], costs[a] = get_v(z[mask], hyb[:,:,mask], ebs[a,:], gamma)
+            v, costs[a] = get_v(
+                z[mask], hyb[:, :, mask], ebs[a], gamma, imag_only=imag_only
+            )
         else:
-           v = np.zeros((0,n_imp),dtype=float)
-           costs[a] = 0.0
+            v = np.zeros((0, n_imp), dtype=float)
+            costs[a] = 0.0
         vs.append(v)
     return vs, costs
+
 
 def get_p0(z, hyb, eb, gamma, imag_only, realvalue_v):
     n_imp = np.shape(hyb)[0]
     n_b = len(eb)
     if n_imp == 1:
-        return 2*np.random.randn(n_b if realvalue_v else 2*n_b)
+        return 2 * np.random.randn(n_b if realvalue_v else 2 * n_b)
     # Initialize hopping parameters.
     # Treat complex-valued parameters,
     # by doubling the number of parameters.
-    v0 = np.zeros((n_b, n_imp), dtype = complex)
+    v0 = np.zeros((n_b, n_imp), dtype=complex)
     # for b_i in range(0, n_b, n_imp):
     # for b_i in range(0, n_b//n_imp):
     for i in range(n_imp):
-        for j in range(i+1):
+        for j in range(i + 1):
             # p0 = 2*np.random.randn(1 if realvalue_v else 2)
-            p0 = 2*np.random.randn(n_b//n_imp if realvalue_v else 2*n_b//n_imp)
+            p0 = 2 * np.random.randn(n_b // n_imp if realvalue_v else 2 * n_b // n_imp)
             # fun = lambda p: cost_function(p, eb[[b_i + i]], z, hyb[i, j, :].reshape((1, 1, len(z))), gamma, imag_only, output='value')
-            fun = lambda p: cost_function(p, eb[i::n_imp], z, hyb[i, j, :].reshape((1, 1, len(z))), gamma, imag_only, output='value')
+            fun = lambda p: cost_function(
+                p,
+                eb[i::n_imp],
+                z,
+                hyb[i, j, :].reshape((1, 1, len(z))),
+                gamma,
+                imag_only,
+                output="value",
+            )
             if imag_only:
                 # jac = lambda p: cost_function(p, eb[[b_i + i]], z, hyb[i, j, :].reshape((1, 1, len(z))), gamma, True, output='gradient')
-                jac = lambda p: cost_function(p, eb[i::n_imp], z, hyb[i, j, :].reshape((1, 1, len(z))), gamma, True, output='gradient')
+                jac = lambda p: cost_function(
+                    p,
+                    eb[i::n_imp],
+                    z,
+                    hyb[i, j, :].reshape((1, 1, len(z))),
+                    gamma,
+                    True,
+                    output="gradient",
+                )
                 # Minimize cost function
-                res = minimize(fun, p0, jac=jac, tol = 1e-3)
+                res = minimize(fun, p0, jac=jac, tol=1e-3)
             else:
-                res = minimize(fun, p0, tol = 1e-3)
+                res = minimize(fun, p0, tol=1e-3)
             # v = unroll(res.x, 1, 1).reshape((1,))
-            v = unroll(res.x, n_b//n_imp, 1).reshape((n_b//n_imp,))
+            v = unroll(res.x, n_b // n_imp, 1).reshape((n_b // n_imp,))
             v0[i::n_imp, j] = v
+            # v0[j::n_imp, i] = v
             v0[j::n_imp, i] = np.conj(v)
             # v0[b_i + i, j] = v
             # v0[b_i + j, i] = v
     p0 = inroll(np.abs(v0))
-    return p0 if not realvalue_v else p0[:n_b*n_imp]
+    return p0 if not realvalue_v else p0[: n_b * n_imp]
 
 
-def get_v_new(z, hyb, eb, gamma=0., imag_only = True, realvalue_v = False):
+def get_v_new(z, hyb, eb, gamma=0.0, imag_only=True, realvalue_v=False):
     """
     Return optimized hopping parameters.
 
@@ -575,25 +634,26 @@ def get_v_new(z, hyb, eb, gamma=0., imag_only = True, realvalue_v = False):
 
     # Define cost function as a function of a hopping parameter
     # vector.
-    fun = lambda p: cost_function(p, eb, z, hyb, gamma, imag_only, output='value')
+    fun = lambda p: cost_function(p, eb, z, hyb, gamma, imag_only, output="value")
 
     if imag_only:
-        jac = lambda p: cost_function(p, eb, z, hyb, gamma, True, output='gradient')
+        jac = lambda p: cost_function(p, eb, z, hyb, gamma, True, output="gradient")
         # Minimize cost function
-        res = minimize(fun, p0, jac=jac, tol = 1e-12)
+        res = minimize(fun, p0, jac=jac, tol=1e-12)
     else:
-        res = minimize(fun, p0, tol = 1e-12)
+        res = minimize(fun, p0, tol=1e-12)
 
-    #res = minimize(fun, p0)
+    # res = minimize(fun, p0)
     # The solution
     p = res.x
     # Cost function value, with regularization.
-    c = cost_function(p, eb, z, hyb, only_imag_part = imag_only, output='value')
+    c = cost_function(p, eb, z, hyb, only_imag_part=imag_only, output="value")
     # Convert hopping parameters to physical shape.
     v = unroll(p, n_b, n_imp)
     return v, c
 
-def get_v(z, hyb, eb, gamma=0., imag_only = True, realvalue_v = False):
+
+def get_v(z, hyb, eb, gamma=0.0, imag_only=True, realvalue_v=False):
     """
     Return optimized hopping parameters.
 
@@ -621,26 +681,27 @@ def get_v(z, hyb, eb, gamma=0., imag_only = True, realvalue_v = False):
     # Treat complex-valued parameters,
     # by doubling the number of parameters.
     if realvalue_v:
-        n = n_b*n_imp
+        n = n_b * n_imp
     else:
-        n = 2*n_b*n_imp
+        n = 2 * n_b * n_imp
     p0 = np.random.randn(n)
     # Define cost function as a function of a hopping parameter
     # vector.
-    fun = lambda p: cost_function(p, eb, z, hyb, gamma, imag_only, output='value')
+    fun = lambda p: cost_function(p, eb, z, hyb, gamma, imag_only, output="value")
     if imag_only:
-        jac = lambda p: cost_function(p, eb, z, hyb, gamma, True, output='gradient')
+        jac = lambda p: cost_function(p, eb, z, hyb, gamma, True, output="gradient")
         # Minimize cost function
-        res = minimize(fun, p0, jac=jac, tol = 1e-12)
+        res = minimize(fun, p0, jac=jac, tol=1e-12)
     else:
         res = minimize(fun, p0)
     # The solution
     p = res.x
     # Cost function value, with regularization.
-    c = cost_function(p, eb, z, hyb, only_imag_part = imag_only, output='value')
+    c = cost_function(p, eb, z, hyb, only_imag_part=imag_only, output="value")
     # Convert hopping parameters to physical shape.
     v = unroll(p, n_b, n_imp)
     return v, c
+
 
 def unroll(p, n_b, n_imp):
     """
@@ -661,15 +722,15 @@ def unroll(p, n_b, n_imp):
         Hybridization parameters as a matrix.
 
     """
-    realvalue_v = len(p) == n_b*n_imp
+    realvalue_v = len(p) == n_b * n_imp
     # assert len(p) % 2 == 0
     # Number of complex-value parameters
     if realvalue_v:
         r = len(p)
         p_c = p[:r] + 0j
     else:
-        r = len(p)//2
-        p_c = p[:r] + 1j*p[r:]
+        r = len(p) // 2
+        p_c = p[:r] + 1j * p[r:]
     v = p_c.reshape(n_b, n_imp)
     return v
 
@@ -689,13 +750,20 @@ def inroll(v):
         Hybridization parameters as a vector.
 
     """
-    p = np.hstack((v.real.flatten(),
-                   v.imag.flatten()))
+    p = np.hstack((v.real.flatten(), v.imag.flatten()))
     return p
 
 
-def cost_function(p, eb, z, hyb, gamma=0., only_imag_part=True,
-                  output='value and gradient', regularization_mode='L1'):
+def cost_function(
+    p,
+    eb,
+    z,
+    hyb,
+    gamma=0.0,
+    only_imag_part=True,
+    output="value and gradient",
+    regularization_mode="L1",
+):
     """
     Return cost function value.
 
@@ -736,7 +804,7 @@ def cost_function(p, eb, z, hyb, gamma=0., only_imag_part=True,
     n_imp = np.shape(hyb)[0]
     n_b = len(eb)
     # Number of data points to fit to.
-    m = n_imp*n_imp*n_w
+    m = n_imp * n_imp * n_w
     assert hyb.size == m
     # Convert hopping parameters to physical shape.
     v = unroll(p, n_b, n_imp)
@@ -749,41 +817,41 @@ def cost_function(p, eb, z, hyb, gamma=0., only_imag_part=True,
         # Consider only imaginary part of the hybrization functions.
         diff = diff.imag
         # Loss values
-        loss = 1/2*diff**2
+        loss = 1 / 2 * diff**2
     else:
         # Loss values
-        loss = 1/2*np.abs(diff)**2
+        loss = 1 / 2 * np.abs(diff) ** 2
     # Cost function.
     # Cost function value,
     # sum over two impurity orbital indices and
     # one energy index.
-    c = 1/m*np.sum(loss)
+    c = 1 / m * np.sum(loss)
     # Add regularization terms
-    if regularization_mode == 'L1':
+    if regularization_mode == "L1":
         # L1-regularization
-        c +=  gamma/len(p)*np.sum(np.abs(p))
-    elif regularization_mode == 'L2':
+        c += gamma / len(p) * np.sum(np.abs(p))
+    elif regularization_mode == "L2":
         # L2-regularization
-        c +=  gamma/(2*len(p))*np.sum(p**2)
-    elif regularization_mode == 'sigmoid':
+        c += gamma / (2 * len(p)) * np.sum(p**2)
+    elif regularization_mode == "sigmoid":
         # Regularization with derivative being the sigmoid function.
         # This acts as a smoothened version of L1-regularization.
         # Delta determine the sharpness of the sigmoid function.
         delta = 0.1
-        c +=  gamma/len(p)*np.sum(delta*np.log(np.cosh(p/delta)))
-
+        c += gamma / len(p) * np.sum(delta * np.log(np.cosh(p / delta)))
 
     else:
-        sys.exit('Regularization mode not implemented.')
+        sys.exit("Regularization mode not implemented.")
 
-    if output == 'value':
+    if output == "value":
         # Return only the cost function value.
         return c
 
     # Calculate gradient here...
     if not only_imag_part:
-        sys.exit(('Gradient for fit to complex hybridization '
-                  + 'is not implemented yet...'))
+        sys.exit(
+            ("Gradient for fit to complex hybridization " + "is not implemented yet...")
+        )
 
     # Partial derivatives of the cost function with respect to the
     # real and imaginary part of the hopping parameters.
@@ -792,93 +860,108 @@ def cost_function(p, eb, z, hyb, gamma=0., only_imag_part=True,
     if True:
         # Calculate the gradient using some numpy broadcasting trixs.
         # complex array(B,M)
-        green_b = 1/(z-np.atleast_2d(eb).T)
+        green_b = 1 / (z - np.atleast_2d(eb).T)
         # Loop over all impurity orbitals
         for r in range(n_imp):
             # Sum over columns of the hybridization matrix,
             # not being equal to column r.
             # Also sum over rows of the hybridization matrix,
             # not being equal to row r.
-            for j in list(range(r)) + list(range(r+1, n_imp)):
+            for j in list(range(r)) + list(range(r + 1, n_imp)):
                 # complex array(B,1)
-                v_matrix = np.atleast_2d(v[:,j]).T
+                v_matrix = np.atleast_2d(v[:, j]).T
                 # diff[r,j,:], real array(M)
                 # Sum real array(B,M) along energy axis.
-                dcdv_re[:,r] += np.sum(
-                    diff[r,j,:]*np.imag(v_matrix*green_b), axis=1)
-                dcdv_im[:,r] += np.sum(
-                    diff[r,j,:]*np.imag(-1j*v_matrix*green_b), axis=1)
+                dcdv_re[:, r] += np.sum(
+                    diff[r, j, :] * np.imag(v_matrix * green_b), axis=1
+                )
+                dcdv_im[:, r] += np.sum(
+                    diff[r, j, :] * np.imag(-1j * v_matrix * green_b), axis=1
+                )
                 # Sum real array(B,M) along energy axis.
-                dcdv_re[:,r] += np.sum(
-                    diff[j,r,:]*np.imag(v_matrix.conj()*green_b), axis=1)
-                dcdv_im[:,r] += np.sum(
-                    diff[j,r,:]*np.imag(1j*v_matrix.conj()*green_b), axis=1)
+                dcdv_re[:, r] += np.sum(
+                    diff[j, r, :] * np.imag(v_matrix.conj() * green_b), axis=1
+                )
+                dcdv_im[:, r] += np.sum(
+                    diff[j, r, :] * np.imag(1j * v_matrix.conj() * green_b), axis=1
+                )
             # complex array(B,1)
-            v_matrix = np.atleast_2d(v[:,r]).T
+            v_matrix = np.atleast_2d(v[:, r]).T
             # diff[r,r,:], real array(M)
             # Add contribution from case with i=j=r
             # Sum real array(B,M) along energy axis.
-            dcdv_re[:,r] += np.sum(
-                diff[r,r,:]*np.imag(2*v_matrix.real*green_b), axis=1)
-            dcdv_im[:,r] += np.sum(
-                diff[r,r,:]*np.imag(2*v_matrix.imag*green_b), axis=1)
+            dcdv_re[:, r] += np.sum(
+                diff[r, r, :] * np.imag(2 * v_matrix.real * green_b), axis=1
+            )
+            dcdv_im[:, r] += np.sum(
+                diff[r, r, :] * np.imag(2 * v_matrix.imag * green_b), axis=1
+            )
     else:
         # Calculate the gradient without any numpy broadcasting trixs.
         # Loop over all impurity orbitals
         for r in range(n_imp):
             # Sum over columns of the hybridization matrix,
             # not being equal to column r.
-            for j in list(range(r)) + list(range(r+1, n_imp)):
+            for j in list(range(r)) + list(range(r + 1, n_imp)):
                 # Loop over all bath states
                 for b in range(n_b):
                     # Sum over energies
-                    dcdv_re[b,r] += np.sum(diff[r,j,:]*np.imag(v[b,j]/(z-eb[b])))
-                    dcdv_im[b,r] += np.sum(diff[r,j,:]*np.imag(-1j*v[b,j]/(z-eb[b])))
+                    dcdv_re[b, r] += np.sum(
+                        diff[r, j, :] * np.imag(v[b, j] / (z - eb[b]))
+                    )
+                    dcdv_im[b, r] += np.sum(
+                        diff[r, j, :] * np.imag(-1j * v[b, j] / (z - eb[b]))
+                    )
             # Sum over rows of the hybridization matrix,
             # not being equal to row r.
-            for i in list(range(r)) + list(range(r+1, n_imp)):
+            for i in list(range(r)) + list(range(r + 1, n_imp)):
                 # Loop over all bath states
                 for b in range(n_b):
                     # Sum over energies
-                    dcdv_re[b,r] += np.sum(diff[i,r,:]*np.imag(v[b,i].conj()/(z-eb[b])))
-                    dcdv_im[b,r] += np.sum(diff[i,r,:]*np.imag(1j*v[b,i].conj()/(z-eb[b])))
+                    dcdv_re[b, r] += np.sum(
+                        diff[i, r, :] * np.imag(v[b, i].conj() / (z - eb[b]))
+                    )
+                    dcdv_im[b, r] += np.sum(
+                        diff[i, r, :] * np.imag(1j * v[b, i].conj() / (z - eb[b]))
+                    )
             # Add contribution from case with i=j=r
             # Loop over all bath states
             for b in range(n_b):
                 # Sum over energies
-                dcdv_re[b,r] += np.sum(diff[r,r,:]*np.imag(2*v[b,r].real/(z-eb[b])))
-                dcdv_im[b,r] += np.sum(diff[r,r,:]*np.imag(2*v[b,r].imag/(z-eb[b])))
+                dcdv_re[b, r] += np.sum(
+                    diff[r, r, :] * np.imag(2 * v[b, r].real / (z - eb[b]))
+                )
+                dcdv_im[b, r] += np.sum(
+                    diff[r, r, :] * np.imag(2 * v[b, r].imag / (z - eb[b]))
+                )
 
     # Divide with normalization factor
     dcdv_re /= m
     dcdv_im /= m
     # Complex-valued matrix.
-    dcdv = dcdv_re + 1j*dcdv_im
+    dcdv = dcdv_re + 1j * dcdv_im
     # Convert to real-valued vector.
     dcdp = inroll(dcdv)
     # Add regularization contribution to the gradient.
-    if regularization_mode == 'L1':
+    if regularization_mode == "L1":
         # L1-regularization
-        dcdp +=  gamma/len(p)*np.sign(p)
-    elif regularization_mode == 'L2':
+        dcdp += gamma / len(p) * np.sign(p)
+    elif regularization_mode == "L2":
         # L2-regularization
-        dcdp +=  gamma/len(p)*p
-    elif regularization_mode == 'sigmoid':
-        dcdp += gamma/len(p)*np.tanh(p/delta)
+        dcdp += gamma / len(p) * p
+    elif regularization_mode == "sigmoid":
+        dcdp += gamma / len(p) * np.tanh(p / delta)
     else:
-        sys.exit('Regularization mode not implemented.')
+        sys.exit("Regularization mode not implemented.")
 
-
-    if output == 'gradient':
+    if output == "gradient":
         return dcdp
-    elif output == 'value and gradient':
+    elif output == "value and gradient":
         return c, dcdp
     else:
-        sys.exit('Output option not possible.')
+        sys.exit("Output option not possible.")
 
-
-    #return np.sum(np.abs(p-4))
-
+    # return np.sum(np.abs(p-4))
 
 
 def merge_ebs(ebs):
@@ -898,8 +981,9 @@ def merge_ebs(ebs):
 
     """
     eb = np.hstack(ebs)
-    #eb = ebs.flatten()
+    # eb = ebs.flatten()
     return eb
+
 
 def merge_vs(vs):
     """
@@ -917,6 +1001,6 @@ def merge_vs(vs):
         All the hopping parameters as a two dimensional array(Btot, N),
         where Btot is the number of all the bath states.
     """
-    #v = vs.reshape(vs.shape[0]*vs.shape[1], vs.shape[-1])
+    # v = vs.reshape(vs.shape[0]*vs.shape[1], vs.shape[-1])
     v = np.vstack(vs)
     return v
