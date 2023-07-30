@@ -422,8 +422,6 @@ def fit_block_new(
         n_b = min(
             len(sorted_energies) - 1, (n_bath_states - found_bath_states) // n_orb
         )
-        if comm.rank == 0:
-            print(f"Fitting {n_b} bath states at once")
         bath_energies[found_bath_states : found_bath_states + n_b * n_orb] = np.repeat(
             sorted_energies[-n_b:], n_orb
         )
