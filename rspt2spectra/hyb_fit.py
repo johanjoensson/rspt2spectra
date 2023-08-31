@@ -453,14 +453,15 @@ def fit_block_new(
                 ]
             )
         fit_hyb = get_hyb(w + delta * 1j, bath_energies[:found_bath_states], v)
-        fig, ax = plt.subplots(nrows = n_orb, ncols = n_orb, squeeze = False, sharex = 'all', sharey = 'all')
-        for i in range(n_orb):
-            for j in range(n_orb):
-                ax[i, j].plot(w, -np.imag(    hyb[ i, j, :]), color = 'tab:blue')
-                ax[i, j].plot(w, -np.imag(fit_hyb[ i, j, :]), color = 'tab:orange')
-                ax[i, j].vlines(bath_energies[:found_bath_states], 0, 1, linestyles = 'dashed', colors = 'tab:gray')
-        plt.ylim(bottom = -np.max(-np.imag(np.diagonal(hyb, axis1 = 0, axis2 = 1))), top = np.max(-np.imag(np.diagonal(hyb, axis1 = 0, axis2 = 1))))
-        plt.show()
+        if comm is None or comm.rank == 0:
+            fig, ax = plt.subplots(nrows = n_orb, ncols = n_orb, squeeze = False, sharex = 'all', sharey = 'all')
+            for i in range(n_orb):
+                for j in range(n_orb):
+                    ax[i, j].plot(w, -np.imag(    hyb[ i, j, :]), color = 'tab:blue')
+                    ax[i, j].plot(w, -np.imag(fit_hyb[ i, j, :]), color = 'tab:orange')
+                    ax[i, j].vlines(bath_energies[:found_bath_states], 0, 1, linestyles = 'dashed', colors = 'tab:gray')
+            plt.ylim(bottom = -np.max(-np.imag(np.diagonal(hyb, axis1 = 0, axis2 = 1))), top = np.max(-np.imag(np.diagonal(hyb, axis1 = 0, axis2 = 1))))
+            plt.show()
     v_best = v
     min_cost = np.abs(cost)
 
