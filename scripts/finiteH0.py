@@ -15,6 +15,7 @@ from rspt2spectra import orbitals
 from rspt2spectra import offdiagonal
 from rspt2spectra import energies
 from rspt2spectra import h2imp
+from rspt2spectra import hyb_fit
 # Read input parameters from local file
 import rspt2spectra_parameters as r2s
 
@@ -41,6 +42,12 @@ print(np.shape(hyb_diagonal))
 w, hyb = readfile.hyb(file_re_hyb, file_im_hyb)
 print(np.shape(hyb))
 
+# Get unitary transformation matrix.
+rot_spherical = orbitals.get_u_transformation(np.shape(hyb)[0], r2s.basis_tag,
+                                  (n_imp//2-1)//2, irr_flag=r2s.irr_flag,
+                                  verbose_text=r2s.verbose_text)
+corr_to_cf = np.identity(rot_spherical.shape[0])
+
 if r2s.verbose_fig:
     # Plot diagonal and off diagonal hybridization functions separately.
 #    offdiagonal.plot_diagonal_and_offdiagonal(w, hyb_diagonal, hyb, r2s.xlim)
@@ -48,10 +55,25 @@ if r2s.verbose_fig:
     offdiagonal.plot_all_orbitals(w, hyb, xlim=r2s.xlim)
 
 # Calculate bath and hopping parameters.
-eb, v = offdiagonal.get_eb_v(w, r2s.eim, hyb, r2s.blocks, r2s.wsparse,
-                             r2s.wborders,
-                             r2s.n_bath_sets_foreach_block_and_window,
-                             r2s.xlim, r2s.verbose_fig, r2s.gamma)
+# eb, v = offdiagonal.get_eb_v(w, r2s.eim, hyb, r2s.blocks, r2s.wsparse,
+#                              r2s.wborders,
+#                              r2s.n_bath_sets_foreach_block_and_window,
+#                              r2s.xlim, r2s.verbose_fig, r2s.gamma)
+eb, v = hyb_fit.fit_hyb(
+    w,
+    r2s.eim,
+    hyb,
+    corr_to_cf,
+    rot_spherical,
+    r2s.bath_states_per_orbital,
+    gamma=r2s.gamma,
+    imag_only=r2s.imag_only,
+    x_lim=(w[0], 0 if r2s.valence_bath_only else w[-1]),
+    verbose=True,
+    comm=None,
+    new_v=True,
+    exp_weight=2/eV,
+)
 
 print('\n \n')
 print('Bath state energies')
@@ -129,7 +151,7 @@ print(eig)
 print()
 
 # Construct the non-interacting Hamiltonian
-h = np.zeros((n_imp+len(eb),n_imp+len(eb)), dtype=np.complex)
+h = np.zeros((n_imp+len(eb),n_imp+len(eb)), dtype=complex)
 # Onsite energies of impurity orbitals
 h[:n_imp,:n_imp] = e_rspt
 # Bath state energies
@@ -138,12 +160,11 @@ np.fill_diagonal(h[n_imp:, n_imp:], eb)
 h[n_imp:,:n_imp] = v
 h[:n_imp,n_imp:] = np.conj(v).T
 
-# Make sure Hamiltonian is hermitian
-assert np.sum(np.abs(h - np.conj(h.T))) < 1e-10
-# Get unitary transformation matrix.
 u = orbitals.get_u_transformation(np.shape(h)[0], r2s.basis_tag,
                                   (n_imp//2-1)//2, irr_flag=r2s.irr_flag,
                                   verbose_text=r2s.verbose_text)
+# Make sure Hamiltonian is hermitian
+assert np.sum(np.abs(h - np.conj(h.T))) < 1e-10
 # Rotate (back) to spherical harmonics basis
 h_sph = np.dot(np.transpose(np.conj(u)), np.dot(h, u))
 # Make sure Hamiltonian is hermitian

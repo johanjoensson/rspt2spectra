@@ -47,6 +47,11 @@ xlim = (-9, 4)
 # is printed to this file name
 output_filename = 'h0.pickle'
 
+bath_states_per_orbital = 1
+imag_only = False
+verbose = verbose_text
+
+corr_2_cf=
 # Window borders. Divide up the energy mesh in regions.
 # Only one wide region also works fine.
 # Example with 1 window.

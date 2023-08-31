@@ -181,6 +181,7 @@ def fit_hyb(
     verbose=True,
     comm=None,
     new_v=False,
+    exp_weight=2,
 ):
     """
     Calculate the bath energies and hopping parameters for fitting the
@@ -227,7 +228,7 @@ def fit_hyb(
         phase_blocks, phase_hyb, tol=tol
     )
 
-    if comm.rank == 0:
+    if comm is None or comm.rank == 0:
         with open("phase_hyb.npy", "wb") as f:
             np.save(f, phase_hyb)
             for block in phase_blocks:
@@ -283,6 +284,7 @@ def fit_hyb(
             w0=0,
             comm=comm,
             new_v=new_v,
+            exp_weight=exp_weight,
         )
         if verbose:
             print(f"--> eb {block_eb}")
@@ -339,7 +341,11 @@ def fit_block(
     realvalue_v,
     w0=0,
     comm=None,
+    exp_weight=2,
 ):
+    world_size = 1
+    if comm is not None:
+        world_size = comm.size
     hyb_trace = -np.imag(np.sum(np.diagonal(hyb, axis1=0, axis2=1), axis=1))
     n_bath_states = bath_states_per_orbital  #  * hyb.shape[0]
     de = w[1] - w[0]
@@ -365,7 +371,7 @@ def fit_block(
 
     min_cost = np.inf
     v = None
-    for _ in range(max(ceil(10 / comm.size), 1)):
+    for _ in range(max(ceil(10 / world_size), 1)):
         v_try, costs = get_v(
             w + delta * 1j,
             hyb,
@@ -393,10 +399,14 @@ def fit_block_new(
     w0=0,
     comm=None,
     new_v=False,
+    exp_weight=2,
 ):
     def weight(peak):
-        return np.exp(-2 * np.abs(w[peak] - w0))
+        return np.exp(-exp_weight * np.abs(w[peak] - w0))
 
+    world_size = 1
+    if comm is not None:
+        world_size = comm.size
     hyb_trace = -np.imag(np.sum(np.diagonal(hyb, axis1=0, axis2=1), axis=1))
     n_orb = hyb.shape[0]
     n_bath_states = bath_states_per_orbital * n_orb
@@ -438,11 +448,19 @@ def fit_block_new(
             )
             try_again = np.any(
                 [
-                    np.all(np.abs(v[i : i + n_orb, :]) ** 2 < 1e-8)
+                    np.all(np.abs(v[i: i + n_orb, :]) ** 2 < 1e-8)
                     for i in range(0, v.shape[0], n_orb)
                 ]
             )
         fit_hyb = get_hyb(w + delta * 1j, bath_energies[:found_bath_states], v)
+        fig, ax = plt.subplots(nrows = n_orb, ncols = n_orb, squeeze = False, sharex = 'all', sharey = 'all')
+        for i in range(n_orb):
+            for j in range(n_orb):
+                ax[i, j].plot(w, -np.imag(    hyb[ i, j, :]), color = 'tab:blue')
+                ax[i, j].plot(w, -np.imag(fit_hyb[ i, j, :]), color = 'tab:orange')
+                ax[i, j].vlines(bath_energies[:found_bath_states], 0, 1, linestyles = 'dashed', colors = 'tab:gray')
+        plt.ylim(bottom = -np.max(-np.imag(np.diagonal(hyb, axis1 = 0, axis2 = 1))), top = np.max(-np.imag(np.diagonal(hyb, axis1 = 0, axis2 = 1))))
+        plt.show()
     v_best = v
     min_cost = np.abs(cost)
 
@@ -504,9 +522,11 @@ def fit_block_new(
     #     #     plt.ylim(bottom = -np.max(-np.imag(np.diagonal(hyb, axis1 = 0, axis2 = 1))), top = np.max(-np.imag(np.diagonal(hyb, axis1 = 0, axis2 = 1))))
     #     #     plt.show()
 
-    for _ in range(min(1000 // comm.size, 2)):
+    for _ in range(min(10 // world_size, 2)):
+    # for _ in range(min(1000 // world_size, 2)):
         try_again = True
         while try_again:
+            print("TRY!!")
             if new_v:
                 v, cost = get_v_new(
                     w + delta * 1j,
@@ -534,6 +554,7 @@ def fit_block_new(
         if abs(cost) < min_cost:
             v_best = v
             min_cost = abs(cost)
-    bath_energies, v, _ = comm.allreduce((bath_energies, v_best, min_cost), op=v_opt_op)
+    if comm is not None:
+        bath_energies, v, _ = comm.allreduce((bath_energies, v_best, min_cost), op=v_opt_op)
 
     return bath_energies, v
