@@ -1004,3 +1004,27 @@ def merge_vs(vs):
     # v = vs.reshape(vs.shape[0]*vs.shape[1], vs.shape[-1])
     v = np.vstack(vs)
     return v
+
+
+def get_v_and_eb(z, hyb, eb, gamma=0.0, imag_only=True, realvalue_v=False):
+    n_imp = np.shape(hyb)[0]
+    n_b = len(eb)
+    # Initialize hopping parameters.
+    # Treat complex-valued parameters,
+    # by doubling the number of parameters.
+    v0 = get_p0(z, hyb, eb, gamma, imag_only, realvalue_v)
+
+    def fun(p):
+        return cost_function(p[n_b:], p[:n_b], z, hyb, gamma, imag_only, output="value")
+
+    res = minimize(fun, np.append(eb, v0))
+
+    p = res.x
+    # Cost function value, with regularization.
+    c = cost_function(
+        p[n_b:], p[:n_b], z, hyb, only_imag_part=imag_only, output="value"
+    )
+    # Convert hopping parameters to physical shape.
+    eb = p[:n_b]
+    v = unroll(p[n_b:], n_b, n_imp)
+    return v, eb, c
