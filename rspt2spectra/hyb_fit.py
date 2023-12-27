@@ -174,7 +174,6 @@ def fit_hyb(
     w,
     delta,
     hyb,
-    corr_to_cf,
     bath_states_per_orbital,
     gamma,
     imag_only,
@@ -206,18 +205,10 @@ def fit_hyb(
     else:
         mask = np.array([True] * len(w))
 
-    # Transform the hybridization function to the CF basis, using corr_to_cf
-    cf_hyb = np.moveaxis(
-        np.conj(corr_to_cf.T)[np.newaxis, :, :]
-        @ np.moveaxis(hyb, -1, 0)
-        @ corr_to_cf[np.newaxis, :, :],
-        0,
-        -1,
-    )
     # We do the fitting by first transforming the hyridization function into a basis
     # where each block is (hopefully) close to diagonal
     # np.conj(Q.T) @ cf_hyb @ Q is the transformation performed
-    phase_hyb, Q = block_diagonalize_hyb(cf_hyb)
+    phase_hyb, Q = block_diagonalize_hyb(hyb)
 
     phase_blocks = get_block_structure(phase_hyb, tol=tol)
     phase_identical_blocks = get_identical_blocks(
@@ -231,12 +222,6 @@ def fit_hyb(
         phase_blocks, phase_hyb, tol=tol
     )
 
-    if comm is None or comm.rank == 0:
-        with open("phase_hyb.npy", "wb") as f:
-            np.save(f, phase_hyb)
-            for block in phase_blocks:
-                block_idx = np.ix_(block, block)
-                np.save(f, phase_hyb[block_idx])
     if verbose:
         print(f"block structure : {phase_blocks}")
         print(f"identical blocks : {phase_identical_blocks}")
