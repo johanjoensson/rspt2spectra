@@ -233,8 +233,8 @@ def fit_hyb(
 
     n_orb = sum(len(block) for block in phase_blocks)
 
-    eb = np.empty((0,))
-    v = np.empty((0, n_orb), dtype=complex)
+    ebs = [np.empty((0,))] * n_orb
+    vs = [np.empty((0, n_orb), dtype=complex)] * n_orb
     inequivalent_blocks = []
     for blocks in phase_identical_blocks:
         unique = True
@@ -278,26 +278,48 @@ def fit_hyb(
             print(f"--> eb {block_eb}")
             print(f"--> v  {block_v}")
 
-        for b in phase_identical_blocks[equivalent_block_i]:
-            eb = np.append(eb, block_eb)
-            v_tmp = np.zeros((len(block_eb), n_orb), dtype=complex)
-            v_tmp[:, phase_blocks[b]] = block_v
-            v = np.append(v, v_tmp, axis=0)
+        n_block_orb = len(block)
+        for b in  phase_identical_blocks[equivalent_block_i]:
+            for i_orb, orb in enumerate(phase_blocks[b]):
+                ebs[orb] = np.append(ebs[orb], [block_eb[i_orb:: n_block_orb]])
+                v_tmp = np.zeros((len(block_eb) // n_block_orb, n_orb), dtype=complex)
+                v_tmp[:, phase_blocks[b]] = block_v[i_orb:: n_block_orb, :]
+                vs[orb] = np.append(vs[orb], v_tmp, axis=0)
+            # eb = np.append(eb, block_eb)
+            # v = np.append(v, v_tmp, axis=0)
         for b in phase_transposed_blocks[equivalent_block_i]:
-            eb = np.append(eb, block_eb)
-            v_tmp = np.zeros((len(block_eb), n_orb), dtype=complex)
-            v_tmp[:, phase_blocks[b]] = np.conj(block_v)
-            v = np.append(v, v_tmp, axis=0)
+            for i_orb, orb in enumerate(phase_blocks[b]):
+                ebs[orb] = np.append(ebs[orb], [block_eb[i_orb:: n_block_orb]])
+                v_tmp = np.zeros((len(block_eb) // n_block_orb, n_orb), dtype=complex)
+                v_tmp[:, phase_blocks[b]] = np.conj(block_v[i_orb:: n_block_orb, :])
+                vs[orb] = np.append(vs[orb], v_tmp, axis=0)
+            # eb = np.append(eb, block_eb)
+            # v_tmp = np.zeros((len(block_eb), n_orb), dtype=complex)
+            # v_tmp[:, phase_blocks[b]] = np.conj(block_v)
+            # v = np.append(v, v_tmp, axis=0)
         for b in phase_particle_hole_blocks[equivalent_block_i]:
-            eb = np.append(eb, -block_eb)
-            v_tmp = np.zeros((len(block_eb), n_orb), dtype=complex)
-            v_tmp[:, phase_blocks[b]] = block_v
-            v = np.append(v, v_tmp, axis=0)
+            for i_orb, orb in enumerate(phase_blocks[b]):
+                ebs[orb] = np.append(ebs[orb], [-block_eb[i_orb:: n_block_orb]])
+                v_tmp = np.zeros((len(block_eb) // n_block_orb, n_orb), dtype=complex)
+                v_tmp[:, phase_blocks[b]] = block_v[i_orb:: n_block_orb, :]
+                vs[orb] = np.append(vs[orb], v_tmp, axis=0)
+            # eb = np.append(eb, -block_eb)
+            # v_tmp = np.zeros((len(block_eb), n_orb), dtype=complex)
+            # v_tmp[:, phase_blocks[b]] = block_v
+            # v = np.append(v, v_tmp, axis=0)
         for b in phase_particle_hole_and_transpose_blocks[equivalent_block_i]:
-            eb = np.append(eb, -block_eb)
-            v_tmp = np.zeros((len(block_eb), n_orb), dtype=complex)
-            v_tmp[:, phase_blocks[b]] = np.conj(block_v)
-            v = np.append(v, v_tmp, axis=0)
+            for i_orb, orb in enumerate(phase_blocks[b]):
+                ebs[orb] = np.append(ebs[orb], [-block_eb[i_orb:: n_block_orb]])
+                v_tmp = np.zeros((len(block_eb) // n_block_orb, n_orb), dtype=complex)
+                v_tmp[:, phase_blocks[b]] = np.conj(block_v[i_orb:: n_block_orb, :])
+                vs[orb] = np.append(vs[orb], v_tmp, axis=0)
+            # eb = np.append(eb, -block_eb)
+            # v_tmp = np.zeros((len(block_eb), n_orb), dtype=complex)
+            # v_tmp[:, phase_blocks[b]] = np.conj(block_v)
+            # v = np.append(v, v_tmp, axis=0)
+        eb = np.concatenate(ebs, axis=0)
+        v = np.vstack(vs)
+
     # Transform hopping parameters back from the (close to) diagonal
     # basis to the spherical harmonics basis
     v = v @ np.conj(Q.T)
