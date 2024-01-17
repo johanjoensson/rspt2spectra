@@ -1010,6 +1010,7 @@ def merge_vs(vs):
 def get_v_and_eb(z, hyb, eb, gamma=0.0, imag_only=True, realvalue_v=False):
     n_imp = np.shape(hyb)[0]
     n_b = len(eb)
+    delta = np.imag(z[0])
     # Initialize hopping parameters.
     # Treat complex-valued parameters,
     # by doubling the number of parameters.
@@ -1026,7 +1027,7 @@ def get_v_and_eb(z, hyb, eb, gamma=0.0, imag_only=True, realvalue_v=False):
 
     def v_constraint(x, i):
         v = unroll(x[n_b:], n_b, n_imp)
-        return np.trace(np.real(np.conj(v[i : i + n_imp].T) @ v))
+        return 0 if np.trace(np.abs(v[i : i + n_imp]) ** 2) / delta < 1e-10 else 1
 
     def eb_constraint(x, i):
         return -(1 - np.exp(-np.abs(x[i])))
@@ -1042,7 +1043,7 @@ def get_v_and_eb(z, hyb, eb, gamma=0.0, imag_only=True, realvalue_v=False):
         fun,
         np.append(eb, v0),
         bounds=bounds,
-        # constraints=itertools.chain(v_constraints),
+        constraints=itertools.chain(v_constraints),
     )
 
     p = res.x

@@ -276,8 +276,9 @@ def fit_hyb(
             if np.any(v_mask[i : i + n_block_orb]):
                 masked_v = np.append(masked_v, block_v[i : i + n_block_orb], axis=0)
                 masked_eb = np.append(masked_eb, block_eb[i : i + n_block_orb])
-        block_eb = masked_eb
-        block_v = masked_v
+        sort_indices = np.argsort(masked_eb)
+        block_eb = masked_eb[sort_indices]
+        block_v = masked_v[sort_indices]
 
         if verbose:
             print(f"--> eb {block_eb}")
@@ -289,38 +290,24 @@ def fit_hyb(
                 v_tmp = np.zeros((len(block_eb) // n_block_orb, n_orb), dtype=complex)
                 v_tmp[:, phase_blocks[b]] = block_v[i_orb::n_block_orb, :]
                 vs[orb] = np.append(vs[orb], v_tmp, axis=0)
-            # eb = np.append(eb, block_eb)
-            # v = np.append(v, v_tmp, axis=0)
         for b in phase_transposed_blocks[equivalent_block_i]:
             for i_orb, orb in enumerate(phase_blocks[b]):
                 ebs[orb] = np.append(ebs[orb], [block_eb[i_orb::n_block_orb]])
                 v_tmp = np.zeros((len(block_eb) // n_block_orb, n_orb), dtype=complex)
                 v_tmp[:, phase_blocks[b]] = np.conj(block_v[i_orb::n_block_orb, :])
                 vs[orb] = np.append(vs[orb], v_tmp, axis=0)
-            # eb = np.append(eb, block_eb)
-            # v_tmp = np.zeros((len(block_eb), n_orb), dtype=complex)
-            # v_tmp[:, phase_blocks[b]] = np.conj(block_v)
-            # v = np.append(v, v_tmp, axis=0)
         for b in phase_particle_hole_blocks[equivalent_block_i]:
             for i_orb, orb in enumerate(phase_blocks[b]):
                 ebs[orb] = np.append(ebs[orb], [-block_eb[i_orb::n_block_orb]])
                 v_tmp = np.zeros((len(block_eb) // n_block_orb, n_orb), dtype=complex)
                 v_tmp[:, phase_blocks[b]] = block_v[i_orb::n_block_orb, :]
                 vs[orb] = np.append(vs[orb], v_tmp, axis=0)
-            # eb = np.append(eb, -block_eb)
-            # v_tmp = np.zeros((len(block_eb), n_orb), dtype=complex)
-            # v_tmp[:, phase_blocks[b]] = block_v
-            # v = np.append(v, v_tmp, axis=0)
         for b in phase_particle_hole_and_transpose_blocks[equivalent_block_i]:
             for i_orb, orb in enumerate(phase_blocks[b]):
                 ebs[orb] = np.append(ebs[orb], [-block_eb[i_orb::n_block_orb]])
                 v_tmp = np.zeros((len(block_eb) // n_block_orb, n_orb), dtype=complex)
                 v_tmp[:, phase_blocks[b]] = np.conj(block_v[i_orb::n_block_orb, :])
                 vs[orb] = np.append(vs[orb], v_tmp, axis=0)
-            # eb = np.append(eb, -block_eb)
-            # v_tmp = np.zeros((len(block_eb), n_orb), dtype=complex)
-            # v_tmp[:, phase_blocks[b]] = np.conj(block_v)
-            # v = np.append(v, v_tmp, axis=0)
         eb = np.concatenate(ebs, axis=0)
         v = np.vstack(vs)
 
@@ -328,9 +315,6 @@ def fit_hyb(
     # basis to the spherical harmonics basis
     v = v @ np.conj(Q.T)
 
-    # mask = np.any(np.abs(v) ** 2 / delta > 1e-5, axis=1)
-    # v = v[mask, :]
-    # eb = eb[mask]
     return eb, v
 
 
@@ -474,7 +458,7 @@ def fit_block_new(
     exp_weight=2,
 ):
     def weight(peak, widths):
-        return np.exp(-exp_weight * np.abs(w[peak] - w0) * widths)
+        return np.exp(-exp_weight * np.abs(w[peak] - w0)) * widths
 
     hyb_trace = -np.imag(np.sum(np.diagonal(hyb, axis1=0, axis2=1), axis=1))
     n_orb = hyb.shape[0]
