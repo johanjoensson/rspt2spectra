@@ -10,6 +10,7 @@ off-diagonal hybridization functions.
 
 """
 
+import itertools
 import matplotlib.pylab as plt
 import numpy as np
 from scipy.optimize import minimize
@@ -1017,7 +1018,32 @@ def get_v_and_eb(z, hyb, eb, gamma=0.0, imag_only=True, realvalue_v=False):
     def fun(p):
         return cost_function(p[n_b:], p[:n_b], z, hyb, gamma, imag_only, output="value")
 
-    res = minimize(fun, np.append(eb, v0))
+    # bath energies must be placed within the energy window
+    bounds = (
+        (min(np.real(z)), max(np.real(z))) if i < n_b else (None, None)
+        for i in range(len(eb) + len(v0))
+    )
+
+    def v_constraint(x, i):
+        v = unroll(x[n_b:], n_b, n_imp)
+        return np.trace(np.real(np.conj(v[i : i + n_imp].T) @ v))
+
+    def eb_constraint(x, i):
+        return -(1 - np.exp(-np.abs(x[i])))
+
+    v_constraints = (
+        {"type": "ineq", "fun": lambda x: v_constraint(x, i)}
+        for i in range(n_b, len(v0), n_imp)
+    )
+    eb_constraints = (
+        {"type": "ineq", "fun": lambda x: eb_constraint(x, i)} for i in range(n_b)
+    )
+    res = minimize(
+        fun,
+        np.append(eb, v0),
+        bounds=bounds,
+        # constraints=itertools.chain(v_constraints),
+    )
 
     p = res.x
     # Cost function value, with regularization.

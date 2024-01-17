@@ -1,9 +1,8 @@
-from .offdiagonal import get_v, get_v_new, get_hyb, get_v_and_eb
-import numpy as np
-from scipy.signal import find_peaks, find_peaks_cwt, peak_widths
+from .offdiagonal import get_v_new, get_hyb, get_v_and_eb
+from scipy.signal import find_peaks, peak_widths
 import matplotlib.pyplot as plt
 from mpi4py import MPI
-from math import ceil
+import numpy as np
 
 
 def block_diagonalize_hyb(hyb):
@@ -47,8 +46,7 @@ def get_block_structure(hyb, hamiltonian=None, tol=1e-6):
     if hamiltonian is None:
         hamiltonian = np.zeros((hyb.shape[0], hyb.shape[1]))
     max_val = np.abs(np.max(hyb))
-    mask = np.logical_or(np.any(np.abs(hyb) > tol, axis=2),
-                         np.abs(hamiltonian) > tol)
+    mask = np.logical_or(np.any(np.abs(hyb) > tol, axis=2), np.abs(hamiltonian) > tol)
 
     # Use the extracted mask to extract blocks
     from scipy.sparse import csr_matrix
@@ -98,7 +96,7 @@ def get_transposed_blocks(blocks, hyb, hamiltonian=None, tol=1e-6):
             continue
         transposed = []
         idx_i = np.ix_(block_i, block_i)
-        for jp, block_j in enumerate(blocks[i + 1:]):
+        for jp, block_j in enumerate(blocks[i + 1 :]):
             if len(block_i) != len(block_j):
                 continue
             j = i + jp + 1
@@ -133,12 +131,10 @@ def get_particle_hole_blocks(blocks, hyb, hamiltonian=None, tol=1e-6):
                 np.all(np.abs(np.real(hyb[idx_i] + hyb[idx_j])) < tol)
                 and np.all(np.abs(np.imag(hyb[idx_i] - hyb[idx_j])) < tol)
                 and np.all(
-                    np.abs(
-                        np.real(hamiltonian[idx_i] - hamiltonian[idx_j])) < tol
+                    np.abs(np.real(hamiltonian[idx_i] - hamiltonian[idx_j])) < tol
                 )
                 and np.all(
-                    np.abs(
-                        np.imag(hamiltonian[idx_i] - hamiltonian[idx_j])) < tol
+                    np.abs(np.imag(hamiltonian[idx_i] - hamiltonian[idx_j])) < tol
                 )
             ):
                 particle_hole.append(j)
@@ -211,10 +207,8 @@ def fit_hyb(
     phase_hyb, Q = block_diagonalize_hyb(hyb)
 
     phase_blocks = get_block_structure(phase_hyb, tol=tol)
-    phase_identical_blocks = get_identical_blocks(
-        phase_blocks, phase_hyb, tol=tol)
-    phase_transposed_blocks = get_transposed_blocks(
-        phase_blocks, phase_hyb, tol=tol)
+    phase_identical_blocks = get_identical_blocks(phase_blocks, phase_hyb, tol=tol)
+    phase_transposed_blocks = get_transposed_blocks(phase_blocks, phase_hyb, tol=tol)
     phase_particle_hole_blocks = get_particle_hole_blocks(
         phase_blocks, phase_hyb, tol=tol
     )
@@ -261,7 +255,7 @@ def fit_hyb(
         realvalue_v = np.all(
             np.abs(block_hyb - np.transpose(block_hyb, (1, 0, 2))) < 1e-6
         )
-        block_eb, block_v = fit_block(
+        block_eb, block_v = fit_block_new(
             block_hyb[:, :, mask],
             w[mask],
             delta,
@@ -274,24 +268,34 @@ def fit_hyb(
             new_v=new_v,
             exp_weight=exp_weight,
         )
+        n_block_orb = len(block)
+        v_mask = np.abs(block_v) ** 2 / delta > 1e-10
+        masked_v = np.empty((0, block_v.shape[1]), dtype=complex)
+        masked_eb = np.empty((0,), dtype=float)
+        for i in range(0, block_v.shape[0], n_block_orb):
+            if np.any(v_mask[i : i + n_block_orb]):
+                masked_v = np.append(masked_v, block_v[i : i + n_block_orb], axis=0)
+                masked_eb = np.append(masked_eb, block_eb[i : i + n_block_orb])
+        block_eb = masked_eb
+        block_v = masked_v
+
         if verbose:
             print(f"--> eb {block_eb}")
             print(f"--> v  {block_v}")
 
-        n_block_orb = len(block)
-        for b in  phase_identical_blocks[equivalent_block_i]:
+        for b in phase_identical_blocks[equivalent_block_i]:
             for i_orb, orb in enumerate(phase_blocks[b]):
-                ebs[orb] = np.append(ebs[orb], [block_eb[i_orb:: n_block_orb]])
+                ebs[orb] = np.append(ebs[orb], [block_eb[i_orb::n_block_orb]])
                 v_tmp = np.zeros((len(block_eb) // n_block_orb, n_orb), dtype=complex)
-                v_tmp[:, phase_blocks[b]] = block_v[i_orb:: n_block_orb, :]
+                v_tmp[:, phase_blocks[b]] = block_v[i_orb::n_block_orb, :]
                 vs[orb] = np.append(vs[orb], v_tmp, axis=0)
             # eb = np.append(eb, block_eb)
             # v = np.append(v, v_tmp, axis=0)
         for b in phase_transposed_blocks[equivalent_block_i]:
             for i_orb, orb in enumerate(phase_blocks[b]):
-                ebs[orb] = np.append(ebs[orb], [block_eb[i_orb:: n_block_orb]])
+                ebs[orb] = np.append(ebs[orb], [block_eb[i_orb::n_block_orb]])
                 v_tmp = np.zeros((len(block_eb) // n_block_orb, n_orb), dtype=complex)
-                v_tmp[:, phase_blocks[b]] = np.conj(block_v[i_orb:: n_block_orb, :])
+                v_tmp[:, phase_blocks[b]] = np.conj(block_v[i_orb::n_block_orb, :])
                 vs[orb] = np.append(vs[orb], v_tmp, axis=0)
             # eb = np.append(eb, block_eb)
             # v_tmp = np.zeros((len(block_eb), n_orb), dtype=complex)
@@ -299,9 +303,9 @@ def fit_hyb(
             # v = np.append(v, v_tmp, axis=0)
         for b in phase_particle_hole_blocks[equivalent_block_i]:
             for i_orb, orb in enumerate(phase_blocks[b]):
-                ebs[orb] = np.append(ebs[orb], [-block_eb[i_orb:: n_block_orb]])
+                ebs[orb] = np.append(ebs[orb], [-block_eb[i_orb::n_block_orb]])
                 v_tmp = np.zeros((len(block_eb) // n_block_orb, n_orb), dtype=complex)
-                v_tmp[:, phase_blocks[b]] = block_v[i_orb:: n_block_orb, :]
+                v_tmp[:, phase_blocks[b]] = block_v[i_orb::n_block_orb, :]
                 vs[orb] = np.append(vs[orb], v_tmp, axis=0)
             # eb = np.append(eb, -block_eb)
             # v_tmp = np.zeros((len(block_eb), n_orb), dtype=complex)
@@ -309,9 +313,9 @@ def fit_hyb(
             # v = np.append(v, v_tmp, axis=0)
         for b in phase_particle_hole_and_transpose_blocks[equivalent_block_i]:
             for i_orb, orb in enumerate(phase_blocks[b]):
-                ebs[orb] = np.append(ebs[orb], [-block_eb[i_orb:: n_block_orb]])
+                ebs[orb] = np.append(ebs[orb], [-block_eb[i_orb::n_block_orb]])
                 v_tmp = np.zeros((len(block_eb) // n_block_orb, n_orb), dtype=complex)
-                v_tmp[:, phase_blocks[b]] = np.conj(block_v[i_orb:: n_block_orb, :])
+                v_tmp[:, phase_blocks[b]] = np.conj(block_v[i_orb::n_block_orb, :])
                 vs[orb] = np.append(vs[orb], v_tmp, axis=0)
             # eb = np.append(eb, -block_eb)
             # v_tmp = np.zeros((len(block_eb), n_orb), dtype=complex)
@@ -324,9 +328,9 @@ def fit_hyb(
     # basis to the spherical harmonics basis
     v = v @ np.conj(Q.T)
 
-    mask = np.any(np.abs(v) ** 2 / delta > 1e-8, axis=1)
-    v = v[mask, :]
-    eb = eb[mask]
+    # mask = np.any(np.abs(v) ** 2 / delta > 1e-5, axis=1)
+    # v = v[mask, :]
+    # eb = eb[mask]
     return eb, v
 
 
@@ -369,8 +373,7 @@ def fit_block(
     found_bath_states = 0
     fit_hyb = np.zeros_like(hyb)
     while found_bath_states < n_bath_states:
-        fit_trace = - \
-            np.imag(np.sum(np.diagonal(fit_hyb, axis1=0, axis2=1), axis=1))
+        fit_trace = -np.imag(np.sum(np.diagonal(fit_hyb, axis1=0, axis2=1), axis=1))
         peaks, _ = find_peaks(
             hyb_trace - fit_trace,
             distance=int(delta / de),
@@ -383,7 +386,7 @@ def fit_block(
         n_b = min(
             len(sorted_energies) - 1, (n_bath_states - found_bath_states) // n_orb
         )
-        bath_energies[found_bath_states: found_bath_states + n_b * n_orb] = np.repeat(
+        bath_energies[found_bath_states : found_bath_states + n_b * n_orb] = np.repeat(
             sorted_energies[-n_b:], n_orb
         )
         peak_min = min(np.min(hyb_trace[sorted_peaks[-n_b:]]), peak_min)
@@ -400,7 +403,10 @@ def fit_block(
             )
             try_again = np.any(
                 [
-                    np.all(n_orb*np.abs(v[i: i + n_orb, :]) ** 2 / delta < 1e-4*peak_min)
+                    np.all(
+                        n_orb * np.abs(v[i : i + n_orb, :]) ** 2 / delta
+                        < 1e-4 * peak_min
+                    )
                     for i in range(0, v.shape[0], n_orb)
                 ]
             )
@@ -408,7 +414,7 @@ def fit_block(
     v_best = v
     min_cost = np.abs(cost)
 
-    for _ in range(min(10 // world_size, 2)):
+    for _ in range(max(10 // world_size, 2)):
         try_again = True
         while try_again:
             v, cost = get_v_new(
@@ -421,7 +427,7 @@ def fit_block(
             )
             try_again = np.any(
                 [
-                    np.all(n_orb*np.abs(v[i: i + n_orb, :]) ** 2 < 1e-4*peak_min)
+                    np.all(n_orb * np.abs(v[i : i + n_orb, :]) ** 2 < 1e-4 * peak_min)
                     for i in range(0, v.shape[0], n_orb)
                 ]
             )
@@ -430,7 +436,8 @@ def fit_block(
             min_cost = abs(cost)
     if comm is not None:
         bath_energies, v, _ = comm.allreduce(
-            (bath_energies, v_best, min_cost), op=v_opt_op)
+            (bath_energies, v_best, min_cost), op=v_opt_op
+        )
 
     # if comm is None or comm.rank == 0:
     #     fit_hyb = get_hyb(w + delta * 1j, bath_energies[:found_bath_states], v)
@@ -466,32 +473,51 @@ def fit_block_new(
     new_v=False,
     exp_weight=2,
 ):
-    def weight(peak):
-        return np.exp(-exp_weight * np.abs(w[peak] - w0))
+    def weight(peak, widths):
+        return np.exp(-exp_weight * np.abs(w[peak] - w0) * widths)
 
     hyb_trace = -np.imag(np.sum(np.diagonal(hyb, axis1=0, axis2=1), axis=1))
     n_orb = hyb.shape[0]
     de = w[1] - w[0]
-    peaks, _ = find_peaks(
+    peaks, info = find_peaks(
         hyb_trace,
-        # distance=int(delta / de),
-        # width=int(delta / de),
+        width=int(delta / de),
     )
-    n_b = min(len(peaks), bath_states_per_orbital)
-    sorted_energies = (w[-1] - w[0])*np.random.rand(bath_states_per_orbital) + w[0]
-    scores = weight(peaks) * hyb_trace[peaks]
+    left_peak_boundaries = np.floor(info["left_ips"]).astype(int)
+    right_peak_boundaries = np.ceil(info["left_ips"]).astype(int)
+    scores = (
+        weight(peaks, (right_peak_boundaries - left_peak_boundaries) * de)
+        * hyb_trace[peaks]
+    )
     sorted_indices = np.argsort(scores)
     sorted_peaks = peaks[sorted_indices]
-    print(f"{len(peaks)=}")
-    print(f"{len(sorted_peaks)=}", flush=True)
-    sorted_energies[:n_b] = w[sorted_peaks][-n_b:]
-    bath_energies = np.repeat(
-            sorted_energies, n_orb
-        )
+    sorted_left_peak_boundaries = left_peak_boundaries[sorted_indices]
+    sorted_right_peak_boundaries = right_peak_boundaries[sorted_indices]
+    peak_weights = scores / np.sum(scores)
+    sorted_peak_weights = peak_weights[sorted_indices]
 
-    print(f"bath_guess={bath_energies}")
+    baths_per_peak = (sorted_peak_weights * bath_states_per_orbital).astype(int)
+    if np.sum(baths_per_peak) < bath_states_per_orbital:
+        remainder = bath_states_per_orbital - np.sum(baths_per_peak)
+        baths_per_peak += remainder // len(baths_per_peak)
+        remainder -= remainder // len(baths_per_peak)
+        baths_per_peak[-remainder % len(baths_per_peak) :] += 1
+
     min_cost = np.inf
-    for _ in range(10):
+    for _ in range(max(100 // comm.size, 2) if comm is not None else 100):
+        sorted_energies = np.empty((np.sum(baths_per_peak)), dtype=float)
+        offset = 0
+        for peak, lower, upper, n_b in zip(
+            sorted_peaks,
+            sorted_left_peak_boundaries,
+            sorted_right_peak_boundaries,
+            baths_per_peak,
+        ):
+            sorted_energies[offset : offset + n_b] = np.random.normal(
+                loc=w[peak], scale=w[upper] - w[lower], size=(n_b)
+            )
+            offset += n_b
+        bath_energies = np.repeat(sorted_energies, n_orb)
         v, eb, cost = get_v_and_eb(
             w + delta * 1j,
             hyb,
@@ -504,32 +530,9 @@ def fit_block_new(
             eb_best = eb
             v_best = v
             min_cost = abs(cost)
-
     if comm is not None:
-        bath_energies, v, _ = comm.allreduce(
-            (eb_best, v_best, min_cost), op=v_opt_op)
+        bath_energies, v, _ = comm.allreduce((eb_best, v_best, min_cost), op=v_opt_op)
     mask = np.logical_and(bath_energies >= w[0], bath_energies <= w[-1])
     bath_energies = bath_energies[mask]
     v = v[mask]
-    print(f"{(w[0], w[-1])=}")
-    print(f"{mask=}")
-    print(f"{bath_energies=}")
-    print(f"{v=}", flush=True)
-
-    # if comm is None or comm.rank == 0:
-    #     fit_hyb = get_hyb(w + delta * 1j, bath_energies, v)
-    #     fig, ax = plt.subplots(
-    #         nrows=n_orb, ncols=n_orb, squeeze=False, sharex='all', sharey='all')
-    #     for i in range(n_orb):
-    #         for j in range(n_orb):
-    #             ax[i, j].plot(w, -np.imag(hyb[i, j, :]), color='tab:blue')
-    #             ax[i, j].plot(w, -np.imag(fit_hyb[i, j, :]),
-    #                           color='tab:orange')
-    #             ax[i, j].vlines(bath_energies, 0, -np.min(
-    #                 np.imag(fit_hyb[i, j, :])), linestyles='dashed', colors='tab:gray')
-    #             ax[i, j].hlines(hyb_trace[sorted_peaks[-n_b:]], w[0], w[-1],
-    #                             linestyles='dashed', colors='tab:gray')
-    #     plt.ylim(bottom=-np.max(-np.imag(np.diagonal(hyb, axis1=0, axis2=1))),
-    #              top=np.max(-np.imag(np.diagonal(hyb, axis1=0, axis2=1))))
-    #     plt.show()
     return bath_energies, v
