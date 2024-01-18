@@ -13,7 +13,7 @@ off-diagonal hybridization functions.
 import itertools
 import matplotlib.pylab as plt
 import numpy as np
-from scipy.optimize import minimize
+from scipy.optimize import minimize, NonlinearConstraint
 
 from time import perf_counter
 
@@ -555,7 +555,7 @@ def get_p0(z, hyb, eb, gamma, imag_only, realvalue_v):
     n_imp = np.shape(hyb)[0]
     n_b = len(eb)
     if n_imp == 1:
-        return 2 * np.random.randn(n_b if realvalue_v else 2 * n_b)
+        return np.random.randn(n_b if realvalue_v else 2 * n_b)
     # Initialize hopping parameters.
     # Treat complex-valued parameters,
     # by doubling the number of parameters.
@@ -588,9 +588,9 @@ def get_p0(z, hyb, eb, gamma, imag_only, realvalue_v):
                     output="gradient",
                 )
                 # Minimize cost function
-                res = minimize(fun, p0, jac=jac, tol=1e-3)
+                res = minimize(fun, p0, jac=jac, tol=1e-5)
             else:
-                res = minimize(fun, p0, tol=1e-3)
+                res = minimize(fun, p0, tol=1e-5)
             # v = unroll(res.x, 1, 1).reshape((1,))
             v = unroll(res.x, n_b // n_imp, 1).reshape((n_b // n_imp,))
             v0[i::n_imp, j] = v
@@ -1009,15 +1009,23 @@ def merge_vs(vs):
 
 def get_v_and_eb(z, hyb, eb, gamma=0.0, imag_only=True, realvalue_v=False):
     n_imp = np.shape(hyb)[0]
-    n_b = len(eb)
+    n_b = len(eb) * n_imp
     delta = np.imag(z[0])
     # Initialize hopping parameters.
     # Treat complex-valued parameters,
     # by doubling the number of parameters.
-    v0 = get_p0(z, hyb, eb, gamma, imag_only, realvalue_v)
+    v0 = get_p0(z, hyb, np.repeat(eb, n_imp), gamma, imag_only, realvalue_v)
 
     def fun(p):
-        return cost_function(p[n_b:], p[:n_b], z, hyb, gamma, imag_only, output="value")
+        return cost_function(
+            p[len(eb) :],
+            np.repeat(p[: len(eb)], n_imp),
+            z,
+            hyb,
+            gamma,
+            imag_only,
+            output="value",
+        )
 
     # bath energies must be placed within the energy window
     bounds = (
@@ -1025,33 +1033,36 @@ def get_v_and_eb(z, hyb, eb, gamma=0.0, imag_only=True, realvalue_v=False):
         for i in range(len(eb) + len(v0))
     )
 
-    def v_constraint(x, i):
-        v = unroll(x[n_b:], n_b, n_imp)
-        return 0 if np.trace(np.abs(v[i : i + n_imp]) ** 2) / delta < 1e-10 else 1
+    def v_constraint(x):
+        v = unroll(x[len(eb) :], n_b, n_imp)
+        return np.array(
+            [
+                np.real(np.trace(np.conj(v[i : i + n_imp]).T @ v[i : i + n_imp]))
+                / delta
+                for i in range(len(eb), len(x), n_imp)
+            ]
+        )
 
-    def eb_constraint(x, i):
-        return -(1 - np.exp(-np.abs(x[i])))
+    v_constraints = NonlinearConstraint(v_constraint, 1e-8, np.inf)
 
-    v_constraints = (
-        {"type": "ineq", "fun": lambda x: v_constraint(x, i)}
-        for i in range(n_b, len(v0), n_imp)
-    )
-    eb_constraints = (
-        {"type": "ineq", "fun": lambda x: eb_constraint(x, i)} for i in range(n_b)
-    )
     res = minimize(
         fun,
         np.append(eb, v0),
         bounds=bounds,
-        constraints=itertools.chain(v_constraints),
+        # constraints=v_constraints,
     )
 
     p = res.x
     # Cost function value, with regularization.
     c = cost_function(
-        p[n_b:], p[:n_b], z, hyb, only_imag_part=imag_only, output="value"
+        p[len(eb) :],
+        np.repeat(p[: len(eb)], n_imp),
+        z,
+        hyb,
+        only_imag_part=imag_only,
+        output="value",
     )
     # Convert hopping parameters to physical shape.
-    eb = p[:n_b]
-    v = unroll(p[n_b:], n_b, n_imp)
+    eb = p[: len(eb)]
+    v = unroll(p[len(eb) :], n_b, n_imp)
     return v, eb, c

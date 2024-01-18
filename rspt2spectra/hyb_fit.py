@@ -276,9 +276,8 @@ def fit_hyb(
             if np.any(v_mask[i : i + n_block_orb]):
                 masked_v = np.append(masked_v, block_v[i : i + n_block_orb], axis=0)
                 masked_eb = np.append(masked_eb, block_eb[i : i + n_block_orb])
-        sort_indices = np.argsort(masked_eb)
-        block_eb = masked_eb[sort_indices]
-        block_v = masked_v[sort_indices]
+        block_eb = masked_eb
+        block_v = masked_v
 
         if verbose:
             print(f"--> eb {block_eb}")
@@ -314,12 +313,16 @@ def fit_hyb(
     # Transform hopping parameters back from the (close to) diagonal
     # basis to the spherical harmonics basis
     v = v @ np.conj(Q.T)
+    # Sort bath states, it is important for impurityModel that all unoccupied states come after the occupied states
+    # sort_indices = np.argsort(eb, kind="stable")
+    # eb = eb[sort_indices]
+    # v = v[sort_indices]
 
     return eb, v
 
 
-def v_opt(a, b, datatype):
-    return a if a[-1] <= b[-1] else b
+def v_opt(a, b, _):
+    return a if abs(a[-1]) <= abs(b[-1]) else b
 
 
 v_opt_op = MPI.Op.Create(v_opt, commute=True)
@@ -458,7 +461,7 @@ def fit_block_new(
     exp_weight=2,
 ):
     def weight(peak, widths):
-        return np.exp(-exp_weight * np.abs(w[peak] - w0)) * widths
+        return np.exp(-exp_weight * np.abs(w[peak] - w0)) * widths / 2
 
     hyb_trace = -np.imag(np.sum(np.diagonal(hyb, axis1=0, axis2=1), axis=1))
     n_orb = hyb.shape[0]
@@ -488,8 +491,9 @@ def fit_block_new(
         baths_per_peak[-remainder % len(baths_per_peak) :] += 1
 
     min_cost = np.inf
-    for _ in range(max(100 // comm.size, 2) if comm is not None else 100):
-        sorted_energies = np.empty((np.sum(baths_per_peak)), dtype=float)
+    # for _ in range(1):
+    for _ in range(max(500 // comm.size, 2) if comm is not None else 100):
+        bath_energies = np.empty((np.sum(baths_per_peak)), dtype=float)
         offset = 0
         for peak, lower, upper, n_b in zip(
             sorted_peaks,
@@ -497,11 +501,11 @@ def fit_block_new(
             sorted_right_peak_boundaries,
             baths_per_peak,
         ):
-            sorted_energies[offset : offset + n_b] = np.random.normal(
-                loc=w[peak], scale=w[upper] - w[lower], size=(n_b)
+            bath_energies[offset : offset + n_b] = np.random.normal(
+                loc=w[peak], scale=(w[upper] - w[lower]) * 2, size=(n_b)
             )
             offset += n_b
-        bath_energies = np.repeat(sorted_energies, n_orb)
+        # bath_energies = np.repeat(sorted_energies, n_orb)
         v, eb, cost = get_v_and_eb(
             w + delta * 1j,
             hyb,
@@ -516,7 +520,7 @@ def fit_block_new(
             min_cost = abs(cost)
     if comm is not None:
         bath_energies, v, _ = comm.allreduce((eb_best, v_best, min_cost), op=v_opt_op)
-    mask = np.logical_and(bath_energies >= w[0], bath_energies <= w[-1])
-    bath_energies = bath_energies[mask]
-    v = v[mask]
-    return bath_energies, v
+    # mask = np.logical_and(bath_energies >= w[0], bath_energies <= w[-1])
+    # bath_energies = bath_energies[mask]
+    # v = v[mask]
+    return np.repeat(bath_energies, n_orb), v
