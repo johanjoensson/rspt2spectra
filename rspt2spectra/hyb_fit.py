@@ -196,6 +196,8 @@ def fit_hyb(
     eb          -- Bath energies
     v           -- Hopping parameters
     """
+    if bath_states_per_orbital == 0:
+        return np.empty((0,)), np.empty((0, hyb.shape[0]), dtype=complex)
     if x_lim is not None:
         mask = np.logical_and(w >= x_lim[0], w <= x_lim[1])
     else:
