@@ -499,7 +499,7 @@ def fit_block_new(
 
     min_cost = np.inf
     # for _ in range(1):
-    for _ in range(max(800 // comm.size, 2) if comm is not None else 100):
+    for _ in range(max(200 // comm.size, 2) if comm is not None else 100):
         bath_energies = np.empty((np.sum(baths_per_peak)), dtype=float)
         offset = 0
         for peak, lower, upper, n_b in zip(
