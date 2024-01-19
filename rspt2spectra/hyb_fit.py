@@ -178,7 +178,7 @@ def fit_hyb(
     verbose=True,
     comm=None,
     new_v=False,
-    exp_weight=2,
+    exp_weight=1,
 ):
     """
     Calculate the bath energies and hopping parameters for fitting the
@@ -271,15 +271,15 @@ def fit_hyb(
             exp_weight=exp_weight,
         )
         n_block_orb = len(block)
-        v_mask = np.abs(block_v) ** 2 / delta > 1e-10
-        masked_v = np.empty((0, block_v.shape[1]), dtype=complex)
-        masked_eb = np.empty((0,), dtype=float)
-        for i in range(0, block_v.shape[0], n_block_orb):
-            if np.any(v_mask[i : i + n_block_orb]):
-                masked_v = np.append(masked_v, block_v[i : i + n_block_orb], axis=0)
-                masked_eb = np.append(masked_eb, block_eb[i : i + n_block_orb])
-        block_eb = masked_eb
-        block_v = masked_v
+        # v_mask = np.abs(block_v) ** 2 / delta > 0
+        # masked_v = np.empty((0, block_v.shape[1]), dtype=complex)
+        # masked_eb = np.empty((0,), dtype=float)
+        # for i in range(0, block_v.shape[0], n_block_orb):
+        #     if np.all(v_mask[i : i + n_block_orb]):
+        #         masked_v = np.append(masked_v, block_v[i : i + n_block_orb], axis=0)
+        #         masked_eb = np.append(masked_eb, block_eb[i : i + n_block_orb])
+        # block_eb = masked_eb
+        # block_v = masked_v
 
         if verbose:
             print(f"--> eb {block_eb}")
@@ -462,21 +462,24 @@ def fit_block_new(
     new_v=False,
     exp_weight=2,
 ):
-    def weight(peak, widths):
-        return np.exp(-exp_weight * np.abs(w[peak] - w0)) * widths / 2
+    def weight(peak):
+        return np.exp(-exp_weight * np.abs(w[peak] - w0))
 
     hyb_trace = -np.imag(np.sum(np.diagonal(hyb, axis1=0, axis2=1), axis=1))
     n_orb = hyb.shape[0]
     de = w[1] - w[0]
     peaks, info = find_peaks(
         hyb_trace,
-        width=int(delta / de),
+        width=max(int(delta / de), 1),
     )
     left_peak_boundaries = np.floor(info["left_ips"]).astype(int)
     right_peak_boundaries = np.ceil(info["left_ips"]).astype(int)
     scores = (
-        weight(peaks, (right_peak_boundaries - left_peak_boundaries) * de)
+        weight(peaks)
         * hyb_trace[peaks]
+        # * (right_peak_boundaries - left_peak_boundaries)
+        # * de
+        # / (w[-1] - w[0])
     )
     sorted_indices = np.argsort(scores)
     sorted_peaks = peaks[sorted_indices]
@@ -486,15 +489,17 @@ def fit_block_new(
     sorted_peak_weights = peak_weights[sorted_indices]
 
     baths_per_peak = (sorted_peak_weights * bath_states_per_orbital).astype(int)
-    if np.sum(baths_per_peak) < bath_states_per_orbital:
-        remainder = bath_states_per_orbital - np.sum(baths_per_peak)
+    remainder = bath_states_per_orbital - np.sum(baths_per_peak)
+    if remainder > 0:
+        # divide remaining bath states evenly among the peaks
         baths_per_peak += remainder // len(baths_per_peak)
         remainder -= remainder // len(baths_per_peak)
+        # Give any remaining bath states to the peaks with the highest scoress
         baths_per_peak[-remainder % len(baths_per_peak) :] += 1
 
     min_cost = np.inf
     # for _ in range(1):
-    for _ in range(max(500 // comm.size, 2) if comm is not None else 100):
+    for _ in range(max(800 // comm.size, 2) if comm is not None else 100):
         bath_energies = np.empty((np.sum(baths_per_peak)), dtype=float)
         offset = 0
         for peak, lower, upper, n_b in zip(
@@ -504,7 +509,7 @@ def fit_block_new(
             baths_per_peak,
         ):
             bath_energies[offset : offset + n_b] = np.random.normal(
-                loc=w[peak], scale=(w[upper] - w[lower]) * 2, size=(n_b)
+                loc=w[peak], scale=2 * (w[upper] - w[lower]), size=(n_b)
             )
             offset += n_b
         # bath_energies = np.repeat(sorted_energies, n_orb)
@@ -522,7 +527,4 @@ def fit_block_new(
             min_cost = abs(cost)
     if comm is not None:
         bath_energies, v, _ = comm.allreduce((eb_best, v_best, min_cost), op=v_opt_op)
-    # mask = np.logical_and(bath_energies >= w[0], bath_energies <= w[-1])
-    # bath_energies = bath_energies[mask]
-    # v = v[mask]
     return np.repeat(bath_energies, n_orb), v
