@@ -831,6 +831,7 @@ def cost_function(
     if regularization_mode == "L1":
         # L1-regularization
         c += gamma / len(p) * np.sum(np.abs(p))
+        c += gamma / len(eb) * np.sum(np.abs(eb))
     elif regularization_mode == "L2":
         # L2-regularization
         c += gamma / (2 * len(p)) * np.sum(p**2)
@@ -1007,10 +1008,11 @@ def merge_vs(vs):
     return v
 
 
-def get_v_and_eb(z, hyb, eb, gamma=0.0, imag_only=True, realvalue_v=False):
+def get_v_and_eb(z, hyb, eb, eb_bounds, gamma=0.0, imag_only=True, realvalue_v=False):
     n_imp = np.shape(hyb)[0]
     n_b = len(eb) * n_imp
     delta = np.imag(z[0])
+    de = np.real(z[1] - z[0])
     # Initialize hopping parameters.
     # Treat complex-valued parameters,
     # by doubling the number of parameters.
@@ -1029,7 +1031,8 @@ def get_v_and_eb(z, hyb, eb, gamma=0.0, imag_only=True, realvalue_v=False):
 
     # bath energies must be placed within the energy window
     bounds = (
-        (min(np.real(z)), max(np.real(z))) if i < n_b else (None, None)
+        eb_bounds[i] if i < len(eb) else (None, None)
+        # (min(np.real(z)), max(np.real(z))) if i < n_b else (None, None)
         for i in range(len(eb) + len(v0))
     )
 

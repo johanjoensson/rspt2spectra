@@ -178,7 +178,7 @@ def fit_hyb(
     verbose=True,
     comm=None,
     new_v=False,
-    exp_weight=1,
+    exp_weight=2,
 ):
     """
     Calculate the bath energies and hopping parameters for fitting the
@@ -197,7 +197,7 @@ def fit_hyb(
     v           -- Hopping parameters
     """
     if bath_states_per_orbital == 0:
-        return np.empty((0,)), np.empty((0, hyb.shape[0]), dtype=complex)
+        return np.empty((0,), dtype=float), np.empty((0, hyb.shape[1]), dtype=complex)
     if x_lim is not None:
         mask = np.logical_and(w >= x_lim[0], w <= x_lim[1])
     else:
@@ -474,49 +474,90 @@ def fit_block_new(
     )
     left_peak_boundaries = np.floor(info["left_ips"]).astype(int)
     right_peak_boundaries = np.ceil(info["left_ips"]).astype(int)
-    scores = (
-        weight(peaks)
-        * hyb_trace[peaks]
-        # * (right_peak_boundaries - left_peak_boundaries)
-        # * de
-        # / (w[-1] - w[0])
-    )
-    sorted_indices = np.argsort(scores)
-    sorted_peaks = peaks[sorted_indices]
-    sorted_left_peak_boundaries = left_peak_boundaries[sorted_indices]
-    sorted_right_peak_boundaries = right_peak_boundaries[sorted_indices]
-    peak_weights = scores / np.sum(scores)
-    sorted_peak_weights = peak_weights[sorted_indices]
+    scores = weight(peaks) * hyb_trace[peaks]
 
-    baths_per_peak = (sorted_peak_weights * bath_states_per_orbital).astype(int)
-    remainder = bath_states_per_orbital - np.sum(baths_per_peak)
-    if remainder > 0:
-        # divide remaining bath states evenly among the peaks
-        baths_per_peak += remainder // len(baths_per_peak)
-        remainder -= remainder // len(baths_per_peak)
-        # Give any remaining bath states to the peaks with the highest scoress
-        baths_per_peak[-remainder % len(baths_per_peak) :] += 1
+    peak_weights = scores / np.sum(scores)
+    bath_density = peak_weights * bath_states_per_orbital
+    sorted_indices = np.argsort(bath_density)
+    sorted_peaks = peaks[sorted_indices]
+    density_mask = bath_density > 0.2
+    if not any(density_mask):
+        if len(sorted_peaks) < 2:
+            lower_bound = w[0]
+            upper_bound = w[1]
+        else:
+            lower_bound = np.min(w[sorted_peaks][-2:])
+            upper_bound = np.max(w[sorted_peaks][-2:])
+    else:
+        lower_bound = np.min(w[peaks[density_mask]])
+        upper_bound = np.max(w[peaks[density_mask]])
+    # sorted_left_peak_boundaries = left_peak_boundaries[sorted_indices]
+    # sorted_right_peak_boundaries = right_peak_boundaries[sorted_indices]
+    # peak_weights = scores / np.sum(scores)
+    # sorted_peak_weights = peak_weights[sorted_indices]
+
+    # baths_per_peak = np.ceil(sorted_peak_weights * bath_states_per_orbital).astype(int)
+    # mask = list(
+    #     reversed(
+    #         [
+    #             sum(baths_per_peak[-i:]) > bath_states_per_orbital
+    #             for i in range(1, len(baths_per_peak) + 1)
+    #         ]
+    #     )
+    # )
+    # baths_per_peak[mask] = 0
+
+    # peak_mask = baths_per_peak > 0
+    # lower_bound_index = np.argmin(w[sorted_peaks[peak_mask]])
+    # upper_bound_index = np.argmax(w[sorted_peaks[peak_mask]])
+    # spread_low = (
+    #     w[sorted_right_peak_boundaries[peak_mask][lower_bound_index]]
+    #     - w[sorted_left_peak_boundaries[peak_mask][lower_bound_index]]
+    # )
+    # spread_high = (
+    #     w[sorted_right_peak_boundaries[peak_mask][upper_bound_index]]
+    #     - w[sorted_left_peak_boundaries[peak_mask][upper_bound_index]]
+    # )
+    # lower_bound = w[sorted_peaks[peak_mask][lower_bound_index]] - spread_low / 2
+    # upper_bound = w[sorted_peaks[peak_mask][upper_bound_index]] - spread_high / 2
 
     min_cost = np.inf
-    # for _ in range(1):
     for _ in range(max(200 // comm.size, 2) if comm is not None else 100):
-        bath_energies = np.empty((np.sum(baths_per_peak)), dtype=float)
-        offset = 0
-        for peak, lower, upper, n_b in zip(
-            sorted_peaks,
-            sorted_left_peak_boundaries,
-            sorted_right_peak_boundaries,
-            baths_per_peak,
-        ):
-            bath_energies[offset : offset + n_b] = np.random.normal(
-                loc=w[peak], scale=2 * (w[upper] - w[lower]), size=(n_b)
-            )
-            offset += n_b
-        # bath_energies = np.repeat(sorted_energies, n_orb)
+        bath_energies = np.random.normal(
+            loc=w[sorted_peaks[-1]],
+            scale=(upper_bound - lower_bound),
+            size=(bath_states_per_orbital,),
+        )
+        outsiders = np.argwhere(
+            np.logical_or(bath_energies > w[-1], bath_energies < w[0])
+        )
+        bath_energies[outsiders[:, 0]] = (
+            np.random.rand(outsiders.shape[0]) * (upper_bound - lower_bound) / 2
+        )
+        # bath_energies = np.empty((np.sum(baths_per_peak)), dtype=float)
+        # bath_energy_bounds = []
+        # offset = 0
+        # for peak, lower, upper, n_b in zip(
+        #     sorted_peaks,
+        #     sorted_left_peak_boundaries,
+        #     sorted_right_peak_boundaries,
+        #     baths_per_peak,
+        # ):
+        #     spread = (w[upper] - w[lower]) / 2
+        #     bath_energies[offset : offset + n_b] = np.random.normal(
+        #         loc=w[peak], scale=spread, size=(n_b)
+        #     )
+        #     bath_energy_bounds.extend(
+        #         [(lower_bound, upper_bound)]
+        #         * n_b
+        #         # [(max(w[0], w[peak] - spread), min(w[-1], w[peak] + spread))] * n_b
+        #     )
+        #     offset += n_b
         v, eb, cost = get_v_and_eb(
             w + delta * 1j,
             hyb,
             bath_energies,
+            eb_bounds=[(lower_bound, upper_bound) for _ in bath_energies],
             gamma=gamma,
             imag_only=imag_only,
             realvalue_v=realvalue_v,
