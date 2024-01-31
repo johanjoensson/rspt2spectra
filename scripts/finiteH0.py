@@ -16,6 +16,7 @@ from rspt2spectra import offdiagonal
 from rspt2spectra import energies
 from rspt2spectra import h2imp
 from rspt2spectra import hyb_fit
+
 # Read input parameters from local file
 import rspt2spectra_parameters as r2s
 from mpi4py import MPI
@@ -30,24 +31,27 @@ assert np.shape(r2s.n_bath_sets_foreach_block_and_window)[1] == len(r2s.wborders
 
 # Help variables
 # Files for hybridization function
-file_re_hyb = 'real-hyb-' + r2s.basis_tag + '.dat'
-file_im_hyb = 'imag-hyb-' + r2s.basis_tag + '.dat'
+file_re_hyb = "real-hyb-" + r2s.basis_tag + ".dat"
+file_im_hyb = "imag-hyb-" + r2s.basis_tag + ".dat"
 # Name of RSPt's output file.
-outfile = 'out'
+outfile = "out"
 # Number of considered impurity orbitals
 n_imp = sum(len(block) for block in r2s.blocks)
 
 # Read RSPt's diagonal hybridization functions
-w, hyb_diagonal = readfile.hyb(file_re_hyb, file_im_hyb,
-                               only_diagonal_part=True)
+w, hyb_diagonal = readfile.hyb(file_re_hyb, file_im_hyb, only_diagonal_part=True)
 assert n_imp == np.shape(hyb_diagonal)[0]
 # All hybridization functions
 w, hyb = readfile.hyb(file_re_hyb, file_im_hyb)
 
 # Get unitary transformation matrix.
-rot_spherical = orbitals.get_u_transformation(np.shape(hyb)[0], r2s.basis_tag,
-                                  (n_imp//2-1)//2, irr_flag=r2s.irr_flag,
-                                  verbose_text=r2s.verbose_text)
+rot_spherical = orbitals.get_u_transformation(
+    np.shape(hyb)[0],
+    r2s.basis_tag,
+    (n_imp // 2 - 1) // 2,
+    irr_flag=r2s.irr_flag,
+    verbose_text=r2s.verbose_text,
+)
 corr_to_cf = np.identity(rot_spherical.shape[0])
 
 if r2s.verbose_fig and rank == 0:
@@ -74,65 +78,67 @@ eb, v = hyb_fit.fit_hyb(
     verbose=rank == 0,
     comm=comm,
     new_v=True,
-    exp_weight=2/eV,
+    exp_weight=2 / eV,
 )
 
 if rank == 0:
-    print('\n \n')
-    print('Bath state energies')
+    print("\n \n")
+    print("Bath state energies")
     print(np.array_str(eb, max_line_width=1000, precision=3, suppress_small=True))
-    print('Hopping parameters')
+    print("Hopping parameters")
     print(np.array_str(v, max_line_width=1000, precision=3, suppress_small=True))
-    print('Shape of bath state energies:', np.shape(eb))
-    print('Shape of hopping parameters:', np.shape(v))
+    print("Shape of bath state energies:", np.shape(eb))
+    print("Shape of hopping parameters:", np.shape(v))
 
 if r2s.verbose_fig and rank == 0:
     # Relative distribution of hopping parameters
     plt.figure()
-    plt.hist(np.abs(v).flatten()/np.max(np.abs(v)),bins=100)
-    plt.xlabel('|v|/max(|v|)')
-    #plt.show()
-    plt.savefig('hopping_distribution_rel.png')
+    plt.hist(np.abs(v).flatten() / np.max(np.abs(v)), bins=100)
+    plt.xlabel("|v|/max(|v|)")
+    # plt.show()
+    plt.savefig("hopping_distribution_rel.png")
     # Relative values of the hopping parameters
     plt.figure()
-    plt.plot(sorted(np.abs(v).flatten())/np.max(np.abs(v)),'-o')
-    plt.ylabel('|v|/max(|v|)')
-    #plt.show()
-    plt.savefig('hopping_values_rel.png')
+    plt.plot(sorted(np.abs(v).flatten()) / np.max(np.abs(v)), "-o")
+    plt.ylabel("|v|/max(|v|)")
+    # plt.show()
+    plt.savefig("hopping_values_rel.png")
 
     # Distribution of hopping parameters
     plt.figure()
-    plt.hist(np.abs(v).flatten(),bins=100)
-    plt.xlabel('|v|')
-    #plt.show()
-    plt.savefig('hopping_distribution.png')
+    plt.hist(np.abs(v).flatten(), bins=100)
+    plt.xlabel("|v|")
+    # plt.show()
+    plt.savefig("hopping_distribution.png")
     # Absolute values of the hopping parameters
     plt.figure()
-    plt.plot(sorted(np.abs(v).flatten()),'-o')
-    plt.ylabel('|v|')
-    #plt.show()
-    plt.savefig('hopping_values.png')
+    plt.plot(sorted(np.abs(v).flatten()), "-o")
+    plt.ylabel("|v|")
+    # plt.show()
+    plt.savefig("hopping_values.png")
 
 if rank == 0:
-    print('{:d} elements in v.'.format(v.size))
+    print("{:d} elements in v.".format(v.size))
     v_mean = np.mean(np.abs(v))
     v_median = np.median(np.abs(v))
-    print('<v> = ', v_mean)
-    print('v_median = ', v_median)
+    print("<v> = ", v_mean)
+    print("v_median = ", v_median)
     r_cutoff = 0.01
-    mask = np.abs(v) < r_cutoff*np.max(np.abs(v))
-    print('{:d} elements in v are smaller than {:.3f}*v_max.'.format(
-        v[mask].size, r_cutoff))
+    mask = np.abs(v) < r_cutoff * np.max(np.abs(v))
+    print(
+        "{:d} elements in v are smaller than {:.3f}*v_max.".format(
+            v[mask].size, r_cutoff
+        )
+    )
 
     # Check small non-zero values.
-    mask = np.logical_and(0 < np.abs(v), np.abs(v) < r_cutoff*np.max(np.abs(v)))
-    print('{:d} elements in v are close to zero (of {:d})'.format(
-        v[mask].size, v.size))
+    mask = np.logical_and(0 < np.abs(v), np.abs(v) < r_cutoff * np.max(np.abs(v)))
+    print("{:d} elements in v are close to zero (of {:d})".format(v[mask].size, v.size))
     # One might want to put these hopping parameters to zero.
-    #v[mask] = 0
+    # v[mask] = 0
 
-    #print('Absolut values of these elements:')
-    #print(sorted(np.abs(v[mask])))
+    # print('Absolut values of these elements:')
+    # print(sorted(np.abs(v[mask])))
 
 
 # Extract the impurity energies from the local Hamiltonian
@@ -145,30 +151,33 @@ for h, label in zip(hs, labels):
         if rank == 0:
             print("Extract local H0 from cluster:", label)
             print()
-        e_rspt = eV*(h - mu*np.eye(n_imp))
+        e_rspt = eV * (h - mu * np.eye(n_imp))
 eig, _ = np.linalg.eigh(e_rspt)
 if rank == 0:
     print("RSPt's local hamiltonian")
-    print(np.array_str(e_rspt, max_line_width=1000, precision=3,
-                       suppress_small=True))
+    print(np.array_str(e_rspt, max_line_width=1000, precision=3, suppress_small=True))
     print()
     print("Eigenvalues of RSPt's local Hamiltonian:")
     print(eig)
     print()
 
 # Construct the non-interacting Hamiltonian
-h = np.zeros((n_imp+len(eb),n_imp+len(eb)), dtype=complex)
+h = np.zeros((n_imp + len(eb), n_imp + len(eb)), dtype=complex)
 # Onsite energies of impurity orbitals
-h[:n_imp,:n_imp] = e_rspt
+h[:n_imp, :n_imp] = e_rspt
 # Bath state energies
 np.fill_diagonal(h[n_imp:, n_imp:], eb)
 # Hopping parameters
-h[n_imp:,:n_imp] = v
-h[:n_imp,n_imp:] = np.conj(v).T
+h[n_imp:, :n_imp] = v
+h[:n_imp, n_imp:] = np.conj(v).T
 
-u = orbitals.get_u_transformation(np.shape(h)[0], r2s.basis_tag,
-                                  (n_imp//2-1)//2, irr_flag=r2s.irr_flag,
-                                  verbose_text=r2s.verbose_text)
+u = orbitals.get_u_transformation(
+    np.shape(h)[0],
+    r2s.basis_tag,
+    (n_imp // 2 - 1) // 2,
+    irr_flag=r2s.irr_flag,
+    verbose_text=r2s.verbose_text,
+)
 # Make sure Hamiltonian is hermitian
 assert np.sum(np.abs(h - np.conj(h.T))) < 1e-10
 # Rotate (back) to spherical harmonics basis
@@ -181,23 +190,29 @@ if r2s.verbose_text and rank == 0:
     print("Hamiltonian in spherical harmonics basis:")
     print("Correlated block:")
     print("Real part:")
-    print(np.array_str(np.real(h_sph[:n_imp, :n_imp]), precision=3,
-                       suppress_small=True))
-    print('Imag part:')
-    print(np.array_str(np.imag(h_sph[:n_imp, :n_imp]), precision=3,
-                       suppress_small=True))
-    print("Number of non-zero elements in H:",len(np.flatnonzero(h_sph)))
+    print(
+        np.array_str(np.real(h_sph[:n_imp, :n_imp]), precision=3, suppress_small=True)
+    )
+    print("Imag part:")
+    print(
+        np.array_str(np.imag(h_sph[:n_imp, :n_imp]), precision=3, suppress_small=True)
+    )
+    print("Number of non-zero elements in H:", len(np.flatnonzero(h_sph)))
 
-hOperator = h2imp.get_H_operator_from_dense_rspt_H_matrix(h_sph,
-                                                          ang=(n_imp//2-1)//2)
+hOperator = h2imp.get_H_operator_from_dense_rspt_H_matrix(
+    h_sph, ang=(n_imp // 2 - 1) // 2
+)
 if r2s.verbose_text and rank == 0:
     print("Hamiltonian operator:")
     print(hOperator)
-    #repr(hOperator)
+    # repr(hOperator)
     print()
-    print('len(hOperator) = {:d}'.format(len(hOperator)))
-    print('{:.3f} bath states per impurity spin-orbital.'.format(
-        (np.shape(h_sph)[0] - n_imp)/n_imp))
-    print('{:d} bath states in total.'.format(np.shape(h_sph)[0] - n_imp))
+    print("len(hOperator) = {:d}".format(len(hOperator)))
+    print(
+        "{:.3f} bath states per impurity spin-orbital.".format(
+            (np.shape(h_sph)[0] - n_imp) / n_imp
+        )
+    )
+    print("{:d} bath states in total.".format(np.shape(h_sph)[0] - n_imp))
 if rank == 0:
     h2imp.write_to_file(hOperator, r2s.output_filename)
