@@ -493,8 +493,8 @@ def fit_block_new(
         outsiders = np.argwhere(
             np.logical_or(bath_energies > w[-1], bath_energies < w[0])
         )
-        bath_energies[outsiders[:, 0]] = (
-            np.random.rand(outsiders.shape[0]) * (w[-1] - w[0]) / 2
+        bath_energies[outsiders[:, 0]] = w[0] + np.random.rand(outsiders.shape[0]) * (
+            w[-1] - w[0]
         )
         # bath_energies = np.empty((np.sum(baths_per_peak)), dtype=float)
         # bath_energy_bounds = []
