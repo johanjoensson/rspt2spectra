@@ -470,7 +470,8 @@ def fit_block_new(
     de = w[1] - w[0]
     peaks, info = find_peaks(
         hyb_trace,
-        width=max(int(delta / de), 1),
+        width=1,
+        # width=max(int(delta / de), 1),
     )
     scores = weight(peaks) * hyb_trace[peaks]
 
