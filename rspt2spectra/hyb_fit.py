@@ -462,65 +462,45 @@ def fit_block_new(
     new_v=False,
     exp_weight=2,
 ):
+    rng = np.random.default_rng()
+
     def weight(peak):
         return np.exp(-exp_weight * np.abs(w[peak] - w0))
 
     hyb_trace = -np.imag(np.sum(np.diagonal(hyb, axis1=0, axis2=1), axis=1))
     n_orb = hyb.shape[0]
-    de = w[1] - w[0]
     peaks, info = find_peaks(
         hyb_trace,
-        width=1,
-        # width=max(int(delta / de), 1),
     )
     scores = weight(peaks) * hyb_trace[peaks]
+    normalised_scores = scores / np.sum(scores)
 
-    sorted_indices = np.argsort(scores)
-    sorted_peaks = peaks[sorted_indices]
-    if len(peaks) < 2:
-        lower_bound = w[0]
-        upper_bound = w[1]
-    else:
-        lower_bound = np.min(w[peaks])
-        upper_bound = np.max(w[peaks])
+    _, _, left_ips, right_ips = peak_widths(hyb_trace, peaks, rel_height=0.8)
 
     min_cost = np.inf
     for _ in range(max(200 // comm.size, 2) if comm is not None else 100):
-        bath_energies = np.random.normal(
-            loc=w[sorted_peaks[-1]],
-            scale=(upper_bound - lower_bound) / 2,
-            size=(bath_states_per_orbital,),
-        )
-        outsiders = np.argwhere(
-            np.logical_or(bath_energies > w[-1], bath_energies < w[0])
-        )
-        bath_energies[outsiders[:, 0]] = w[0] + np.random.rand(outsiders.shape[0]) * (
-            w[-1] - w[0]
-        )
-        # bath_energies = np.empty((np.sum(baths_per_peak)), dtype=float)
-        # bath_energy_bounds = []
-        # offset = 0
-        # for peak, lower, upper, n_b in zip(
-        #     sorted_peaks,
-        #     sorted_left_peak_boundaries,
-        #     sorted_right_peak_boundaries,
-        #     baths_per_peak,
-        # ):
-        #     spread = (w[upper] - w[lower]) / 2
-        #     bath_energies[offset : offset + n_b] = np.random.normal(
-        #         loc=w[peak], scale=spread, size=(n_b)
-        #     )
-        #     bath_energy_bounds.extend(
-        #         [(lower_bound, upper_bound)]
-        #         * n_b
-        #         # [(max(w[0], w[peak] - spread), min(w[-1], w[peak] + spread))] * n_b
-        #     )
-        #     offset += n_b
+        if len(peaks) > 0:
+            bath_index = rng.choice(
+                np.arange(len(peaks)), size=bath_states_per_orbital, p=normalised_scores
+            )
+            bath_energies = w[peaks[bath_index]]
+            bounds = [
+                (
+                    w[int(max(0, peaks[i] - left_ips[i]))],
+                    w[int(min(len(w) - 1, peaks[i] + right_ips[i]))],
+                )
+                for i in bath_index
+            ]
+        else:
+            bath_energies = rng.uniform(
+                low=w[0], high=w[-1], size=bath_states_per_orbital
+            )
+            bounds = [(w[0], w[-1])] * bath_states_per_orbital
         v, eb, cost = get_v_and_eb(
             w + delta * 1j,
             hyb,
             bath_energies,
-            eb_bounds=[(lower_bound, upper_bound) for _ in bath_energies],
+            eb_bounds=bounds,
             gamma=gamma,
             imag_only=imag_only,
             realvalue_v=realvalue_v,

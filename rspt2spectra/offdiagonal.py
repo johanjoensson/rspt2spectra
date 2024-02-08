@@ -835,15 +835,17 @@ def cost_function(
     elif regularization_mode == "L2":
         # L2-regularization
         c += gamma / (2 * len(p)) * np.sum(p**2)
+        c += gamma / (2 * len(eb)) * np.sum(eb**2)
     elif regularization_mode == "sigmoid":
         # Regularization with derivative being the sigmoid function.
         # This acts as a smoothened version of L1-regularization.
         # Delta determine the sharpness of the sigmoid function.
         delta = 0.1
         c += gamma / len(p) * np.sum(delta * np.log(np.cosh(p / delta)))
+        c += gamma / len(eb) * np.sum(delta * np.log(np.cosh(eb / delta)))
 
     else:
-        sys.exit("Regularization mode not implemented.")
+        raise NotImplementedError
 
     if output == "value":
         # Return only the cost function value.
