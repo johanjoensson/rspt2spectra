@@ -269,6 +269,7 @@ def fit_hyb(
             comm=comm,
             new_v=new_v,
             exp_weight=exp_weight,
+            verbose=verbose,
         )
         n_block_orb = len(block)
         # v_mask = np.abs(block_v) ** 2 / delta > 0
@@ -461,6 +462,7 @@ def fit_block_new(
     comm=None,
     new_v=False,
     exp_weight=2,
+    verbose=False,
 ):
     rng = np.random.default_rng()
 
@@ -477,6 +479,19 @@ def fit_block_new(
 
     _, _, left_ips, right_ips = peak_widths(hyb_trace, peaks, rel_height=0.8)
 
+    if verbose:
+        print("Peak positions:    ", ", ".join(f"{el: ^16.3f}" for el in w[peaks]))
+        print(
+            "Peak intervals:    ",
+            ", ".join(
+                f"[{w[int(max(0, el))]: >6.3f}, {w[int(min(len(w) - 1, er))]: >6.3f}]"
+                for el, er in zip(left_ips, right_ips)
+            ),
+        )
+        print(
+            "Peak scores:       ",
+            ", ".join(f"{el: ^16.3f}" for el in normalised_scores),
+        )
     min_cost = np.inf
     for _ in range(max(200 // comm.size, 2) if comm is not None else 100):
         if len(peaks) > 0:
@@ -486,8 +501,8 @@ def fit_block_new(
             bath_energies = w[peaks[bath_index]]
             bounds = [
                 (
-                    w[int(max(0, peaks[i] - left_ips[i]))],
-                    w[int(min(len(w) - 1, peaks[i] + right_ips[i]))],
+                    w[int(max(0, left_ips[i]))],
+                    w[int(min(len(w) - 1, right_ips[i]))],
                 )
                 for i in bath_index
             ]
