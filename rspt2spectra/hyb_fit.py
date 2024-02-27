@@ -254,19 +254,25 @@ def fit_hyb(
     weight_per_inequivalent_block = np.zeros((len(inequivalent_blocks)), dtype=float)
     for inequivalent_block_i, block_i in enumerate(inequivalent_blocks):
         block = phase_blocks[block_i]
-        orbitals_per_inequivalent_block[inequivalent_block_i] = len(block) * (
+        block_multiplicity = (
             len(phase_identical_blocks[inequivalent_block_i])
             + len(phase_transposed_blocks[inequivalent_block_i])
             + len(phase_particle_hole_blocks[inequivalent_block_i])
             + len(phase_particle_hole_and_transpose_blocks[inequivalent_block_i])
         )
+        orbitals_per_inequivalent_block[inequivalent_block_i] = (
+            len(block) * block_multiplicity
+        )
         idx = np.ix_(block, block)
         block_hyb = phase_hyb[idx]
-        weight_per_inequivalent_block[inequivalent_block_i] = np.trapz(
-            -np.imag(
-                np.sum(np.diagonal(block_hyb[:, :, mask], axis1=0, axis2=1), axis=1)
-            ),
-            w[mask],
+        weight_per_inequivalent_block[inequivalent_block_i] = (
+            np.trapz(
+                -np.imag(
+                    np.sum(np.diagonal(block_hyb[:, :, mask], axis1=0, axis2=1), axis=1)
+                ),
+                w[mask],
+            )
+            * block_multiplicity
         )
     states_per_inequivalent_block = np.round(
         weight_per_inequivalent_block
