@@ -273,7 +273,7 @@ def fit_hyb(
         / np.sum(weight_per_inequivalent_block)
         * np.sum(orbitals_per_inequivalent_block)
         * bath_states_per_orbital
-        / np.array([len(phase_blocks[block_i]) for block_i in inequivalent_blocks])
+        / orbitals_per_inequivalent_block
     ).astype(int)
     states_per_inequivalent_block[states_per_inequivalent_block < 0] = 0
 
