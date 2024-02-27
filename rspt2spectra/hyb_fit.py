@@ -250,8 +250,37 @@ def fit_hyb(
             inequivalent_blocks.append(blocks[0])
     if verbose:
         print(f"inequivalent blocks = {inequivalent_blocks}")
-    for equivalent_block_i, inequivalent_block_i in enumerate(inequivalent_blocks):
-        block = phase_blocks[inequivalent_block_i]
+    orbitals_per_inequivalent_block = [0] * len(inequivalent_blocks)
+    weight_per_inequivalent_block = np.zeros((len(inequivalent_blocks)), dtype=float)
+    for inequivalent_block_i, block_i in enumerate(inequivalent_blocks):
+        block = phase_blocks[block_i]
+        orbitals_per_inequivalent_block[inequivalent_block_i] = len(block) * (
+            len(phase_identical_blocks[inequivalent_block_i])
+            + len(phase_transposed_blocks[inequivalent_block_i])
+            + len(phase_particle_hole_blocks[inequivalent_block_i])
+            + len(phase_particle_hole_and_transpose_blocks[inequivalent_block_i])
+        )
+        idx = np.ix_(block, block)
+        block_hyb = phase_hyb[idx]
+        weight_per_inequivalent_block[inequivalent_block_i] = np.trapz(
+            -np.imag(
+                np.sum(np.diagonal(block_hyb[:, :, mask], axis1=0, axis2=1), axis=1)
+            ),
+            w[mask],
+        )
+    states_per_inequivalent_block = np.round(
+        weight_per_inequivalent_block
+        / np.sum(weight_per_inequivalent_block)
+        * np.sum(orbitals_per_inequivalent_block)
+        * bath_states_per_orbital
+        / np.array([len(phase_blocks[block_i]) for block_i in inequivalent_blocks])
+    ).astype(int)
+    states_per_inequivalent_block[states_per_inequivalent_block < 0] = 0
+
+    for inequivalent_block_i, block_i in enumerate(inequivalent_blocks):
+        if states_per_inequivalent_block[inequivalent_block_i] == 0:
+            continue
+        block = phase_blocks[block_i]
         idx = np.ix_(block, block)
         block_hyb = phase_hyb[idx]
         realvalue_v = np.all(
@@ -261,7 +290,8 @@ def fit_hyb(
             block_hyb[:, :, mask],
             w[mask],
             delta,
-            bath_states_per_orbital,
+            states_per_inequivalent_block[inequivalent_block_i],
+            # bath_states_per_orbital,
             gamma=gamma,
             imag_only=imag_only,
             realvalue_v=realvalue_v,
@@ -286,25 +316,25 @@ def fit_hyb(
             print(f"--> eb {block_eb}")
             print(f"--> v  {block_v}")
 
-        for b in phase_identical_blocks[equivalent_block_i]:
+        for b in phase_identical_blocks[inequivalent_block_i]:
             for i_orb, orb in enumerate(phase_blocks[b]):
                 ebs[orb] = np.append(ebs[orb], [block_eb[i_orb::n_block_orb]])
                 v_tmp = np.zeros((len(block_eb) // n_block_orb, n_orb), dtype=complex)
                 v_tmp[:, phase_blocks[b]] = block_v[i_orb::n_block_orb, :]
                 vs[orb] = np.append(vs[orb], v_tmp, axis=0)
-        for b in phase_transposed_blocks[equivalent_block_i]:
+        for b in phase_transposed_blocks[inequivalent_block_i]:
             for i_orb, orb in enumerate(phase_blocks[b]):
                 ebs[orb] = np.append(ebs[orb], [block_eb[i_orb::n_block_orb]])
                 v_tmp = np.zeros((len(block_eb) // n_block_orb, n_orb), dtype=complex)
                 v_tmp[:, phase_blocks[b]] = np.conj(block_v[i_orb::n_block_orb, :])
                 vs[orb] = np.append(vs[orb], v_tmp, axis=0)
-        for b in phase_particle_hole_blocks[equivalent_block_i]:
+        for b in phase_particle_hole_blocks[inequivalent_block_i]:
             for i_orb, orb in enumerate(phase_blocks[b]):
                 ebs[orb] = np.append(ebs[orb], [-block_eb[i_orb::n_block_orb]])
                 v_tmp = np.zeros((len(block_eb) // n_block_orb, n_orb), dtype=complex)
                 v_tmp[:, phase_blocks[b]] = block_v[i_orb::n_block_orb, :]
                 vs[orb] = np.append(vs[orb], v_tmp, axis=0)
-        for b in phase_particle_hole_and_transpose_blocks[equivalent_block_i]:
+        for b in phase_particle_hole_and_transpose_blocks[inequivalent_block_i]:
             for i_orb, orb in enumerate(phase_blocks[b]):
                 ebs[orb] = np.append(ebs[orb], [-block_eb[i_orb::n_block_orb]])
                 v_tmp = np.zeros((len(block_eb) // n_block_orb, n_orb), dtype=complex)
@@ -467,7 +497,7 @@ def fit_block_new(
     rng = np.random.default_rng()
 
     def weight(peak):
-        return np.exp(-exp_weight * np.abs(w[peak] - w0))
+        return np.exp(-exp_weight * np.abs(w[peak] - w0) ** 2)
 
     hyb_trace = -np.imag(np.sum(np.diagonal(hyb, axis1=0, axis2=1), axis=1))
     n_orb = hyb.shape[0]
@@ -517,6 +547,7 @@ def fit_block_new(
             bath_energies,
             eb_bounds=bounds,
             gamma=gamma,
+            exp_weight=exp_weight,
             imag_only=imag_only,
             realvalue_v=realvalue_v,
         )
