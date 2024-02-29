@@ -1,8 +1,8 @@
-from .offdiagonal import get_v_new, get_hyb, get_v_and_eb
-from scipy.signal import find_peaks, peak_widths
 import matplotlib.pyplot as plt
 from mpi4py import MPI
 import numpy as np
+from scipy.signal import find_peaks, peak_widths
+from .offdiagonal import get_hyb, get_v_and_eb
 
 
 def block_diagonalize_hyb(hyb):
@@ -166,6 +166,24 @@ def get_particle_hole_and_transpose_blocks(blocks, hyb, hamiltonian=None, tol=1e
     return patricle_hole_and_transpose_blocks
 
 
+def exp_weight(w, w0, e):
+    return np.exp(-e * np.abs(w - w0))
+
+
+def gauss_weight(w, w0, e):
+    return np.exp(-e / 2 * np.abs(w - w0) ** 2)
+
+
+def get_weight_function(weight_function_name, w0, e):
+    if weight_function_name == "Gaussian":
+        return lambda w: gauss_weight(w, w0, e)
+    elif weight_function_name == "Exponential":
+        return lambda w: exp_weight(w, w0, e)
+    else:
+        raise RuntimeError(f"Unknown weight function {weight_function_name}")
+    return None
+
+
 def fit_hyb(
     w,
     delta,
@@ -177,8 +195,9 @@ def fit_hyb(
     tol=1e-6,
     verbose=True,
     comm=None,
-    new_v=False,
-    exp_weight=2,
+    weight_param=2,
+    w0=0,
+    weight_function_name="Gaussian",
 ):
     """
     Calculate the bath energies and hopping parameters for fitting the
@@ -196,6 +215,7 @@ def fit_hyb(
     eb          -- Bath energies
     v           -- Hopping parameters
     """
+    weight_fun = get_weight_function(weight_function_name, w0, weight_param)
     if bath_states_per_orbital == 0:
         return np.empty((0,), dtype=float), np.empty((0, hyb.shape[1]), dtype=complex)
     if x_lim is not None:
@@ -265,7 +285,8 @@ def fit_hyb(
         weight_per_inequivalent_block[inequivalent_block_i] = np.trapz(
             -np.imag(
                 np.sum(np.diagonal(block_hyb[:, :, mask], axis1=0, axis2=1), axis=1)
-            ),
+            )
+            * weight_fun(w[mask]),
             w[mask],
         )
     states_per_inequivalent_block = np.round(
@@ -286,31 +307,19 @@ def fit_hyb(
         realvalue_v = np.all(
             np.abs(block_hyb - np.transpose(block_hyb, (1, 0, 2))) < 1e-6
         )
-        block_eb, block_v = fit_block_new(
+        block_eb, block_v = fit_block(
             block_hyb[:, :, mask],
             w[mask],
             delta,
             states_per_inequivalent_block[inequivalent_block_i],
-            # bath_states_per_orbital,
             gamma=gamma,
             imag_only=imag_only,
             realvalue_v=realvalue_v,
-            w0=0,
             comm=comm,
-            new_v=new_v,
-            exp_weight=exp_weight,
             verbose=verbose,
+            weight_fun=weight_fun,
         )
         n_block_orb = len(block)
-        # v_mask = np.abs(block_v) ** 2 / delta > 0
-        # masked_v = np.empty((0, block_v.shape[1]), dtype=complex)
-        # masked_eb = np.empty((0,), dtype=float)
-        # for i in range(0, block_v.shape[0], n_block_orb):
-        #     if np.all(v_mask[i : i + n_block_orb]):
-        #         masked_v = np.append(masked_v, block_v[i : i + n_block_orb], axis=0)
-        #         masked_eb = np.append(masked_eb, block_eb[i : i + n_block_orb])
-        # block_eb = masked_eb
-        # block_v = masked_v
 
         if verbose:
             print(f"--> eb {block_eb}")
@@ -369,142 +378,18 @@ def fit_block(
     gamma,
     imag_only,
     realvalue_v,
-    w0=0,
-    comm=None,
-    new_v=False,
-    exp_weight=2,
-):
-    def weight(peak):
-        return np.exp(-exp_weight * np.abs(w[peak] - w0))
-
-    world_size = 1
-    if comm is not None:
-        world_size = comm.size
-    hyb_trace = -np.imag(np.sum(np.diagonal(hyb, axis1=0, axis2=1), axis=1))
-    n_orb = hyb.shape[0]
-    n_bath_states = bath_states_per_orbital * n_orb
-    de = w[1] - w[0]
-    peak_min = np.inf
-
-    if n_bath_states == 0:
-        return np.empty((0, n_orb)), np.empty((0, n_orb), dtype=complex)
-
-    bath_energies = np.empty((n_bath_states), dtype=float)
-    found_bath_states = 0
-    fit_hyb = np.zeros_like(hyb)
-    while found_bath_states < n_bath_states:
-        fit_trace = -np.imag(np.sum(np.diagonal(fit_hyb, axis1=0, axis2=1), axis=1))
-        peaks, _ = find_peaks(
-            hyb_trace - fit_trace,
-            distance=int(delta / de),
-            width=int(delta / de),
-        )
-        scores = weight(peaks) * (hyb_trace - fit_trace)[peaks]
-        sorted_indices = np.argsort(scores)
-        sorted_peaks = peaks[sorted_indices]
-        sorted_energies = w[sorted_peaks]
-        n_b = min(
-            len(sorted_energies) - 1, (n_bath_states - found_bath_states) // n_orb
-        )
-        bath_energies[found_bath_states : found_bath_states + n_b * n_orb] = np.repeat(
-            sorted_energies[-n_b:], n_orb
-        )
-        peak_min = min(np.min(hyb_trace[sorted_peaks[-n_b:]]), peak_min)
-        found_bath_states += n_b * n_orb
-        try_again = True
-        while try_again:
-            v, cost = get_v_new(
-                w + delta * 1j,
-                hyb,
-                bath_energies[:found_bath_states],
-                gamma=gamma,
-                imag_only=imag_only,
-                realvalue_v=realvalue_v,
-            )
-            try_again = np.any(
-                [
-                    np.all(
-                        n_orb * np.abs(v[i : i + n_orb, :]) ** 2 / delta
-                        < 1e-4 * peak_min
-                    )
-                    for i in range(0, v.shape[0], n_orb)
-                ]
-            )
-        fit_hyb = get_hyb(w + delta * 1j, bath_energies[:found_bath_states], v)
-    v_best = v
-    min_cost = np.abs(cost)
-
-    for _ in range(max(10 // world_size, 2)):
-        try_again = True
-        while try_again:
-            v, cost = get_v_new(
-                w + delta * 1j,
-                hyb,
-                bath_energies,
-                gamma=gamma,
-                imag_only=imag_only,
-                realvalue_v=realvalue_v,
-            )
-            try_again = np.any(
-                [
-                    np.all(n_orb * np.abs(v[i : i + n_orb, :]) ** 2 < 1e-4 * peak_min)
-                    for i in range(0, v.shape[0], n_orb)
-                ]
-            )
-        if abs(cost) < min_cost:
-            v_best = v
-            min_cost = abs(cost)
-    if comm is not None:
-        bath_energies, v, _ = comm.allreduce(
-            (bath_energies, v_best, min_cost), op=v_opt_op
-        )
-
-    # if comm is None or comm.rank == 0:
-    #     fit_hyb = get_hyb(w + delta * 1j, bath_energies[:found_bath_states], v)
-    #     fig, ax = plt.subplots(
-    #         nrows=n_orb, ncols=n_orb, squeeze=False, sharex='all', sharey='all')
-    #     for i in range(n_orb):
-    #         for j in range(n_orb):
-    #             ax[i, j].plot(w, -np.imag(hyb[i, j, :]), color='tab:blue')
-    #             ax[i, j].plot(w, -np.imag(fit_hyb[i, j, :]),
-    #                           color='tab:orange')
-    #             ax[i, j].vlines(bath_energies[:found_bath_states], 0, -np.min(
-    #                 np.imag(fit_hyb[i, j, :])), linestyles='dashed', colors='tab:gray')
-    #             # ax[i, j].hlines(peak_min, w[0], w[-1],
-    #             ax[i, j].hlines(hyb_trace[sorted_peaks[-n_b:]], w[0], w[-1],
-    #                             linestyles='dashed', colors='tab:gray')
-    #     plt.ylim(bottom=-np.max(-np.imag(np.diagonal(hyb, axis1=0, axis2=1))),
-    #              top=np.max(-np.imag(np.diagonal(hyb, axis1=0, axis2=1))))
-    #     plt.show()
-
-    return bath_energies, v
-
-
-def fit_block_new(
-    hyb,
-    w,
-    delta,
-    bath_states_per_orbital,
-    gamma,
-    imag_only,
-    realvalue_v,
-    w0=0,
-    comm=None,
-    new_v=False,
-    exp_weight=2,
-    verbose=False,
+    comm,
+    verbose,
+    weight_fun,
 ):
     rng = np.random.default_rng()
-
-    def weight(peak):
-        return np.exp(-exp_weight * np.abs(w[peak] - w0) ** 2)
 
     hyb_trace = -np.imag(np.sum(np.diagonal(hyb, axis1=0, axis2=1), axis=1))
     n_orb = hyb.shape[0]
     peaks, info = find_peaks(
         hyb_trace,
     )
-    scores = weight(peaks) * hyb_trace[peaks]
+    scores = weight_fun(w[peaks]) * hyb_trace[peaks]
     normalised_scores = scores / np.sum(scores)
 
     _, _, left_ips, right_ips = peak_widths(hyb_trace, peaks, rel_height=0.8)
@@ -547,7 +432,6 @@ def fit_block_new(
             bath_energies,
             eb_bounds=bounds,
             gamma=gamma,
-            exp_weight=exp_weight,
             imag_only=imag_only,
             realvalue_v=realvalue_v,
         )

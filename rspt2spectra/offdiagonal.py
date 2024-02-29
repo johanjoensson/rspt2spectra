@@ -551,7 +551,7 @@ def get_vs(z, hyb, wborders, ebs, gamma=0.0, imag_only=True):
     return vs, costs
 
 
-def get_p0(z, hyb, eb, gamma, exp_weight, imag_only, realvalue_v):
+def get_p0(z, hyb, eb, gamma, imag_only, realvalue_v):
     n_imp = np.shape(hyb)[0]
     n_b = len(eb)
     if n_imp == 1:
@@ -572,88 +572,29 @@ def get_p0(z, hyb, eb, gamma, exp_weight, imag_only, realvalue_v):
                 eb[i::n_imp],
                 z,
                 hyb[i, j, :].reshape((1, 1, len(z))),
-                gamma,
-                exp_weight,
-                imag_only,
+                gamma=gamma,
+                imag_only=imag_only,
                 output="value",
             )
             if imag_only:
-                # jac = lambda p: cost_function(p, eb[[b_i + i]], z, hyb[i, j, :].reshape((1, 1, len(z))), gamma, True, output='gradient')
                 jac = lambda p: cost_function(
                     p,
                     eb[i::n_imp],
                     z,
                     hyb[i, j, :].reshape((1, 1, len(z))),
-                    gamma,
-                    exp_weight,
-                    True,
+                    gamma=gamma,
+                    imag_only=True,
                     output="gradient",
                 )
                 # Minimize cost function
                 res = minimize(fun, p0, jac=jac, tol=1e-5)
             else:
                 res = minimize(fun, p0, tol=1e-5)
-            # v = unroll(res.x, 1, 1).reshape((1,))
             v = unroll(res.x, n_b // n_imp, 1).reshape((n_b // n_imp,))
             v0[i::n_imp, j] = v
-            # v0[j::n_imp, i] = v
             v0[j::n_imp, i] = np.conj(v)
-            # v0[b_i + i, j] = v
-            # v0[b_i + j, i] = v
     p0 = inroll(np.abs(v0))
     return p0 if not realvalue_v else p0[: n_b * n_imp]
-
-
-def get_v_new(z, hyb, eb, gamma=0.0, imag_only=True, realvalue_v=False):
-    """
-    Return optimized hopping parameters.
-
-    Parameters
-    ----------
-    z : complex array(M)
-        Energy mesh, just above the real axis.
-    hyb : array(N,N,M)
-        RSPt hybridization functions.
-    eb : array(B)
-        Bath energies.
-    gamma : float
-        Regularization parameter
-
-    Returns
-    -------
-    v : array(B, N)
-        Hopping parameters.
-
-    """
-    n_w = len(z)
-    n_imp = np.shape(hyb)[0]
-    n_b = len(eb)
-    # Initialize hopping parameters.
-    # Treat complex-valued parameters,
-    # by doubling the number of parameters.
-    p0 = get_p0(z, hyb, eb, gamma, imag_only, realvalue_v)
-    # p0 = np.random.randn(n)
-    # p0 = get_p0(z, hyb, eb, gamma, imag_only, realvalue_v)
-
-    # Define cost function as a function of a hopping parameter
-    # vector.
-    fun = lambda p: cost_function(p, eb, z, hyb, gamma, imag_only, output="value")
-
-    if imag_only:
-        jac = lambda p: cost_function(p, eb, z, hyb, gamma, True, output="gradient")
-        # Minimize cost function
-        res = minimize(fun, p0, jac=jac, tol=1e-12)
-    else:
-        res = minimize(fun, p0, tol=1e-12)
-
-    # res = minimize(fun, p0)
-    # The solution
-    p = res.x
-    # Cost function value, with regularization.
-    c = cost_function(p, eb, z, hyb, only_imag_part=imag_only, output="value")
-    # Convert hopping parameters to physical shape.
-    v = unroll(p, n_b, n_imp)
-    return v, c
 
 
 def get_v(z, hyb, eb, gamma=0.0, imag_only=True, realvalue_v=False):
@@ -763,8 +704,6 @@ def cost_function(
     z,
     hyb,
     gamma=0.0,
-    exp_weight=0,
-    w0=0,
     only_imag_part=True,
     output="value and gradient",
     regularization_mode="L1",
@@ -818,7 +757,6 @@ def cost_function(
 
     # Difference between original and model hybridization functions
     diff = hyb_model - hyb
-    diff *= np.exp(-exp_weight * np.abs(np.real(z) - w0) ** 2)
     if only_imag_part:
         # Consider only imaginary part of the hybrization functions.
         diff = diff.imag
@@ -1015,9 +953,7 @@ def merge_vs(vs):
     return v
 
 
-def get_v_and_eb(
-    z, hyb, eb, eb_bounds, gamma=0.0, exp_weight=0, imag_only=True, realvalue_v=False
-):
+def get_v_and_eb(z, hyb, eb, eb_bounds, gamma, imag_only, realvalue_v):
     n_imp = np.shape(hyb)[0]
     n_b = len(eb) * n_imp
     delta = np.imag(z[0])
@@ -1025,7 +961,7 @@ def get_v_and_eb(
     # Initialize hopping parameters.
     # Treat complex-valued parameters,
     # by doubling the number of parameters.
-    v0 = get_p0(z, hyb, np.repeat(eb, n_imp), gamma, exp_weight, imag_only, realvalue_v)
+    v0 = get_p0(z, hyb, np.repeat(eb, n_imp), gamma, imag_only, realvalue_v)
 
     def fun(p):
         return cost_function(
@@ -1033,18 +969,17 @@ def get_v_and_eb(
             np.repeat(p[: len(eb)], n_imp),
             z,
             hyb,
-            gamma,
-            exp_weight,
-            imag_only,
+            gamma=gamma,
+            only_imag_part=imag_only,
             output="value",
         )
 
     # bath energies must be placed within the energy window
-    bounds = (
+    bounds = [
         eb_bounds[i] if i < len(eb) else (None, None)
         # (min(np.real(z)), max(np.real(z))) if i < n_b else (None, None)
         for i in range(len(eb) + len(v0))
-    )
+    ]
 
     def v_constraint(x):
         v = unroll(x[len(eb) :], n_b, n_imp)
@@ -1074,7 +1009,6 @@ def get_v_and_eb(
         hyb,
         only_imag_part=imag_only,
         output="value",
-        exp_weight=exp_weight,
     )
     # Convert hopping parameters to physical shape.
     eb = p[: len(eb)]
