@@ -179,6 +179,8 @@ def get_weight_function(weight_function_name, w0, e):
         return lambda w: gauss_weight(w, w0, e)
     elif weight_function_name == "Exponential":
         return lambda w: exp_weight(w, w0, e)
+    elif weight_function_name == "RSPt":
+        return lambda w: np.abs(w - w0) / (1 + e * np.abs(w - w0)) ** 3
     else:
         raise RuntimeError(f"Unknown weight function {weight_function_name}")
     return None
@@ -197,7 +199,7 @@ def fit_hyb(
     comm=None,
     weight_param=2,
     w0=0,
-    weight_function_name="Gaussian",
+    weight_function_name="RSPt",
 ):
     """
     Calculate the bath energies and hopping parameters for fitting the

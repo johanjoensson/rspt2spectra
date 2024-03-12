@@ -573,7 +573,7 @@ def get_p0(z, hyb, eb, gamma, imag_only, realvalue_v):
                 z,
                 hyb[i, j, :].reshape((1, 1, len(z))),
                 gamma=gamma,
-                imag_only=imag_only,
+                only_imag_part=imag_only,
                 output="value",
             )
             if imag_only:
@@ -583,7 +583,7 @@ def get_p0(z, hyb, eb, gamma, imag_only, realvalue_v):
                     z,
                     hyb[i, j, :].reshape((1, 1, len(z))),
                     gamma=gamma,
-                    imag_only=True,
+                    only_imag_part=True,
                     output="gradient",
                 )
                 # Minimize cost function
