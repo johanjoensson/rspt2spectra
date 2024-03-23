@@ -6,14 +6,14 @@ from .offdiagonal import get_hyb, get_v_and_eb
 
 
 def block_diagonalize_hyb(hyb):
-    hyb_herm = 1 / 2 * (hyb + np.conj(np.transpose(hyb, (1, 0, 2))))
+    hyb_herm = 1 / 2 * (hyb + np.conj(np.transpose(hyb, (0, 2, 1))))
     blocks = get_block_structure(hyb_herm)
-    Q_full = np.zeros((hyb.shape[0], hyb.shape[1]), dtype=complex)
+    Q_full = np.zeros((hyb.shape[1], hyb.shape[2]), dtype=complex)
     treated_orbitals = 0
     for block in blocks:
-        block_idx = np.ix_(block, block)
+        block_idx = np.ix_(range(hyb.shape[0]), block, block)
         if len(block) == 1:
-            Q_full[block_idx, treated_orbitals] = 1
+            Q_full[block_idx[1:], treated_orbitals] = 1
             treated_orbitals += 1
             continue
         block_hyb = hyb_herm[block_idx]
@@ -21,7 +21,7 @@ def block_diagonalize_hyb(hyb):
         ind_max_offdiag = np.unravel_index(
             np.argmax(np.abs(upper_triangular_hyb)), upper_triangular_hyb.shape
         )
-        eigvals, Q = np.linalg.eigh(block_hyb[:, :, ind_max_offdiag[2]])
+        eigvals, Q = np.linalg.eigh(block_hyb[ind_max_offdiag[0], :, :])
         sorted_indices = np.argsort(eigvals)
         Q = Q[:, sorted_indices]
         for column in range(Q.shape[1]):
@@ -30,23 +30,15 @@ def block_diagonalize_hyb(hyb):
                 Q[:, column] * abs(Q[j, column]) / Q[j, column]
             )
         treated_orbitals += Q.shape[1]
-    phase_hyb = np.moveaxis(
-        np.conj(Q_full.T)[np.newaxis, :, :]
-        @ np.moveaxis(hyb, -1, 0)
-        @ Q_full[np.newaxis, :, :],
-        0,
-        -1,
-    )
-
+    phase_hyb = np.conj(Q_full.T)[np.newaxis, :, :] @ hyb @ Q_full[np.newaxis, :, :]
     return phase_hyb, Q_full
 
 
-def get_block_structure(hyb, hamiltonian=None, tol=1e-6):
+def get_block_structure(hyb: np.ndarray, hamiltonian=None, tol=1e-6):
     # Extract matrix elements with nonzero hybridization function
     if hamiltonian is None:
-        hamiltonian = np.zeros((hyb.shape[0], hyb.shape[1]))
-    max_val = np.abs(np.max(hyb))
-    mask = np.logical_or(np.any(np.abs(hyb) > tol, axis=2), np.abs(hamiltonian) > tol)
+        hamiltonian = np.zeros((hyb.shape[1], hyb.shape[2]))
+    mask = np.logical_or(np.any(np.abs(hyb) > tol, axis=0), np.abs(hamiltonian) > tol)
 
     # Use the extracted mask to extract blocks
     from scipy.sparse import csr_matrix
@@ -65,22 +57,22 @@ def get_block_structure(hyb, hamiltonian=None, tol=1e-6):
 
 def get_identical_blocks(blocks, hyb, hamiltonian=None, tol=1e-6):
     if hamiltonian is None:
-        hamiltonian = np.zeros((hyb.shape[0], hyb.shape[1]))
+        hamiltonian = np.zeros((hyb.shape[1], hyb.shape[2]))
     identical_blocks = []
     for i, block_i in enumerate(blocks):
         if np.any([i in b for b in identical_blocks]):
             continue
         identical = []
-        idx_i = np.ix_(block_i, block_i)
+        idx_i = np.ix_(range(hyb.shape[0]), block_i, block_i)
         for jp, block_j in enumerate(blocks[i:]):
             if len(block_i) != len(block_j):
                 continue
             j = i + jp
             if any(j in b for b in identical_blocks):
                 continue
-            idx_j = np.ix_(block_j, block_j)
+            idx_j = np.ix_(range(hyb.shape[0]), block_j, block_j)
             if np.all(np.abs(hyb[idx_i] - hyb[idx_j]) < tol) and np.all(
-                np.abs(hamiltonian[idx_i] - hamiltonian[idx_j]) < tol
+                np.abs(hamiltonian[idx_i[1:]] - hamiltonian[idx_j[1:]]) < tol
             ):
                 identical.append(j)
         identical_blocks.append(identical)
@@ -89,23 +81,25 @@ def get_identical_blocks(blocks, hyb, hamiltonian=None, tol=1e-6):
 
 def get_transposed_blocks(blocks, hyb, hamiltonian=None, tol=1e-6):
     if hamiltonian is None:
-        hamiltonian = np.zeros((hyb.shape[0], hyb.shape[1]))
+        hamiltonian = np.zeros((hyb.shape[1], hyb.shape[2]))
     transposed_blocks = [[] for _ in blocks]
     for i, block_i in enumerate(blocks):
         if len(block_i) == 1 or np.any([i in b for b in transposed_blocks]):
             continue
         transposed = []
-        idx_i = np.ix_(block_i, block_i)
+        idx_i = np.ix_(range(hyb.shape[0]), block_i, block_i)
         for jp, block_j in enumerate(blocks[i + 1 :]):
             if len(block_i) != len(block_j):
                 continue
             j = i + jp + 1
             if any(j in b for b in transposed_blocks):
                 continue
-            idx_j = np.ix_(block_j, block_j)
+            idx_j = np.ix_(range(hyb.shape[0]), block_j, block_j)
             if np.all(
-                np.abs(hyb[idx_i] - np.transpose(hyb[idx_j], (1, 0, 2))) < tol
-            ) and np.all(np.abs(hamiltonian[idx_i] - hamiltonian[idx_j].T) < tol):
+                np.abs(hyb[idx_i] - np.transpose(hyb[idx_j], (0, 2, 1))) < tol
+            ) and np.all(
+                np.abs(hamiltonian[idx_i[1:]] - hamiltonian[idx_j[1:]].T) < tol
+            ):
                 transposed.append(j)
         transposed_blocks[i] = transposed
     return transposed_blocks
@@ -119,22 +113,24 @@ def get_particle_hole_blocks(blocks, hyb, hamiltonian=None, tol=1e-6):
         if np.any([i in b for b in particle_hole_blocks]):
             continue
         particle_hole = []
-        idx_i = np.ix_(block_i, block_i)
+        idx_i = np.ix_(range(hyb.shape[0]), block_i, block_i)
         for jp, block_j in enumerate(blocks[i:]):
             if len(block_i) != len(block_j):
                 continue
             j = i + jp
             if any(j in b for b in particle_hole_blocks):
                 continue
-            idx_j = np.ix_(block_j, block_j)
+            idx_j = np.ix_(range(hyb.shape[0]), block_j, block_j)
             if (
                 np.all(np.abs(np.real(hyb[idx_i] + hyb[idx_j])) < tol)
                 and np.all(np.abs(np.imag(hyb[idx_i] - hyb[idx_j])) < tol)
                 and np.all(
-                    np.abs(np.real(hamiltonian[idx_i] - hamiltonian[idx_j])) < tol
+                    np.abs(np.real(hamiltonian[idx_i[1:]] - hamiltonian[idx_j[1:]]))
+                    < tol
                 )
                 and np.all(
-                    np.abs(np.imag(hamiltonian[idx_i] - hamiltonian[idx_j])) < tol
+                    np.abs(np.imag(hamiltonian[idx_i[1:]] - hamiltonian[idx_j[1:]]))
+                    < tol
                 )
             ):
                 particle_hole.append(j)
@@ -144,23 +140,25 @@ def get_particle_hole_blocks(blocks, hyb, hamiltonian=None, tol=1e-6):
 
 def get_particle_hole_and_transpose_blocks(blocks, hyb, hamiltonian=None, tol=1e-6):
     if hamiltonian is None:
-        hamiltonian = np.zeros((hyb.shape[0], hyb.shape[1]))
+        hamiltonian = np.zeros((hyb.shape[1], hyb.shape[2]))
     patricle_hole_and_transpose_blocks = []
     for i, block_i in enumerate(blocks):
         if np.any([i in b for b in patricle_hole_and_transpose_blocks]):
             continue
         patricle_hole_and_transpose = []
-        idx_i = np.ix_(block_i, block_i)
+        idx_i = np.ix_(range(hyb.shape[0]), block_i, block_i)
         for jp, block_j in enumerate(blocks[i:]):
             if len(block_i) != len(block_j):
                 continue
             j = i + jp
             if any(j in b for b in patricle_hole_and_transpose_blocks):
                 continue
-            idx_j = np.ix_(block_j, block_j)
+            idx_j = np.ix_(range(hyb.shape[0]), block_j, block_j)
             if np.all(
-                np.abs(hyb[idx_i] + np.transpose(hyb[idx_j], (1, 0, 2))) < tol
-            ) and np.all(np.abs(hamiltonian[idx_i] + hamiltonian[idx_j].T) < tol):
+                np.abs(hyb[idx_i] + np.transpose(hyb[idx_j], (0, 2, 1))) < tol
+            ) and np.all(
+                np.abs(hamiltonian[idx_i[1:]] + hamiltonian[idx_j[1:]].T) < tol
+            ):
                 patricle_hole_and_transpose.append(j)
         patricle_hole_and_transpose_blocks.append(patricle_hole_and_transpose)
     return patricle_hole_and_transpose_blocks
@@ -285,12 +283,12 @@ def fit_hyb(
         orbitals_per_inequivalent_block[inequivalent_block_i] = (
             len(block) * block_multiplicity
         )
-        idx = np.ix_(block, block)
+        idx = np.ix_(range(phase_hyb.shape[0]), block, block)
         block_hyb = phase_hyb[idx]
         weight_per_inequivalent_block[inequivalent_block_i] = (
             np.trapz(
                 -np.imag(
-                    np.sum(np.diagonal(block_hyb[:, :, mask], axis1=0, axis2=1), axis=1)
+                    np.sum(np.diagonal(block_hyb[mask, :, :], axis1=1, axis2=2), axis=1)
                 )
                 * weight_fun(w[mask]),
                 w[mask],
@@ -310,13 +308,13 @@ def fit_hyb(
         if states_per_inequivalent_block[inequivalent_block_i] == 0:
             continue
         block = phase_blocks[block_i]
-        idx = np.ix_(block, block)
+        idx = np.ix_(range(phase_hyb.shape[0]), block, block)
         block_hyb = phase_hyb[idx]
         realvalue_v = np.all(
-            np.abs(block_hyb - np.transpose(block_hyb, (1, 0, 2))) < 1e-6
+            np.abs(block_hyb - np.transpose(block_hyb, (0, 2, 1))) < 1e-6
         )
         block_eb, block_v = fit_block(
-            block_hyb[:, :, mask],
+            block_hyb[mask, :, :],
             w[mask],
             delta,
             states_per_inequivalent_block[inequivalent_block_i],
@@ -392,8 +390,8 @@ def fit_block(
 ):
     rng = np.random.default_rng()
 
-    hyb_trace = -np.imag(np.sum(np.diagonal(hyb, axis1=0, axis2=1), axis=1))
-    n_orb = hyb.shape[0]
+    hyb_trace = -np.imag(np.sum(np.diagonal(hyb, axis1=1, axis2=2), axis=1))
+    n_orb = hyb.shape[1]
     peaks, info = find_peaks(
         hyb_trace,
     )

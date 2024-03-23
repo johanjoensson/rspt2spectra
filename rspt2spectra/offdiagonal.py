@@ -552,7 +552,7 @@ def get_vs(z, hyb, wborders, ebs, gamma=0.0, imag_only=True):
 
 
 def get_p0(z, hyb, eb, gamma, imag_only, realvalue_v):
-    n_imp = np.shape(hyb)[0]
+    n_imp = np.shape(hyb)[1]
     n_b = len(eb)
     if n_imp == 1:
         return np.random.randn(n_b if realvalue_v else 2 * n_b)
@@ -571,7 +571,7 @@ def get_p0(z, hyb, eb, gamma, imag_only, realvalue_v):
                 p,
                 eb[i::n_imp],
                 z,
-                hyb[i, j, :].reshape((1, 1, len(z))),
+                np.moveaxis(hyb[:, i, j].reshape((len(z), 1, 1)), 0, -1),
                 gamma=gamma,
                 only_imag_part=imag_only,
                 output="value",
@@ -581,7 +581,7 @@ def get_p0(z, hyb, eb, gamma, imag_only, realvalue_v):
                     p,
                     eb[i::n_imp],
                     z,
-                    hyb[i, j, :].reshape((1, 1, len(z))),
+                    np.moveaxis(hyb[:, i, j].reshape((len(z), 1, 1)), 0, -1),
                     gamma=gamma,
                     only_imag_part=True,
                     output="gradient",
@@ -954,10 +954,9 @@ def merge_vs(vs):
 
 
 def get_v_and_eb(z, hyb, eb, eb_bounds, gamma, imag_only, realvalue_v):
-    n_imp = np.shape(hyb)[0]
+    n_imp = np.shape(hyb)[1]
     n_b = len(eb) * n_imp
     delta = np.imag(z[0])
-    de = np.real(z[1] - z[0])
     # Initialize hopping parameters.
     # Treat complex-valued parameters,
     # by doubling the number of parameters.
@@ -968,7 +967,7 @@ def get_v_and_eb(z, hyb, eb, eb_bounds, gamma, imag_only, realvalue_v):
             p[len(eb) :],
             np.repeat(p[: len(eb)], n_imp),
             z,
-            hyb,
+            np.moveaxis(hyb, 0, -1),
             gamma=gamma,
             only_imag_part=imag_only,
             output="value",
@@ -997,7 +996,6 @@ def get_v_and_eb(z, hyb, eb, eb_bounds, gamma, imag_only, realvalue_v):
         fun,
         np.append(eb, v0),
         bounds=bounds,
-        # constraints=v_constraints,
     )
 
     p = res.x
@@ -1006,7 +1004,7 @@ def get_v_and_eb(z, hyb, eb, eb_bounds, gamma, imag_only, realvalue_v):
         p[len(eb) :],
         np.repeat(p[: len(eb)], n_imp),
         z,
-        hyb,
+        np.moveaxis(hyb, 0, -1),
         only_imag_part=imag_only,
         output="value",
     )
