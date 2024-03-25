@@ -551,7 +551,7 @@ def get_vs(z, hyb, wborders, ebs, gamma=0.0, imag_only=True):
     return vs, costs
 
 
-def get_p0(z, hyb, eb, gamma, imag_only, realvalue_v):
+def get_p0(z, hyb, eb, gamma, imag_only, realvalue_v, scale_function):
     n_imp = np.shape(hyb)[1]
     n_b = len(eb)
     if n_imp == 1:
@@ -575,6 +575,7 @@ def get_p0(z, hyb, eb, gamma, imag_only, realvalue_v):
                 gamma=gamma,
                 only_imag_part=imag_only,
                 output="value",
+                scale_function=scale_function,
             )
             if imag_only:
                 jac = lambda p: cost_function(
@@ -707,6 +708,7 @@ def cost_function(
     only_imag_part=True,
     output="value and gradient",
     regularization_mode="L1",
+    scale_function=lambda _: 1,
 ):
     """
     Return cost function value.
@@ -756,7 +758,7 @@ def cost_function(
     hyb_model = get_hyb(z, eb, v)
 
     # Difference between original and model hybridization functions
-    diff = hyb_model - hyb
+    diff = (hyb_model - hyb) * scale_function(np.real(z))
     if only_imag_part:
         # Consider only imaginary part of the hybrization functions.
         diff = diff.imag
@@ -953,14 +955,22 @@ def merge_vs(vs):
     return v
 
 
-def get_v_and_eb(z, hyb, eb, eb_bounds, gamma, imag_only, realvalue_v):
+def get_v_and_eb(z, hyb, eb, eb_bounds, gamma, imag_only, realvalue_v, scale_function):
     n_imp = np.shape(hyb)[1]
     n_b = len(eb) * n_imp
     delta = np.imag(z[0])
     # Initialize hopping parameters.
     # Treat complex-valued parameters,
     # by doubling the number of parameters.
-    v0 = get_p0(z, hyb, np.repeat(eb, n_imp), gamma, imag_only, realvalue_v)
+    v0 = get_p0(
+        z,
+        hyb,
+        np.repeat(eb, n_imp),
+        gamma,
+        imag_only,
+        realvalue_v,
+        scale_function=scale_function,
+    )
 
     def fun(p):
         return cost_function(
@@ -971,6 +981,7 @@ def get_v_and_eb(z, hyb, eb, eb_bounds, gamma, imag_only, realvalue_v):
             gamma=gamma,
             only_imag_part=imag_only,
             output="value",
+            scale_function=scale_function,
         )
 
     # bath energies must be placed within the energy window
@@ -1007,6 +1018,7 @@ def get_v_and_eb(z, hyb, eb, eb_bounds, gamma, imag_only, realvalue_v):
         np.moveaxis(hyb, 0, -1),
         only_imag_part=imag_only,
         output="value",
+        scale_function=scale_function,
     )
     # Convert hopping parameters to physical shape.
     eb = p[: len(eb)]

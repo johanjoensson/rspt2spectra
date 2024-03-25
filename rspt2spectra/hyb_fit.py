@@ -440,6 +440,7 @@ def fit_block(
             gamma=gamma,
             imag_only=imag_only,
             realvalue_v=realvalue_v,
+            scale_function=weight_fun,
         )
         if abs(cost) < min_cost:
             eb_best = eb
