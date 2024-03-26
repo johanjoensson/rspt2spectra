@@ -414,7 +414,7 @@ def fit_block(
             ", ".join(f"{el: ^16.3f}" for el in normalised_scores),
         )
     min_cost = np.inf
-    for _ in range(max(200 // comm.size, 2) if comm is not None else 100):
+    for _ in range(max(1000 // comm.size, 2) if comm is not None else 100):
         if len(peaks) > 0:
             bath_index = rng.choice(
                 np.arange(len(peaks)), size=bath_states_per_orbital, p=normalised_scores

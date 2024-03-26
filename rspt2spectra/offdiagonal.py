@@ -981,7 +981,7 @@ def get_v_and_eb(z, hyb, eb, eb_bounds, gamma, imag_only, realvalue_v, scale_fun
             gamma=gamma,
             only_imag_part=imag_only,
             output="value",
-            scale_function=scale_function,
+            # scale_function=scale_function,
         )
 
     # bath energies must be placed within the energy window
