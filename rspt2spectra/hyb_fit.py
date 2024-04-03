@@ -3,6 +3,7 @@ from mpi4py import MPI
 import numpy as np
 from scipy.signal import find_peaks, peak_widths
 from .offdiagonal import get_hyb, get_v_and_eb
+import warnings
 
 
 def block_diagonalize_hyb(hyb):
@@ -398,7 +399,11 @@ def fit_block(
     scores = weight_fun(w[peaks]) * hyb_trace[peaks]
     normalised_scores = scores / np.sum(scores)
 
-    _, _, left_ips, right_ips = peak_widths(hyb_trace, peaks, rel_height=0.8)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        _, _, left_ips, right_ips = peak_widths(
+            hyb_trace * weight_fun(w), peaks, rel_height=0.5
+        )
 
     if verbose:
         print("Peak positions:    ", ", ".join(f"{el: ^16.3f}" for el in w[peaks]))
