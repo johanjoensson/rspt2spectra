@@ -401,9 +401,7 @@ def fit_block(
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        _, _, left_ips, right_ips = peak_widths(
-            hyb_trace * weight_fun(w), peaks, rel_height=0.5
-        )
+        _, _, left_ips, right_ips = peak_widths(hyb_trace, peaks, rel_height=0.5)
 
     if verbose:
         print("Peak positions:    ", ", ".join(f"{el: ^16.3f}" for el in w[peaks]))

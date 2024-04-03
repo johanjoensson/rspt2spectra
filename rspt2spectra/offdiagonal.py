@@ -754,6 +754,9 @@ def cost_function(
     assert hyb.size == m
     # Convert hopping parameters to physical shape.
     v = unroll(p, n_b, n_imp)
+    sorted_indices = np.argsort(eb, kind="stable")
+    eb_diffs = np.diff(eb[sorted_indices[::n_imp]])
+
     # Model hybridization functions.
     hyb_model = get_hyb(z, eb, v)
 
@@ -772,6 +775,9 @@ def cost_function(
     # sum over two impurity orbital indices and
     # one energy index.
     c = 1 / m * np.sum(loss)
+    # Punish duplicate bath energies!
+    if np.any(np.abs(eb_diffs) < 1e-8):
+        c *= 100
     # Add regularization terms
     if regularization_mode == "L1":
         # L1-regularization
@@ -985,9 +991,7 @@ def get_v_and_eb(z, hyb, eb, eb_bounds, gamma, imag_only, realvalue_v, scale_fun
 
     # bath energies must be placed within the energy window
     bounds = [
-        eb_bounds[i] if i < len(eb) else (None, None)
-        # (min(np.real(z)), max(np.real(z))) if i < n_b else (None, None)
-        for i in range(len(eb) + len(v0))
+        eb_bounds[i] if i < len(eb) else (None, None) for i in range(len(eb) + len(v0))
     ]
 
     def v_constraint(x):
