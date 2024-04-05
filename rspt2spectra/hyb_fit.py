@@ -327,8 +327,21 @@ def fit_hyb(
             weight_fun=weight_fun,
         )
         n_block_orb = len(block)
+        if verbose:
+            print("Pre masking")
+            print(f"--> eb {block_eb}")
+            print(f"--> v  {block_v}")
+        block_mask = []
+        for block_i in range(0, len(block_v), n_block_orb):
+            if np.all(np.abs(block_v[block_i : block_i + n_block_orb]) ** 2 < 1e-10):
+                block_mask.extend([False] * n_block_orb)
+            else:
+                block_mask.extend([True] * n_block_orb)
+        block_v = block_v[block_mask]
+        block_eb = block_eb[block_mask]
 
         if verbose:
+            print("Post masking")
             print(f"--> eb {block_eb}")
             print(f"--> v  {block_v}")
 
@@ -417,7 +430,7 @@ def fit_block(
             ", ".join(f"{el: ^16.3f}" for el in normalised_scores),
         )
     min_cost = np.inf
-    for _ in range(max(1000 // comm.size, 2) if comm is not None else 100):
+    for _ in range(max(1000 // comm.size, 10) if comm is not None else 1000):
         if len(peaks) > 0:
             bath_index = rng.choice(
                 np.arange(len(peaks)), size=bath_states_per_orbital, p=normalised_scores
@@ -435,6 +448,9 @@ def fit_block(
                 low=w[0], high=w[-1], size=bath_states_per_orbital
             )
             bounds = [(w[0], w[-1])] * bath_states_per_orbital
+        sorted_indices = np.argsort(bath_energies)
+        bath_energies = bath_energies[sorted_indices]
+        bounds = [bounds[i] for i in sorted_indices]
         v, eb, cost = get_v_and_eb(
             w + delta * 1j,
             hyb,
