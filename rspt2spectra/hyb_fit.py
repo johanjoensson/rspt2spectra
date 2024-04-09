@@ -327,10 +327,6 @@ def fit_hyb(
             weight_fun=weight_fun,
         )
         n_block_orb = len(block)
-        if verbose:
-            print("Pre masking")
-            print(f"--> eb {block_eb}")
-            print(f"--> v  {block_v}")
         block_mask = []
         for block_i in range(0, len(block_v), n_block_orb):
             if np.all(np.abs(block_v[block_i : block_i + n_block_orb]) ** 2 < 1e-10):
@@ -341,7 +337,6 @@ def fit_hyb(
         block_eb = block_eb[block_mask]
 
         if verbose:
-            print("Post masking")
             print(f"--> eb {block_eb}")
             print(f"--> v  {block_v}")
 
@@ -414,7 +409,7 @@ def fit_block(
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        _, _, left_ips, right_ips = peak_widths(hyb_trace, peaks, rel_height=0.5)
+        _, _, left_ips, right_ips = peak_widths(hyb_trace, peaks, rel_height=0.8)
 
     if verbose:
         print("Peak positions:    ", ", ".join(f"{el: ^16.3f}" for el in w[peaks]))

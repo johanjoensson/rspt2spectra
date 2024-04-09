@@ -13,6 +13,7 @@ off-diagonal hybridization functions.
 import itertools
 import matplotlib.pylab as plt
 import numpy as np
+import scipy as sp
 from scipy.optimize import minimize, NonlinearConstraint
 
 from time import perf_counter
@@ -700,7 +701,6 @@ def inroll(v):
 
 
 def merge_duplicate_bath_states(eb, p, n_imp):
-
     # n_imp = 2
     # p   0   1   2   3   4  5 ...
     #    |  ,    |  ,    |  ,  | ...
@@ -762,6 +762,88 @@ def merge_duplicate_bath_states(eb, p, n_imp):
             first_i = (i + 1) * n_imp
 
 
+def merge_duplicate_bath_states(eb, p, n_imp):
+    # n_imp = 2
+    # p   0   1   2   3   4  5 ...
+    #    |  ,    |  ,    |  ,  | ...
+    # eb  0       1       2  ...
+    #     0       1       2
+
+    n_b = len(eb)
+    sorted_indices = np.argsort(eb, kind="stable")
+    eb = eb[sorted_indices]
+    realvalued = n_b * n_imp**2 == len(p)
+
+    first_i = 0
+    p2 = np.zeros((n_imp, n_imp), dtype=float if realvalued else complex)
+    for i, e in enumerate(eb[1:]):
+        if np.abs(e - eb[first_i]) < 1e-5:
+            if realvalued:
+                p2_term = p[
+                    sorted_indices[i + 1]
+                    * n_imp**2 : (sorted_indices[i + 1] + 1)
+                    * n_imp**2
+                ].reshape((n_imp, n_imp))
+            else:
+                p2_term = p[
+                    sorted_indices[i + 1]
+                    * n_imp**2 : (sorted_indices[i + 1] + 1)
+                    * n_imp**2
+                ].reshape((n_imp, n_imp)) + 1j * p[
+                    n_b * n_imp**2
+                    + sorted_indices[i + 1] * n_imp**2 : n_b * n_imp**2
+                    + (sorted_indices[i + 1] + 1) * n_imp**2
+                ].reshape(
+                    (n_imp, n_imp)
+                )
+
+            p2 += np.conj(p2_term.T) @ p2_term
+            p[
+                sorted_indices[i + 1]
+                * n_imp**2 : (sorted_indices[(i + 1)] + 1)
+                * n_imp**2
+            ] = 0
+            if not realvalued:
+                p[
+                    n_b * n_imp**2
+                    + sorted_indices[i + 1] * n_imp**2 : n_b * n_imp**2
+                    + (sorted_indices[i + 1] + 1) * n_imp**2
+                ] = 0
+        else:
+            if realvalued:
+                p2_term = p[
+                    sorted_indices[first_i]
+                    * n_imp**2 : (sorted_indices[first_i] + 1)
+                    * n_imp**2
+                ].reshape((n_imp, n_imp))
+            else:
+                p2_term = p[
+                    sorted_indices[first_i]
+                    * n_imp**2 : (sorted_indices[first_i] + 1)
+                    * n_imp**2
+                ].reshape((n_imp, n_imp)) + 1j * p[
+                    n_b * n_imp**2
+                    + sorted_indices[first_i] * n_imp**2 : n_b * n_imp**2
+                    + (sorted_indices[first_i] + 1) * n_imp**2
+                ].reshape(
+                    (n_imp, n_imp)
+                )
+            sqrt_p2 = sp.linalg.cholesky(np.conj(p2_term.T) @ p2_term + p2)
+            p[
+                sorted_indices[first_i]
+                * n_imp**2 : (sorted_indices[first_i] + 1)
+                * n_imp**2
+            ] = np.real(sqrt_p2).flatten()
+            if not realvalued:
+                p[
+                    n_b * n_imp**2
+                    + sorted_indices[first_i] * n_imp**2 : n_b * n_imp**2
+                    + (sorted_indices[first_i] + 1) * n_imp**2
+                ] = np.imag(sqrt_p2).flatten()
+            p2[:, :] = 0
+            first_i = i + 1
+
+
 def cost_function(
     p,
     eb,
@@ -818,8 +900,6 @@ def cost_function(
     m = n_imp * n_imp * n_w
     assert hyb.size == m
 
-    # Make sure only one instance of each bath energy has nonzero hopping
-    merge_duplicate_bath_states(eb, p, n_imp)
     # Convert hopping parameters to physical shape.
     v = unroll(p, n_b, n_imp)
 
@@ -1077,6 +1157,7 @@ def get_v_and_eb(z, hyb, eb, eb_bounds, gamma, imag_only, realvalue_v, scale_fun
 
     p = res.x
     # Cost function value, with regularization.
+    merge_duplicate_bath_states(p[: len(eb)], p[len(eb) :], n_imp)
     c = cost_function(
         p[len(eb) :],
         np.repeat(p[: len(eb)], n_imp),
@@ -1086,6 +1167,7 @@ def get_v_and_eb(z, hyb, eb, eb_bounds, gamma, imag_only, realvalue_v, scale_fun
         output="value",
         scale_function=scale_function,
     )
+    # Make sure only one instance of each bath energy has nonzero hopping
     # Convert hopping parameters to physical shape.
     eb = p[: len(eb)]
     v = unroll(p[len(eb) :], n_b, n_imp)
