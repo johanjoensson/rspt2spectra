@@ -290,8 +290,8 @@ def fit_hyb(
             np.trapz(
                 -np.imag(
                     np.sum(np.diagonal(block_hyb[mask, :, :], axis1=1, axis2=2), axis=1)
-                )
-                * weight_fun(w[mask]),
+                ),
+                # * weight_fun(w[mask]),
                 w[mask],
             )
             * block_multiplicity
