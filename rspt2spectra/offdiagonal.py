@@ -762,7 +762,7 @@ def merge_duplicate_bath_states(eb, p, n_imp):
             first_i = (i + 1) * n_imp
 
 
-def merge_duplicate_bath_states(eb, p, n_imp):
+def merge_duplicate_bath_states(eb, p, n_imp, delta):
     # n_imp = 2
     # p   0   1   2   3   4  5 ...
     #    |  ,    |  ,    |  ,  | ...
@@ -777,7 +777,7 @@ def merge_duplicate_bath_states(eb, p, n_imp):
     first_i = 0
     p2 = np.zeros((n_imp, n_imp), dtype=float if realvalued else complex)
     for i, e in enumerate(eb[1:]):
-        if np.abs(e - eb[first_i]) < 1e-5:
+        if np.abs(e - eb[first_i]) < delta / 2:
             if realvalued:
                 p2_term = p[
                     sorted_indices[i + 1]
@@ -1149,15 +1149,11 @@ def get_v_and_eb(z, hyb, eb, eb_bounds, gamma, imag_only, realvalue_v, scale_fun
 
     v_constraints = NonlinearConstraint(v_constraint, 1e-8, np.inf)
 
-    res = minimize(
-        fun,
-        np.append(eb, v0),
-        bounds=bounds,
-    )
+    res = minimize(fun, np.append(eb, v0), bounds=bounds, tol=1e-12)
 
     p = res.x
     # Cost function value, with regularization.
-    merge_duplicate_bath_states(p[: len(eb)], p[len(eb) :], n_imp)
+    merge_duplicate_bath_states(p[: len(eb)], p[len(eb) :], n_imp, delta)
     c = cost_function(
         p[len(eb) :],
         np.repeat(p[: len(eb)], n_imp),

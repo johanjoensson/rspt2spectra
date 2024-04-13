@@ -428,7 +428,10 @@ def fit_block(
     for _ in range(max(1000 // comm.size, 10) if comm is not None else 1000):
         if len(peaks) > 0:
             bath_index = rng.choice(
-                np.arange(len(peaks)), size=bath_states_per_orbital, p=normalised_scores
+                np.arange(len(peaks)),
+                size=min(len(peaks), bath_states_per_orbital),
+                p=normalised_scores,
+                # np.arange(len(peaks)), size=bath_states_per_orbital, p=normalised_scores
             )
             bath_energies = w[peaks[bath_index]]
             bounds = [
@@ -438,11 +441,15 @@ def fit_block(
                 )
                 for i in bath_index
             ]
-        else:
-            bath_energies = rng.uniform(
-                low=w[0], high=w[-1], size=bath_states_per_orbital
-            )
-            bounds = [(w[0], w[-1])] * bath_states_per_orbital
+        # else:
+        #     bath_energies = rng.uniform(
+        #         low=w[0], high=w[-1], size=bath_states_per_orbital
+        #     )
+        #     bounds = [(w[0], w[-1])] * bath_states_per_orbital
+        bath_energies = rng.uniform(
+            low=w[0], high=w[-1], size=max(bath_states_per_orbital - len(peaks), 0)
+        )
+        bounds = [(w[0], w[-1])] * max(bath_states_per_orbital - len(peaks), 0)
         sorted_indices = np.argsort(bath_energies)
         bath_energies = bath_energies[sorted_indices]
         bounds = [bounds[i] for i in sorted_indices]
