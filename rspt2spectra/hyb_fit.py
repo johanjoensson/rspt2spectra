@@ -450,10 +450,10 @@ def fit_block(
         bath_energies = np.append(
             bath_energies,
             rng.uniform(
-                low=w[0], high=w[-1], size=max(bath_states_per_orbital - len(peaks), 0)
+                low=w[1], high=w[-2], size=max(bath_states_per_orbital - len(peaks), 0)
             ),
         )
-        bounds.extend([(w[0], w[-1])] * max(bath_states_per_orbital - len(peaks), 0))
+        bounds.extend([(w[1], w[-2])] * max(bath_states_per_orbital - len(peaks), 0))
         sorted_indices = np.argsort(bath_energies)
         bath_energies = bath_energies[sorted_indices]
         bounds = [bounds[i] for i in sorted_indices]
