@@ -427,13 +427,12 @@ def fit_block(
     min_cost = np.inf
     for _ in range(max(1000 // comm.size, 10) if comm is not None else 1000):
         if len(peaks) > 0:
-            bath_index = range(min(len(peaks), bath_states_per_orbital))
-            # bath_index = rng.choice(
-            #     np.arange(len(peaks)),
-            #     size=min(len(peaks), bath_states_per_orbital),
-            #     p=normalised_scores,
-            #     # np.arange(len(peaks)), size=bath_states_per_orbital, p=normalised_scores
-            # )
+            bath_index = rng.choice(
+                np.arange(len(peaks)),
+                size=min(len(peaks), bath_states_per_orbital),
+                p=normalised_scores,
+                replace=False,
+            )
             bath_energies = w[peaks[bath_index]]
             bounds = [
                 (
