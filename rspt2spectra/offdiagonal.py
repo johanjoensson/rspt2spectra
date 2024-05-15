@@ -1161,7 +1161,7 @@ def get_v_and_eb(z, hyb, eb, eb_bounds, gamma, imag_only, realvalue_v, scale_fun
         np.moveaxis(hyb, 0, -1),
         only_imag_part=imag_only,
         output="value",
-        scale_function=scale_function,
+        # scale_function=scale_function,
     )
     # Make sure only one instance of each bath energy has nonzero hopping
     # Convert hopping parameters to physical shape.
