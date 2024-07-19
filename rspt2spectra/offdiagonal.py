@@ -1104,10 +1104,12 @@ def merge_vs(vs):
     return v
 
 
-def get_v_and_eb(z, hyb, eb, eb_bounds, gamma, imag_only, realvalue_v, scale_function):
+def get_v_and_eb(
+    w, delta, hyb, eb, eb_bounds, gamma, imag_only, realvalue_v, scale_function
+):
     n_imp = np.shape(hyb)[1]
     n_b = len(eb) * n_imp
-    delta = np.imag(z[0])
+    z = w + 1j * delta
     # Initialize hopping parameters.
     # Treat complex-valued parameters,
     # by doubling the number of parameters.
@@ -1161,7 +1163,7 @@ def get_v_and_eb(z, hyb, eb, eb_bounds, gamma, imag_only, realvalue_v, scale_fun
         np.moveaxis(hyb, 0, -1),
         only_imag_part=imag_only,
         output="value",
-        # scale_function=scale_function,
+        scale_function=scale_function,
     )
     # Make sure only one instance of each bath energy has nonzero hopping
     # Convert hopping parameters to physical shape.
