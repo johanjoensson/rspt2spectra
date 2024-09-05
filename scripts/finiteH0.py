@@ -65,7 +65,7 @@ if r2s.verbose_fig and rank == 0:
 #                              r2s.wborders,
 #                              r2s.n_bath_sets_foreach_block_and_window,
 #                              r2s.xlim, r2s.verbose_fig, r2s.gamma)
-eb, v = hyb_fit.fit_hyb(
+v, H_bath = hyb_fit.fit_hyb(
     w,
     r2s.eim,
     hyb,

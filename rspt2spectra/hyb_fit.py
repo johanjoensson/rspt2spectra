@@ -24,6 +24,8 @@ def fit_block(
     comm,
     verbose,
     weight_fun,
+    bath_guess=None,
+    v_guess=None,
 ):
     rng = np.random.default_rng()
 
@@ -55,35 +57,44 @@ def fit_block(
     min_cost = np.inf
     eb_best = None
     v_best = None
-    # for _ in range(max(1000 // comm.size, 10) if comm is not None else 1000):
-    for _ in range(1):
-        if len(peaks) > 0:
-            bath_index = rng.choice(
-                np.arange(len(peaks)),
-                size=min(len(peaks), bath_states_per_orbital),
-                p=normalised_scores,
-                replace=False,
-            )
-            bath_energies = w[peaks[bath_index]]
-            bounds = [
-                (
-                    w[int(max(0, left_ips[i]))],
-                    w[int(min(len(w) - 1, right_ips[i]))],
+    for _ in range(max(1000 // comm.size, 10) if comm is not None else 1000):
+        # for _ in range():
+        if bath_guess is None and v_guess is None:
+            if len(peaks) > 0:
+                bath_index = rng.choice(
+                    np.arange(len(peaks)),
+                    size=min(len(peaks), bath_states_per_orbital),
+                    p=normalised_scores,
+                    replace=False,
                 )
-                for i in bath_index
-            ]
+                bath_energies = w[peaks[bath_index]]
+                bounds = [
+                    (
+                        w[int(max(0, left_ips[i]))],
+                        w[int(min(len(w) - 1, right_ips[i]))],
+                    )
+                    for i in bath_index
+                ]
+            else:
+                bath_energies = []
+                bounds = []
+            bath_energies = np.append(
+                bath_energies,
+                rng.uniform(
+                    low=w[0],
+                    high=w[-1],
+                    size=max(bath_states_per_orbital - len(peaks), 0),
+                ),
+            )
+            bounds.extend(
+                [(w[0], w[-1])] * max(bath_states_per_orbital - len(peaks), 0)
+            )
         else:
-            bath_energies = []
-            bounds = []
-        bath_energies = np.append(
-            bath_energies,
-            rng.uniform(
-                low=w[0], high=w[-1], size=max(bath_states_per_orbital - len(peaks), 0)
-            ),
-        )
-        bounds.extend([(w[0], w[-1])] * max(bath_states_per_orbital - len(peaks), 0))
-        # bath_energies = np.append(bath_energies, [0])
-        # bounds.extend([(-0.0, 0.0)])
+            bath_energies = bath_guess[::n_orb]
+            bounds = [
+                (max(eb - 0.1 * abs(eb), w[0]), min(eb + 0.1 * abs(eb), w[-1]))
+                for eb in bath_energies
+            ]
 
         v, eb, cost = get_v_and_eb(
             w,
@@ -95,7 +106,10 @@ def fit_block(
             imag_only=imag_only,
             realvalue_v=realvalue_v,
             scale_function=weight_fun,
+            v_guess=v_guess,
         )
+        bath_guess = None
+        v_guess = None
         if abs(cost) < min_cost:
             eb_best = eb
             v_best = v

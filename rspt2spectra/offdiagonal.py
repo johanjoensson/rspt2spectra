@@ -1105,23 +1105,35 @@ def merge_vs(vs):
 
 
 def get_v_and_eb(
-    w, delta, hyb, eb, eb_bounds, gamma, imag_only, realvalue_v, scale_function
+    w,
+    delta,
+    hyb,
+    eb,
+    eb_bounds,
+    gamma,
+    imag_only,
+    realvalue_v,
+    scale_function,
+    v_guess=None,
 ):
     n_imp = np.shape(hyb)[1]
     n_b = len(eb) * n_imp
     z = w + 1j * delta
-    # Initialize hopping parameters.
-    # Treat complex-valued parameters,
-    # by doubling the number of parameters.
-    v0 = get_p0(
-        z,
-        hyb,
-        np.repeat(eb, n_imp),
-        gamma,
-        imag_only,
-        realvalue_v,
-        scale_function=scale_function,
-    )
+    if v_guess is None:
+        # Initialize hopping parameters.
+        # Treat complex-valued parameters,
+        # by doubling the number of parameters.
+        v0 = get_p0(
+            z,
+            hyb,
+            np.repeat(eb, n_imp),
+            gamma,
+            imag_only,
+            realvalue_v,
+            scale_function=scale_function,
+        )
+    else:
+        v0 = inroll(v_guess)
 
     def fun(p):
         return cost_function(
