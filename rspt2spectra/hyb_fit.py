@@ -30,6 +30,7 @@ def fit_block(
     rng = np.random.default_rng()
 
     hyb_trace = -np.imag(np.sum(np.diagonal(hyb, axis1=1, axis2=2), axis=1))
+    hyb_trace[hyb_trace < 0] = 0
     n_orb = hyb.shape[1]
     peaks, info = find_peaks(
         hyb_trace,
@@ -70,31 +71,42 @@ def fit_block(
                 bath_energies = w[peaks[bath_index]]
                 bounds = [
                     (
-                        w[int(max(0, left_ips[i]))],
-                        w[int(min(len(w) - 1, right_ips[i]))],
+                        w[max(0, int(np.floor(left_ips[i])))],
+                        w[min(len(w) - 1, int(np.ceil(right_ips[i])))],
                     )
                     for i in bath_index
                 ]
             else:
                 bath_energies = []
                 bounds = []
-            bath_energies = np.append(
-                bath_energies,
-                rng.uniform(
-                    low=w[0],
-                    high=w[-1],
-                    size=max(bath_states_per_orbital - len(peaks), 0),
-                ),
-            )
-            bounds.extend(
-                [(w[0], w[-1])] * max(bath_states_per_orbital - len(peaks), 0)
-            )
         else:
             bath_energies = bath_guess[::n_orb]
             bounds = [
-                (max(eb - 0.1 * abs(eb), w[0]), min(eb + 0.1 * abs(eb), w[-1]))
+                (
+                    max(eb - (w[1] - w[0]) / 2, w[0]),
+                    min(eb + (w[1] - w[0]) / 2, w[-1]),
+                )
                 for eb in bath_energies
             ]
+
+        if v_guess is not None:
+            v_guess = np.append(
+                v_guess,
+                np.random.rand(
+                    max((bath_states_per_orbital - len(bath_energies)) * n_orb, 0),
+                    n_orb,
+                ),
+                axis=0,
+            )
+        bath_energies = np.append(
+            bath_energies,
+            rng.uniform(
+                low=w[0],
+                high=w[-1],
+                size=max(bath_states_per_orbital - len(bath_energies), 0),
+            ),
+        )
+        bounds.extend([(w[0], w[-1])] * max(bath_states_per_orbital - len(bounds), 0))
 
         v, eb, cost = get_v_and_eb(
             w,
