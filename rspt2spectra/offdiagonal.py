@@ -828,7 +828,13 @@ def merge_duplicate_bath_states(eb, p, n_imp, delta):
                 ].reshape(
                     (n_imp, n_imp)
                 )
-            sqrt_p2 = sp.linalg.cholesky(np.conj(p2_term.T) @ p2_term + p2)
+
+            # Cholesky decomposition can fail, if this happens set everything to zero and hope that another try will be better.
+            try:
+                sqrt_p2 = sp.linalg.cholesky(np.conj(p2_term.T) @ p2_term + p2)
+            except LinalgError:
+                sqrt_p2 = np.zeros_like(p2)
+
             p[
                 sorted_indices[first_i]
                 * n_imp**2 : (sorted_indices[first_i] + 1)
