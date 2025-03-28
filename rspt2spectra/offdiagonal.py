@@ -832,7 +832,7 @@ def merge_duplicate_bath_states(eb, p, n_imp, delta):
             # Cholesky decomposition can fail, if this happens set everything to zero and hope that another try will be better.
             try:
                 sqrt_p2 = sp.linalg.cholesky(np.conj(p2_term.T) @ p2_term + p2)
-            except LinalgError:
+            except sp.linalg.LinAlgError:
                 sqrt_p2 = np.zeros_like(p2)
 
             p[
@@ -858,7 +858,7 @@ def cost_function(
     gamma=0.0,
     only_imag_part=True,
     output="value and gradient",
-    regularization_mode="L1",
+    regularization_mode="L2",
     scale_function=lambda _: 1,
 ):
     """
