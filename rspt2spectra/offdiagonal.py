@@ -700,66 +700,66 @@ def inroll(v):
     return p
 
 
-def merge_duplicate_bath_states(eb, p, n_imp):
-    # n_imp = 2
-    # p   0   1   2   3   4  5 ...
-    #    |  ,    |  ,    |  ,  | ...
-    # eb  0       1       2  ...
-    #     00      01      10 ...
+# def merge_duplicate_bath_states(eb, p, n_imp):
+#     # n_imp = 2
+#     # p   0   1   2   3   4  5 ...
+#     #    |  ,    |  ,    |  ,  | ...
+#     # eb  0       1       2  ...
+#     #     00      01      10 ...
 
-    n_b = len(eb)
-    sorted_indices = np.argsort(eb, kind="stable")
-    eb = eb[sorted_indices]
-    first_i = 0
-    # print(f"{len(p)=} {len(eb)=} {n_imp=}")
-    for i, e in enumerate(eb[n_imp::n_imp]):
-        # print(f"{i=} {first_i=}")
-        if np.abs(e - eb[first_i]) < 1e-5:
-            # print(f"{sorted_indices[first_i] * n_imp**2=} ", end="")
-            # print(f"{sorted_indices[(i + 1) * n_imp] * n_imp**2=}")
-            p[
-                sorted_indices[first_i] * n_imp : sorted_indices[first_i] * n_imp
-                + n_imp**2
-            ] += p[
-                sorted_indices[(i + 1) * n_imp]
-                * n_imp : sorted_indices[(i + 1) * n_imp]
-                * n_imp
-                + n_imp**2
-            ]
-            p[
-                sorted_indices[(i + 1) * n_imp]
-                * n_imp : sorted_indices[(i + 1) * n_imp]
-                * n_imp
-                + n_imp**2
-            ] = 0
-            if len(p) == 2 * n_imp * n_b:
-                # print(f"{n_imp * n_b + sorted_indices[first_i] * n_imp=} ", end="")
-                # print(f"{n_imp * n_b + sorted_indices[(i + 1) * n_imp] * n_imp=}")
-                # print(
-                #     f"{p[ n_imp * n_b + sorted_indices[first_i] * n_imp : n_imp * n_b + sorted_indices[first_i] * n_imp + n_imp**2 ].shape=}"
-                # )
-                # print(
-                # f"{p[ n_imp * n_b + sorted_indices[(i + 1) * n_imp] * n_imp : n_imp * n_b + sorted_indices[(i + 1) * n_imp] * n_imp + n_imp**2 ].shape=}"
-                # )
-                p[
-                    n_imp * n_b
-                    + sorted_indices[first_i] * n_imp : n_imp * n_b
-                    + sorted_indices[first_i] * n_imp
-                    + n_imp**2
-                ] += p[
-                    n_imp * n_b
-                    + sorted_indices[(i + 1) * n_imp] * n_imp : n_imp * n_b
-                    + sorted_indices[(i + 1) * n_imp] * n_imp
-                    + n_imp**2
-                ]
-                p[
-                    n_imp * n_b
-                    + sorted_indices[(i + 1) * n_imp] * n_imp : n_imp * n_b
-                    + sorted_indices[(i + 1) * n_imp] * n_imp
-                    + n_imp**2
-                ] = 0
-        else:
-            first_i = (i + 1) * n_imp
+#     n_b = len(eb)
+#     sorted_indices = np.argsort(eb, kind="stable")
+#     eb = eb[sorted_indices]
+#     first_i = 0
+#     # print(f"{len(p)=} {len(eb)=} {n_imp=}")
+#     for i, e in enumerate(eb[n_imp::n_imp]):
+#         # print(f"{i=} {first_i=}")
+#         if np.abs(e - eb[first_i]) < 1e-5:
+#             # print(f"{sorted_indices[first_i] * n_imp**2=} ", end="")
+#             # print(f"{sorted_indices[(i + 1) * n_imp] * n_imp**2=}")
+#             p[
+#                 sorted_indices[first_i] * n_imp : sorted_indices[first_i] * n_imp
+#                 + n_imp**2
+#             ] += p[
+#                 sorted_indices[(i + 1) * n_imp]
+#                 * n_imp : sorted_indices[(i + 1) * n_imp]
+#                 * n_imp
+#                 + n_imp**2
+#             ]
+#             p[
+#                 sorted_indices[(i + 1) * n_imp]
+#                 * n_imp : sorted_indices[(i + 1) * n_imp]
+#                 * n_imp
+#                 + n_imp**2
+#             ] = 0
+#             if len(p) == 2 * n_imp * n_b:
+#                 # print(f"{n_imp * n_b + sorted_indices[first_i] * n_imp=} ", end="")
+#                 # print(f"{n_imp * n_b + sorted_indices[(i + 1) * n_imp] * n_imp=}")
+#                 # print(
+#                 #     f"{p[ n_imp * n_b + sorted_indices[first_i] * n_imp : n_imp * n_b + sorted_indices[first_i] * n_imp + n_imp**2 ].shape=}"
+#                 # )
+#                 # print(
+#                 # f"{p[ n_imp * n_b + sorted_indices[(i + 1) * n_imp] * n_imp : n_imp * n_b + sorted_indices[(i + 1) * n_imp] * n_imp + n_imp**2 ].shape=}"
+#                 # )
+#                 p[
+#                     n_imp * n_b
+#                     + sorted_indices[first_i] * n_imp : n_imp * n_b
+#                     + sorted_indices[first_i] * n_imp
+#                     + n_imp**2
+#                 ] += p[
+#                     n_imp * n_b
+#                     + sorted_indices[(i + 1) * n_imp] * n_imp : n_imp * n_b
+#                     + sorted_indices[(i + 1) * n_imp] * n_imp
+#                     + n_imp**2
+#                 ]
+#                 p[
+#                     n_imp * n_b
+#                     + sorted_indices[(i + 1) * n_imp] * n_imp : n_imp * n_b
+#                     + sorted_indices[(i + 1) * n_imp] * n_imp
+#                     + n_imp**2
+#                 ] = 0
+#         else:
+#             first_i = (i + 1) * n_imp
 
 
 def merge_duplicate_bath_states(eb, p, n_imp, delta):
