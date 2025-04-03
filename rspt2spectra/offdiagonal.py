@@ -552,17 +552,12 @@ def get_vs(z, hyb, wborders, ebs, gamma=0.0, imag_only=True):
     return vs, costs
 
 
-def get_p0(z, hyb, eb, gamma, imag_only, realvalue_v, scale_function):
+def get_p0(z, hyb, eb, gamma, imag_only, realvalue_v):
     n_imp = np.shape(hyb)[1]
     n_b = len(eb)
     if n_imp == 1:
         return np.random.randn(n_b if realvalue_v else 2 * n_b)
-    # Initialize hopping parameters.
-    # Treat complex-valued parameters,
-    # by doubling the number of parameters.
     v0 = np.zeros((n_b, n_imp), dtype=complex)
-    # for b_i in range(0, n_b, n_imp):
-    # for b_i in range(0, n_b//n_imp):
     for i in range(n_imp):
         for j in range(i + 1):
             # p0 = 2*np.random.randn(1 if realvalue_v else 2)
@@ -576,7 +571,6 @@ def get_p0(z, hyb, eb, gamma, imag_only, realvalue_v, scale_function):
                 gamma=gamma,
                 only_imag_part=imag_only,
                 output="value",
-                scale_function=scale_function,
             )
             if imag_only:
                 jac = lambda p: cost_function(
@@ -595,7 +589,8 @@ def get_p0(z, hyb, eb, gamma, imag_only, realvalue_v, scale_function):
             v = unroll(res.x, n_b // n_imp, 1).reshape((n_b // n_imp,))
             v0[i::n_imp, j] = v
             v0[j::n_imp, i] = np.conj(v)
-    p0 = inroll(np.abs(v0))
+    p0 = inroll(v0)
+    # p0 = inroll(np.abs(v0))
     return p0 if not realvalue_v else p0[: n_b * n_imp]
 
 
@@ -698,68 +693,6 @@ def inroll(v):
     """
     p = np.hstack((v.real.flatten(), v.imag.flatten()))
     return p
-
-
-# def merge_duplicate_bath_states(eb, p, n_imp):
-#     # n_imp = 2
-#     # p   0   1   2   3   4  5 ...
-#     #    |  ,    |  ,    |  ,  | ...
-#     # eb  0       1       2  ...
-#     #     00      01      10 ...
-
-#     n_b = len(eb)
-#     sorted_indices = np.argsort(eb, kind="stable")
-#     eb = eb[sorted_indices]
-#     first_i = 0
-#     # print(f"{len(p)=} {len(eb)=} {n_imp=}")
-#     for i, e in enumerate(eb[n_imp::n_imp]):
-#         # print(f"{i=} {first_i=}")
-#         if np.abs(e - eb[first_i]) < 1e-5:
-#             # print(f"{sorted_indices[first_i] * n_imp**2=} ", end="")
-#             # print(f"{sorted_indices[(i + 1) * n_imp] * n_imp**2=}")
-#             p[
-#                 sorted_indices[first_i] * n_imp : sorted_indices[first_i] * n_imp
-#                 + n_imp**2
-#             ] += p[
-#                 sorted_indices[(i + 1) * n_imp]
-#                 * n_imp : sorted_indices[(i + 1) * n_imp]
-#                 * n_imp
-#                 + n_imp**2
-#             ]
-#             p[
-#                 sorted_indices[(i + 1) * n_imp]
-#                 * n_imp : sorted_indices[(i + 1) * n_imp]
-#                 * n_imp
-#                 + n_imp**2
-#             ] = 0
-#             if len(p) == 2 * n_imp * n_b:
-#                 # print(f"{n_imp * n_b + sorted_indices[first_i] * n_imp=} ", end="")
-#                 # print(f"{n_imp * n_b + sorted_indices[(i + 1) * n_imp] * n_imp=}")
-#                 # print(
-#                 #     f"{p[ n_imp * n_b + sorted_indices[first_i] * n_imp : n_imp * n_b + sorted_indices[first_i] * n_imp + n_imp**2 ].shape=}"
-#                 # )
-#                 # print(
-#                 # f"{p[ n_imp * n_b + sorted_indices[(i + 1) * n_imp] * n_imp : n_imp * n_b + sorted_indices[(i + 1) * n_imp] * n_imp + n_imp**2 ].shape=}"
-#                 # )
-#                 p[
-#                     n_imp * n_b
-#                     + sorted_indices[first_i] * n_imp : n_imp * n_b
-#                     + sorted_indices[first_i] * n_imp
-#                     + n_imp**2
-#                 ] += p[
-#                     n_imp * n_b
-#                     + sorted_indices[(i + 1) * n_imp] * n_imp : n_imp * n_b
-#                     + sorted_indices[(i + 1) * n_imp] * n_imp
-#                     + n_imp**2
-#                 ]
-#                 p[
-#                     n_imp * n_b
-#                     + sorted_indices[(i + 1) * n_imp] * n_imp : n_imp * n_b
-#                     + sorted_indices[(i + 1) * n_imp] * n_imp
-#                     + n_imp**2
-#                 ] = 0
-#         else:
-#             first_i = (i + 1) * n_imp
 
 
 def merge_duplicate_bath_states(eb, p, n_imp, delta):
@@ -1126,9 +1059,6 @@ def get_v_and_eb(
     n_b = len(eb) * n_imp
     z = w + 1j * delta
     if v_guess is None:
-        # Initialize hopping parameters.
-        # Treat complex-valued parameters,
-        # by doubling the number of parameters.
         v0 = get_p0(
             z,
             hyb,
@@ -1136,14 +1066,25 @@ def get_v_and_eb(
             gamma,
             imag_only,
             realvalue_v,
-            scale_function=scale_function,
         )
     else:
         v0 = inroll(v_guess)
 
+    def build_hermit_conj_p(p, n_b, n_imp):
+        if n_imp == 1:
+            return p
+
+        v = unroll(p, n_b, n_imp)
+        for i in range(0, n_b, n_imp):
+            v[i : i + n_imp] += np.conj(v[i : i + n_imp].T)
+            v[i : i + n_imp] /= 2
+
+        assert p.shape == inroll(v).shape
+        return inroll(v)
+
     def fun(p):
         return cost_function(
-            p[len(eb) :],
+            build_hermit_conj_p(p[len(eb) :], n_b, n_imp),
             np.repeat(p[: len(eb)], n_imp),
             z,
             np.moveaxis(hyb, 0, -1),
@@ -1152,30 +1093,16 @@ def get_v_and_eb(
             output="value",
         )
 
-    # bath energies must be placed within the energy window
     bounds = [
         eb_bounds[i] if i < len(eb) else (None, None) for i in range(len(eb) + len(v0))
     ]
 
-    def v_constraint(x):
-        v = unroll(x[len(eb) :], n_b, n_imp)
-        return np.array(
-            [
-                np.real(np.trace(np.conj(v[i : i + n_imp]).T @ v[i : i + n_imp]))
-                / delta
-                for i in range(len(eb), len(x), n_imp)
-            ]
-        )
-
-    v_constraints = NonlinearConstraint(v_constraint, 1e-8, np.inf)
-
     res = minimize(fun, np.append(eb, v0), bounds=bounds, tol=1e-12)
 
     p = res.x
-    # Cost function value, with regularization.
     merge_duplicate_bath_states(p[: len(eb)], p[len(eb) :], n_imp, delta)
     c = cost_function(
-        p[len(eb) :],
+        build_hermit_conj_p(p[len(eb) :], n_b, n_imp),
         np.repeat(p[: len(eb)], n_imp),
         z,
         np.moveaxis(hyb, 0, -1),
@@ -1183,8 +1110,8 @@ def get_v_and_eb(
         output="value",
         scale_function=scale_function,
     )
-    # Make sure only one instance of each bath energy has nonzero hopping
-    # Convert hopping parameters to physical shape.
-    eb = p[: len(eb)]
-    v = unroll(p[len(eb) :], n_b, n_imp)
-    return v, eb, c
+    return (
+        unroll(build_hermit_conj_p(p[len(eb) :], n_b, n_imp), n_b, n_imp),
+        np.repeat(p[: len(eb)], n_imp),
+        c,
+    )

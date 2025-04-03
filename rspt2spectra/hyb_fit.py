@@ -10,9 +10,6 @@ def v_opt(a, b, _):
     return a if abs(a[-1]) <= abs(b[-1]) else b
 
 
-v_opt_op = MPI.Op.Create(v_opt, commute=True)
-
-
 def fit_block(
     hyb,
     w,
@@ -127,6 +124,8 @@ def fit_block(
             v_best = v
             min_cost = abs(cost)
     if comm is not None:
-        bath_energies, v, _ = comm.allreduce((eb_best, v_best, min_cost), op=v_opt_op)
+        bath_energies, v, _ = comm.allreduce(
+            (eb_best, v_best, min_cost), op=MPI.Op.Create(v_opt, commute=True)
+        )
 
-    return np.repeat(bath_energies, n_orb), v
+    return bath_energies, v
