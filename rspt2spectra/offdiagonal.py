@@ -1079,7 +1079,6 @@ def get_v_and_eb(
             v[i : i + n_imp] += np.conj(v[i : i + n_imp].T)
             v[i : i + n_imp] /= 2
 
-        assert p.shape == inroll(v).shape
         return inroll(v)
 
     def fun(p):
