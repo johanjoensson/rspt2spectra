@@ -1070,20 +1070,9 @@ def get_v_and_eb(
     else:
         v0 = inroll(v_guess)
 
-    def build_hermit_conj_p(p, n_b, n_imp):
-        if n_imp == 1:
-            return p
-
-        v = unroll(p, n_b, n_imp)
-        for i in range(0, n_b, n_imp):
-            v[i : i + n_imp] += np.conj(v[i : i + n_imp].T)
-            v[i : i + n_imp] /= 2
-
-        return inroll(v)
-
     def fun(p):
         return cost_function(
-            build_hermit_conj_p(p[len(eb) :], n_b, n_imp),
+            p[len(eb) :],
             np.repeat(p[: len(eb)], n_imp),
             z,
             np.moveaxis(hyb, 0, -1),
@@ -1101,7 +1090,7 @@ def get_v_and_eb(
     p = res.x
     merge_duplicate_bath_states(p[: len(eb)], p[len(eb) :], n_imp, delta)
     c = cost_function(
-        build_hermit_conj_p(p[len(eb) :], n_b, n_imp),
+        p[len(eb) :],
         np.repeat(p[: len(eb)], n_imp),
         z,
         np.moveaxis(hyb, 0, -1),
@@ -1110,7 +1099,7 @@ def get_v_and_eb(
         scale_function=scale_function,
     )
     return (
-        unroll(build_hermit_conj_p(p[len(eb) :], n_b, n_imp), n_b, n_imp),
+        unroll(p[len(eb) :], n_b, n_imp),
         np.repeat(p[: len(eb)], n_imp),
         c,
     )
