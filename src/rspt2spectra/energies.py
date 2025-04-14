@@ -182,7 +182,7 @@ def plot_pdos0_3(w, p0d_rspt, p0d_initial, p0d, nc, spinpol, xlim):
         ax.plot(w, p0d_rspt[t], "-r", label="p0d_rspt")
         ax.set_ylabel(str(t))
     # Figure design
-    axes[-1].set_xlabel("$\omega$  (eV)")
+    axes[-1].set_xlabel(r"$\omega$  (eV)")
     axes[0].legend(loc=2)
     axes[0].set_xlim(xlim)
     for i, ax in enumerate(axes):
@@ -197,11 +197,11 @@ def plot_pdos0_3(w, p0d_rspt, p0d_initial, p0d, nc, spinpol, xlim):
         fig, axes = plt.subplots(norb, figsize=(6, 6), sharex=True)
         # Plot calculated PDOS (using e_rspt)
         for i, ax in enumerate(axes):
-            ax.plot(w, -p0d_initial[i, :], "-b", label="$\epsilon_\mathrm{rspt}$")
+            ax.plot(w, -p0d_initial[i, :], "-b", label=r"$\epsilon_\mathrm{rspt}$")
             ax.plot(w, p0d_initial[norb + i, :], "-b")
         # Plot calculated PDOS (using e)
         for i, ax in enumerate(axes):
-            ax.plot(w, -p0d[i, :], "-g", label="$\epsilon$")
+            ax.plot(w, -p0d[i, :], "-g", label=r"$\epsilon$")
             ax.plot(w, p0d[norb + i, :], "-g")
         # Plot original PDOS
         for i, ax in enumerate(axes):
@@ -209,7 +209,7 @@ def plot_pdos0_3(w, p0d_rspt, p0d_initial, p0d, nc, spinpol, xlim):
             ax.plot(w, p0d_rspt[norb + i], "-r")
             ax.set_ylabel(str(i))
         # Figure design
-        axes[-1].set_xlabel("$\omega$  (eV)")
+        axes[-1].set_xlabel(r"$\omega$  (eV)")
         axes[0].legend(loc=2)
         axes[0].set_xlim(xlim)
         plt.subplots_adjust(
@@ -232,9 +232,9 @@ def plot_pdos0_4(w, p0d_rspt, p0d, p0_rspt, p0, norb, spinpol, xlim):
     if spinpol:
         fig, axes = plt.subplots(norb, figsize=(6, 6), sharex=True)
         for i, ax in enumerate(axes):
-            ax.plot(w, -p0d[i, :], "--g", label="$\epsilon_{0,d}$")
+            ax.plot(w, -p0d[i, :], "--g", label=r"$\epsilon_{0,d}$")
             ax.plot(w, p0d[norb + i, :], "--g")
-            ax.plot(w, -p0[i, :], "-g", label="$\epsilon_{0}$")
+            ax.plot(w, -p0[i, :], "-g", label=r"$\epsilon_{0}$")
             ax.plot(w, p0[norb + i, :], "-g")
 
             ax.plot(w, -p0d_rspt[i], "--r", label="p0d_RSPt")
@@ -244,7 +244,7 @@ def plot_pdos0_4(w, p0d_rspt, p0d, p0_rspt, p0, norb, spinpol, xlim):
 
             ax.set_ylabel(str(i))
         # Figure design
-        axes[-1].set_xlabel("$\omega$  (eV)")
+        axes[-1].set_xlabel(r"$\omega$  (eV)")
         axes[0].legend(loc=2)
         axes[0].set_xlim(xlim)
         plt.subplots_adjust(
@@ -353,10 +353,10 @@ def plot_pdos_5(es, w, eim, p_rspt, hyb, sigmaM, spinpol):
 
     """
     labels = [
-        "$\epsilon_\mathrm{rspt}$",
-        "$\epsilon_{0,d}$",
-        "$\epsilon_0$",
-        "$\epsilon$",
+        r"$\epsilon_\mathrm{rspt}$",
+        r"$\epsilon_{0,d}$",
+        r"$\epsilon_0$",
+        r"$\epsilon$",
     ]
     # Plot trace.
     # Verify different on-site energies by looking at
