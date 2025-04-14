@@ -1,0 +1,7 @@
+numpy
+scipy
+numpydoc
+sphinx
+pytest
+matplotlib
+mpi4py

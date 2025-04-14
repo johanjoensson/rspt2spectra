@@ -1,0 +1,31 @@
+[project]
+name = "rspt2spectra"
+# version = "2.0.0"
+description = "RSPt interface for fitting hybridization funcitons and reading operators. Forked from https://github.com/JohanSchott/rspt2spectra"
+# readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+dependencies = [
+ "numpy",
+ "scipy",
+ "numpydoc",
+ "sphinx",
+ "pytest",
+ "matplotlib",
+ "mpi4py"
+]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/johanjoensson/rspt2spectra"
+Issues = "https://github.com/johanjoensson/rspt2spectra//issues"
+
+
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
