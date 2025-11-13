@@ -17,6 +17,36 @@ import subprocess
 from .constants import eV
 
 
+def parse_matrices(out_file="out", search_phrase="Local hamiltonian", prefix="."):
+    labels = []
+    matrices = []
+    with open(f"{prefix}/{out_file}", "r") as f:
+        it = iter(f)
+        for line in it:
+            if search_phrase in line:
+                label = line.split()[1]
+                labels.append(label)
+                while "real" not in line.lower():
+                    line = next(it)
+                line = next(it)
+                real_rows = []
+                n_rows = 0
+                while "imag" not in line.lower():
+                    row = [float(num) for num in line.split()]
+                    real_rows.append(row)
+                    n_rows += 1
+                    line = next(it)
+                line = next(it)
+                imag_rows = []
+                for row_i in range(n_rows):
+                    row = [float(num) for num in line.split()]
+                    imag_rows.append(row)
+                    line = next(it)
+                matrices.append(np.array(real_rows) + 1j * np.array(imag_rows))
+
+    return dict(zip(labels, matrices))
+
+
 def hyb(file_re, file_im, spinpol=True, only_diagonal_part=False):
     """
     Return all hybridization functions and associated energy mesh,

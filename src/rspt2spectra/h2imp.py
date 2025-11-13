@@ -17,13 +17,15 @@ from collections import OrderedDict
 from rspt2spectra import op_printer
 
 
-def write_to_file(d, filename="h0_Op"):
+def write_to_file(d, filename="h0_Op", save_as_dict=False):
     """
     Write variable to disk.
     """
-    with open(filename + ".pickle", "wb") as handle:
-        pickle.dump(d, handle)
-    op_printer.write_operator_to_file([d], filename + ".dict")
+    if save_as_dict:
+        op_printer.write_operator_to_file([d], filename + ".dict")
+    else:
+        with open(filename + ".pickle", "wb") as handle:
+            pickle.dump(d, handle)
 
 
 def get_H_operator_from_dense_rspt_H_matrix(h, ang=2):

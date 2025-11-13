@@ -3,20 +3,19 @@
 op_printer
 ==========
 
-This module contains functions for printing operators to files. The operators 
+This module contains functions for printing operators to files. The operators
 are written in a format readable by impurityModel
 
 """
 
 
 def key_to_string(key):
-    res = []
     ((state1, _), (state2, _)) = key
-    return repr(state1) + " " + repr(state2)
+    return f"{state1:3d} {state2:3d}"
 
 
 def value_to_string(value):
-    return repr(value.real) + " " + repr(value.imag)
+    return f"{value.real: .15f} {value.imag: .15f}"
 
 
 def key_value_to_string(key, value):
