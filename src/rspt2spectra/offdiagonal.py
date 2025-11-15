@@ -1115,7 +1115,7 @@ def get_v_and_eb_basin_hopping(
         niter=100,
         T=1e-5,
         minimizer_kwargs={
-            "tol": 1e-6,
+            "tol": 1e-8,
             "method": "SLSQP",
             "bounds": eb_bounds + [(None, None) for _ in v0],
         },

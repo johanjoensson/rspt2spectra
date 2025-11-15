@@ -218,6 +218,7 @@ def fit_block(
     bath_guess=None,
     v_guess=None,
 ):
+    n_proc = 1 if comm is None else comm.size
     rng = np.random.default_rng()
 
     hyb_trace = -np.imag(np.sum(np.diagonal(hyb, axis1=1, axis2=2), axis=1))
@@ -249,9 +250,7 @@ def fit_block(
     min_cost = np.inf
     eb_best = None
     v_best = None
-    for _ in range(1):
-        # for _ in range(max(1000 // comm.size, 10) if comm is not None else 1000):
-        # for _ in range():
+    for _ in range(max(5 * len(peaks) // n_proc, 5)):
         if bath_guess is None and v_guess is None:
             if len(peaks) > 0:
                 bath_index = rng.choice(
