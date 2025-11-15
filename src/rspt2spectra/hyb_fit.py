@@ -250,7 +250,8 @@ def fit_block(
     min_cost = np.inf
     eb_best = None
     v_best = None
-    for _ in range(max(5 * len(peaks) // n_proc, 5)):
+    # Do at least 5 fits per peak found
+    for _ in range(max(5 * len(peaks) // n_proc, 1)):
         if bath_guess is None and v_guess is None:
             if len(peaks) > 0:
                 bath_index = rng.choice(
