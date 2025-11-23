@@ -14,11 +14,17 @@ import itertools
 import matplotlib.pylab as plt
 import numpy as np
 import scipy as sp
-from scipy.optimize import minimize, NonlinearConstraint, basinhopping
+from os import environ
+from scipy.optimize import (
+    minimize,
+    Bounds,
+    basinhopping,
+    differential_evolution,
+)
 
 from time import perf_counter
 
-from .energies import cog
+from rspt2spectra.energies import cog
 
 
 def plot_diagonal_and_offdiagonal(w, hyb_diagonal, hyb, xlim):
@@ -460,7 +466,7 @@ def get_hyb(z, eb, v):
 
     """
     n_w = len(z)
-    n_b, n_imp = np.shape(v)
+    n_b, n_imp = v.shape
     hyb = np.zeros((n_w, n_imp, n_imp), dtype=complex)
 
     # Loop over all bath energies
@@ -482,25 +488,29 @@ def get_hyb_2(z, eb, v):
     ----------
     z : complex array(M)
         Energy mesh.
-    eb : array(B)
+    eb : array(S, N_B)
         Bath energies.
-    v : array(B, N)
+    v : array(S, N_B, N, N)
         Hopping parameters.
 
     Returns
     -------
-    hyb : array(N,N,M)
+    hyb : array(S, M, N,N)
         Hybridization functions.
 
     """
-    # return np.einsum("li, nk, lj -> ijn", np.conj(v), 1/(z[:, np.newaxis] - eb[np.newaxis, :]), v, optimize = True)
-    return np.moveaxis(
-        np.conj(v.T)[np.newaxis, :, :]
-        @ np.array([np.diag(d) for d in 1 / (z[:, np.newaxis] - eb[np.newaxis, :])])
-        @ v[np.newaxis, :, :],
-        0,
-        -1,
-    )
+
+    # numerator = np.conj(np.transpose(v, (0, 1, 3, 2))) @ v  # (S, N_B, N, N)
+    # print(f"{numerator=}")
+    # denominator = z[np.newaxis, :, np.newaxis] - eb[:, np.newaxis]  # (S, M, N_B)
+    # print(f"{denominator=}")
+    return np.sum(
+        (np.conj(np.transpose(v, (0, 1, 3, 2))) @ v)[:, np.newaxis]
+        / (z[np.newaxis, :, np.newaxis] - eb[:, np.newaxis])[
+            ..., np.newaxis, np.newaxis
+        ],
+        axis=2,
+    )  # (S, M, N, N)
 
 
 def get_vs(z, hyb, wborders, ebs, gamma=0.0, imag_only=True):
@@ -555,6 +565,46 @@ def get_vs(z, hyb, wborders, ebs, gamma=0.0, imag_only=True):
     return vs, costs
 
 
+def generate_hopping_guess(z, hyb, eb, gamma, imag_only, realvalue_v):
+    n_imp = hyb.shape[1]
+    n_b = len(eb)
+    v0 = np.zeros((n_imp * n_b, n_imp), dtype=complex)
+    for i in range(n_imp):
+        for j in range(i + 1):
+            p0 = 2 * np.random.randn(n_b * 1 if realvalue_v else 2 * n_b * 1)
+            p0 /= np.linalg.norm(p0)
+            fun = lambda p: vectorized_cost_function(
+                np.append(eb, p)[np.newaxis],
+                n_b,
+                z,
+                hyb[:, i, j].reshape((len(z), 1, 1)),
+                gamma,
+            )
+            if imag_only:
+
+                def jac(p):
+                    return vectorized_cost_function(
+                        np.append(eb, p)[np.newaxis],
+                        n_b,
+                        z,
+                        hyb[:, i, j].reshape((len(z), 1, 1)),
+                        gamma,
+                    )
+
+                # Minimize cost function
+                res = minimize(fun, p0, jac=jac, tol=1e-3)
+            else:
+                res = minimize(
+                    fun,
+                    p0,
+                    tol=1e-3,
+                )
+            v = unroll(res.x, n_b, 1).reshape((n_b,))
+            v0[i::n_imp, j] = v
+            v0[j::n_imp, i] = np.conj(v)
+    return v0
+
+
 def get_p0(z, hyb, eb, gamma, imag_only, realvalue_v):
     n_imp = np.shape(hyb)[1]
     n_b = len(eb)
@@ -586,9 +636,9 @@ def get_p0(z, hyb, eb, gamma, imag_only, realvalue_v):
                     output="gradient",
                 )
                 # Minimize cost function
-                res = minimize(fun, p0, jac=jac, tol=1e-5)
+                res = minimize(fun, p0, jac=jac, tol=1e-3)
             else:
-                res = minimize(fun, p0, tol=1e-5)
+                res = minimize(fun, p0, tol=1e-3)
             v = unroll(res.x, n_b // n_imp, 1).reshape((n_b // n_imp,))
             v0[i::n_imp, j] = v
             v0[j::n_imp, i] = np.conj(v)
@@ -659,8 +709,8 @@ def unroll(p, n_b, n_imp):
 
     Parameters
     ----------
-    p : real array(K)
-        Hybridization parameters as a vector.
+    p : real array(S, K)
+        Hybridization parameters as a stack of vectors.
     n_b : int
         Number of bath orbitals.
     n_imp : int
@@ -668,21 +718,27 @@ def unroll(p, n_b, n_imp):
 
     Returns
     -------
-    v : complex array(n_b, n_imp)
+    v : complex array(S, n_b, n_imp)
         Hybridization parameters as a matrix.
 
     """
-    realvalue_v = len(p) == n_b * n_imp
-    # assert len(p) % 2 == 0
-    # Number of complex-value parameters
-    if realvalue_v:
-        r = len(p)
-        p_c = p[:r] + 0j
-    else:
-        r = len(p) // 2
-        p_c = p[:r] + 1j * p[r:]
-    v = p_c.reshape(n_b, n_imp)
-    return v
+    onedimensional = len(p.shape) == 1
+    p_c = p
+    if onedimensional:
+        r = p.shape[0]
+        if r != n_b * n_imp:
+            # The real parts are the first r elements in p
+            # the imaginary parts are the rest
+            r //= 2
+            p_c = p[:r] + 1j * p[r:]
+        return p_c.reshape((n_b, n_imp))
+    r = p.shape[1]
+    if r != n_b * n_imp:
+        # The real parts are the first r elements in p
+        # the imaginary parts are the rest
+        r //= 2
+        p_c = p[:, :r] + 1j * p[:, r:]
+    return p_c.reshape((p.shape[0], n_b, n_imp))
 
 
 def inroll(v):
@@ -691,17 +747,21 @@ def inroll(v):
 
     Parameters
     ----------
-    v : complex array(n_b, n_imp)
+    v : complex array(..., n_b, n_imp)
         Hybridization parameters as a matrix.
 
     Returns
     -------
-    p : real array(K)
-        Hybridization parameters as a vector.
+    p : real array(..., K)
+        Hybridization parameters as a stack of vectors.
 
     """
-    p = np.hstack((v.real.flatten(), v.imag.flatten()))
-    return p
+    res_shape = tuple(v.shape[:-2] + (v.shape[-2] * v.shape[-1],))
+    return np.append(
+        v.real.reshape(res_shape),
+        v.imag.reshape(res_shape),
+        axis=-1,
+    )
 
 
 def merge_bath_states(eb, v, delta):
@@ -741,15 +801,14 @@ def calc_moments(f, x, max_moment):
 
 def cost_function(
     p,
-    eb,
+    n_eb,
     z,
     hyb,
-    gamma=0.0,
-    only_imag_part=True,
-    output="value and gradient",
-    regularization_mode="L2",
-    scale_function=lambda w: np.ones_like(w),
-    max_moment: int = 0,
+    gamma,
+    only_imag_part,
+    output,
+    regularization_mode,
+    max_moment: int,
 ):
     """
     Return cost function value.
@@ -789,57 +848,44 @@ def cost_function(
     # Dimensions. Help variables.
     n_w = len(z)
     n_imp = np.shape(hyb)[1]
-    n_b = len(eb)
-    assert n_b % n_imp == 0
+    n_b = n_imp * n_eb
 
     # Number of data points to fit to.
     m = n_imp * n_imp * n_w
     assert hyb.size == m
 
+    eb = np.repeat(p[:, :n_eb], n_imp)
     # Convert hopping parameters to physical shape.
-    v = unroll(p, n_b, n_imp)
+    v = unroll(p[n_eb:], n_b, n_imp)
 
-    # Model hybridization functions.
     hyb_model = get_hyb(z, eb, v)
 
-    # Difference between original and model hybridization functions
-    diff = hyb_model - hyb  # * scale_function(np.real(z))[:, None, None]
+    diff = hyb_model - hyb
     diff *= (1 / n_imp**2 * np.ones((n_imp, n_imp)) + np.eye(n_imp))[None, ...]
     if only_imag_part:
-        # Consider only imaginary part of the hybrization functions.
         diff = diff.imag
-        # Loss values
         loss = 1 / 2 * diff**2
     else:
-        # Loss values
         loss = 1 / 2 * np.abs(diff) ** 2
 
     model_moments = calc_moments(hyb_model, np.real(z), max_moment=max_moment)
     hyb_moments = calc_moments(hyb, np.real(z), max_moment=max_moment)
-    # model_moments[1:] /= model_moments[0]
-    # hyb_moments[1:] /= hyb_moments[0]
     moment_errors = 1 / 2 * np.abs(model_moments - hyb_moments) ** 2
-    # Cost function.
     # Cost function value,
     # sum over two impurity orbital indices and
     # one energy index.
     c = 1 / m * np.sum(loss) + 1 / (2 * n_imp**2) * np.sum(moment_errors)
     # Add regularization terms
     if regularization_mode == "L1":
-        # L1-regularization
         c += gamma / len(p) * np.sum(np.abs(p))
-        c += gamma / len(eb) * np.sum(np.abs(eb))
     elif regularization_mode == "L2":
-        # L2-regularization
         c += gamma / (2 * len(p)) * np.sum(p**2)
-        c += gamma / (2 * len(eb)) * np.sum(eb**2)
     elif regularization_mode == "sigmoid":
         # Regularization with derivative being the sigmoid function.
         # This acts as a smoothened version of L1-regularization.
         # Delta determine the sharpness of the sigmoid function.
         delta = 0.1
         c += gamma / len(p) * np.sum(delta * np.log(np.cosh(p / delta)))
-        c += gamma / len(eb) * np.sum(delta * np.log(np.cosh(eb / delta)))
 
     else:
         raise NotImplementedError
@@ -850,8 +896,8 @@ def cost_function(
 
     # Calculate gradient here...
     if not only_imag_part:
-        sys.exit(
-            ("Gradient for fit to complex hybridization " + "is not implemented yet...")
+        raise RuntimeError(
+            ("Gradient for fit to complex hybridization is not implemented yet...")
         )
 
     # Partial derivatives of the cost function with respect to the
@@ -953,16 +999,17 @@ def cost_function(
     elif regularization_mode == "sigmoid":
         dcdp += gamma / len(p) * np.tanh(p / delta)
     else:
-        sys.exit("Regularization mode not implemented.")
+        raise RuntimeError(
+            f"Regularization mode {regularization_mode} not implemented."
+        )
 
     if output == "gradient":
         return dcdp
     elif output == "value and gradient":
         return c, dcdp
     else:
-        sys.exit("Output option not possible.")
-
-    # return np.sum(np.abs(p-4))
+        raise RuntimeError("Output option {output} not possible.")
+    return None
 
 
 def merge_ebs(ebs):
@@ -1036,13 +1083,15 @@ def get_v_and_eb(
 
     def fun(p):
         return cost_function(
-            p[len(eb) :],
-            np.repeat(p[: len(eb)], n_imp),
+            p,
+            len(eb),
             z,
             hyb,
-            gamma=gamma,
-            only_imag_part=imag_only,
-            output="value",
+            gamma,
+            imag_only,
+            "value",
+            "L2",
+            3,
         )
 
     bounds = [
@@ -1053,15 +1102,7 @@ def get_v_and_eb(
 
     p = res.x
     # merge_duplicate_bath_states(p[: len(eb)], p[len(eb) :], n_imp, delta)
-    c = cost_function(
-        p[len(eb) :],
-        np.repeat(p[: len(eb)], n_imp),
-        z,
-        hyb,
-        only_imag_part=imag_only,
-        output="value",
-        scale_function=lambda x: scale_function(x),
-    )
+    c = res.fun
     return (
         unroll(p[len(eb) :], n_b, n_imp),
         np.repeat(p[: len(eb)], n_imp),
@@ -1073,69 +1114,207 @@ def get_v_and_eb_basin_hopping(
     w,
     delta,
     hyb,
-    eb,
+    ebs,
+    vs,
     eb_bounds,
     gamma,
     imag_only,
     realvalue_v,
     scale_function,
-    v_guess=None,
 ):
+    assert (
+        vs.shape[0] == ebs.shape[0]
+    ), f"population size must match between eb and v. {ebs.shape[0]} != {vs.shape[0]}"
+    population_size = ebs.shape[0]
     n_imp = np.shape(hyb)[1]
-    n_b = len(eb) * n_imp
+    n_eb = ebs.shape[1]
+    n_b = n_eb * n_imp
     delta_arr = delta * (1 + 10 * (w / np.max(np.abs(w))) ** 2)
     z = w + 1j * delta_arr
-    if v_guess is None:
-        v0 = get_p0(
-            z,
-            hyb,
-            np.repeat(eb, n_imp),
-            gamma,
-            imag_only,
-            realvalue_v,
-        )
-    else:
-        v0 = inroll(v_guess)
 
     def fun(p):
-        return cost_function(
-            p[len(eb) :],
-            np.repeat(p[: len(eb)], n_imp),
-            z,
-            hyb,
-            gamma=gamma,
-            only_imag_part=imag_only,
-            output="value",
-            max_moment=3,
+        return vectorized_cost_function(p[np.newaxis], n_eb, z, hyb, gamma)
+
+    best_cost = np.inf
+    best_v = None
+    best_eb = None
+    for i in range(population_size):
+        eb = ebs[i]
+        v0_flat = inroll(vs[i])
+        if realvalue_v:
+            v0_flat = v0_flat[: n_imp * n_b]
+        lower_bounds = np.empty((len(eb) + v0_flat.shape[0]), dtype=float)
+        upper_bounds = np.empty_like(lower_bounds)
+        for i, (lb, ub) in enumerate(
+            itertools.chain(eb_bounds, [(-1, 1)] * v0_flat.shape[0])
+        ):
+            lower_bounds[i] = lb
+            upper_bounds[i] = ub
+
+        # OpTIMIZE!!!
+        res = basinhopping(
+            fun,
+            np.append(eb, v0_flat),
+            niter=100,
+            T=1e-3,
+            minimizer_kwargs={
+                "tol": 1e-8,
+                "method": "SLSQP",
+                "bounds": Bounds(
+                    lb=lower_bounds,
+                    ub=upper_bounds,
+                    keep_feasible=np.array([True] * lower_bounds.shape[0]),
+                ),
+                "workers": environ.get("OMP_NUM_THREADS", 1),
+            },
+            disp=False,
         )
 
-    res = basinhopping(
-        fun,
-        np.append(eb, v0),
-        niter=100,
-        T=1e-5,
-        minimizer_kwargs={
-            "tol": 1e-8,
-            "method": "SLSQP",
-            "bounds": eb_bounds + [(None, None) for _ in v0],
-        },
-        disp=False,
+        p = res.x
+        c = res.fun
+        if abs(c) < best_cost:
+            best_v = unroll(p[ebs.sahpe[1] :], n_b, n_imp)
+            best_eb = np.repeat(p[: len(eb)], n_imp)
+            best_cost = c
+    return (
+        best_v,
+        best_eb,
+        best_cost,
+    )
+
+
+def get_v_and_eb_differential_evolution(
+    w,
+    delta,
+    hyb,
+    ebs,
+    vs,
+    eb_bounds,
+    gamma,
+    imag_only,
+    realvalue_v,
+    scale_function,
+):
+    n_eb = ebs.shape[1]
+    n_imp = np.shape(hyb)[1]
+    n_b = n_eb * n_imp
+    delta_arr = delta * (1 + 10 * (w / np.max(np.abs(w))) ** 2)
+    z = w + 1j * delta_arr
+
+    v0_flat = inroll(vs)
+    initial_guesses = np.append(ebs, v0_flat, axis=1)
+    lower_bounds = np.empty((initial_guesses.shape[1]), dtype=float)
+    upper_bounds = np.empty_like(lower_bounds)
+    for i, (lb, ub) in enumerate(
+        itertools.chain(eb_bounds, [(-1, 1)] * v0_flat.shape[1])
+    ):
+        lower_bounds[i] = lb
+        upper_bounds[i] = ub
+
+    n_workers = environ.get("OMP_NUM_THREADS", 1)
+    res = differential_evolution(
+        vectorized_cost_function,
+        Bounds(
+            lb=lower_bounds,
+            ub=upper_bounds,
+            keep_feasible=np.array([True] * lower_bounds.shape[0]),
+        ),
+        args=(n_eb, z, hyb, gamma),
+        init=initial_guesses,
+        maxiter=100,
+        workers=n_workers,
+        vectorized=n_workers == 1,
+        updating="immediate" if n_workers == 1 else "deferred",
+        polish=True,
     )
 
     p = res.x
-    # merge_duplicate_bath_states(p[: len(eb)], p[len(eb) :], n_imp, delta)
-    c = cost_function(
-        p[len(eb) :],
-        np.repeat(p[: len(eb)], n_imp),
-        w + 1j * delta,
-        hyb,
-        only_imag_part=imag_only,
-        output="value",
-        scale_function=lambda x: scale_function(x),
-        max_moment=3,
-    )
+    c = res.fun
     return (
-        unroll(p[len(eb) :], n_b, n_imp),
-        np.repeat(p[: len(eb)], n_imp),
+        unroll(p[n_eb:], n_b, n_imp),
+        np.repeat(p[:n_eb], n_imp),
         c,
     )
+
+
+def vectorized_cost_function(
+    p,
+    n_eb,
+    z,
+    hyb,
+    gamma,
+):
+    """
+    Return cost function value.
+
+    Since the imaginary part of the hybridization function,
+    from one bath state, is more local in energy
+    than the real part, the default is to only fit to the imaginary part.
+
+    Parameters
+    ----------
+    p : real array(K)
+        bath energies and hopping parameters.
+    n_b : array(B)
+        number of bath states.
+    z : complex array(M)
+        Energy mesh, just above the real axis.
+    hyb : complex array(N,N,M)
+        RSPt hybridization functions.
+    Returns
+    -------
+    c : float
+        Cost function value.
+
+    """
+    # Dimensions. Help variables.
+    one_dim = len(p.shape) == 1
+    if one_dim:
+        p = p[np.newaxis]
+    n_w = len(z)
+    n_imp = np.shape(hyb)[1]
+    n_b = n_imp * n_eb
+    eb = p[:, :n_eb]
+
+    # Convert hopping parameters to physical shape.
+    v = unroll(p[:, n_eb:], n_b, n_imp).reshape((p.shape[0], n_eb, n_imp, n_imp))
+
+    # Model hybridization functions.
+    hyb_model = get_hyb_2(z, eb, v)
+
+    # Difference between original and model hybridization functions
+    diff = hyb_model - hyb[np.newaxis]
+    loss = 1 / 2 * np.abs(diff) ** 2
+
+    # Calculate the difference in the first three (central) moments
+    moment_error = (
+        1
+        / 2
+        * np.pow(
+            np.abs(
+                np.trapezoid(
+                    np.pow(z.real[np.newaxis], np.arange(4)[:, np.newaxis])[
+                        np.newaxis, :, :, np.newaxis, np.newaxis
+                    ]
+                    * diff[:, np.newaxis],
+                    z.real,
+                    axis=2,
+                )
+            ),
+            2,
+        )
+    )
+    # Cost function.
+    # sum over two impurity orbital indices and
+    # one energy index.
+    c = 1 / (n_w * n_imp * n_imp) * np.sum(loss, axis=tuple(range(1, loss.ndim)))
+    # For the integrated error, sum over two orbital indices
+    c += (
+        1
+        / (n_imp * n_imp)
+        * np.sum(moment_error, axis=tuple(range(1, moment_error.ndim)))
+    )
+    # Add regularization terms
+    # L2-regularization
+    c += gamma / (2 * p.shape[1]) * np.sum(p**2, axis=tuple(range(1, p.ndim)))
+    return c[0] if one_dim else c
