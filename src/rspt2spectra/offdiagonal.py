@@ -764,30 +764,28 @@ def inroll(v):
     )
 
 
-def merge_bath_states(eb, v, delta):
-    n_eb = len(eb)
-    n_imp = v.shape[1]
-    eb = eb[::n_imp]
-    realvalued = np.any(np.iscomplex(v))
-    sorded_idx = np.argsort(eb)
-    v = np.array([[v[i * n_imp : (i + 1) * n_imp]] for i in range(len(eb) // n_imp)])
+def merge_bath_states(ebs, vs):
+    n_eb = ebs.shape[0]
+    n_imp = vs.shape[1]
+    realvalued = np.any(np.iscomplex(vs))
+    sorded_idx = np.argsort(ebs)
     # Sort bath and hopping in order of increasing hopping strength
-    sorted_idx = np.argsort(np.linalg.norm(v, axis=(1, 2)))
-    v = v[sorted_idx]
-    eb = eb[sorted_idx]
+    sorted_idx = np.argsort(np.linalg.norm(vs, axis=(1, 2)))
+    vs = vs[sorted_idx]
+    ebs = ebs[sorted_idx]
 
-    zeroth_moment = np.conj(v[:2].T) @ v[:2]
-    first_moment = eb[0] * np.conj(v[0].T) @ v[0] + eb[1] * np.conj(v[1].T) @ v[1]
+    zeroth_moments = np.conj(np.transpose(vs, (0, 2, 1))) @ vs
+    print(f"{zeroth_moments.shape=}")
+    first_moments = ebs[:, np.newaxis, np.newaxis] * zeroth_moments
+    print(f"{first_moments.shape=}")
     # Vd V = Delta0
     # Vd Eb V = Delta1
     # eb * VdV = Delta1 = eb * Delta0
-    V = np.linalg.cholesky(zeroth_moment, upper=True)
-    Eb = np.linalg.solve(zeroth_moment, first_moment)
-    v[1] = V
-    eb[1] = Eb
-    eb[sorded_idx[1:]] = eb[1:]
-    v[sorted_idx[1:]] = v[1:]
-    return np.repeat(eb[1:], n_imp), v[1:].reshape((n_eb, n_imp))
+    V = sp.linalg.cho_factor(np.sum(zeroth_moments, axis=0), lower=False)
+    Eb = sp.linalg.cho_solve(V, np.sum(first_moments, axis=0))
+    v = np.triu(V[0])
+    eb = np.sum(np.diag(Eb)) / n_imp
+    return eb, v.reshape((n_imp, n_imp))
 
 
 def calc_moments(f, x, max_moment):
@@ -1230,9 +1228,31 @@ def get_v_and_eb_differential_evolution(
 
     p = res.x
     c = res.fun
+    v = unroll(p[n_eb:], n_b, n_imp)
+    vt = v.reshape((n_eb, n_imp, n_imp))
+    eb = p[:n_eb]
+    sorted_idx = np.argsort(eb)
+    eb = eb[sorted_idx]
+    vt = vt[sorted_idx]
+    e_diff = np.diff(eb)
+    # Delta gives Half width at half maximum
+    # If peaks are closer together than delta/5, combine them.
+    # delta/5 is half width at ~96% of maximum. If peaks are too closely spaced,
+    # they start overlapping way too much for the fitting procedure to make much sense.
+    split_indices = 1 + np.nonzero(e_diff > delta / 5)[0]
+    v_merged = np.empty((0, n_imp), dtype=vt.dtype)
+    eb_merged = np.empty((0), dtype=float)
+    for v_g, eb_g in zip(np.split(vt, split_indices), np.split(eb, split_indices)):
+        if v_g.shape[0] == 1:
+            vm = v_g[0]
+            em = eb_g
+        else:
+            em, vm = merge_bath_states(eb_g, v_g)
+        eb_merged = np.append(eb_merged, em)
+        v_merged = np.append(v_merged, vm, axis=0)
     return (
-        unroll(p[n_eb:], n_b, n_imp),
-        np.repeat(p[:n_eb], n_imp),
+        v_merged,
+        np.repeat(eb_merged, n_imp),
         c,
     )
 
