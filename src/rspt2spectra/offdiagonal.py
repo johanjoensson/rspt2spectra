@@ -1169,10 +1169,34 @@ def get_v_and_eb_basin_hopping(
         )
 
         p = res.x
-        c = res.fun
+        v = unroll(p[n_eb:], n_b, n_imp)
+        vt = v.reshape((n_eb, n_imp, n_imp))
+        eb = p[:n_eb]
+        sorted_idx = np.argsort(eb)
+        eb = eb[sorted_idx]
+        vt = vt[sorted_idx]
+        e_diff = np.diff(eb)
+        # Delta gives Half width at half maximum
+        # If peaks are closer together than delta/5, combine them.
+        # delta/5 is half width at ~96% of maximum. If peaks are too closely spaced,
+        # they start overlapping way too much for the fitting procedure to make much sense.
+        split_indices = 1 + np.nonzero(e_diff > delta / 5)[0]
+        v_merged = np.empty((0, n_imp), dtype=vt.dtype)
+        eb_merged = np.empty((0), dtype=float)
+        for v_g, eb_g in zip(np.split(vt, split_indices), np.split(eb, split_indices)):
+            if v_g.shape[0] == 1:
+                vm = v_g[0]
+                em = eb_g
+            else:
+                em, vm = merge_bath_states(eb_g, v_g)
+            eb_merged = np.append(eb_merged, em)
+            v_merged = np.append(v_merged, vm, axis=0)
+        c = vectorized_cost_function(
+            np.append(eb_merged, inroll(v_merged)), eb_merged.shape[0], z, hyb, gamma
+        )
         if abs(c) < best_cost:
-            best_v = unroll(p[ebs.sahpe[1] :], n_b, n_imp)
-            best_eb = np.repeat(p[: len(eb)], n_imp)
+            best_v = v_merged
+            best_eb = np.repeat(eb_merged, n_imp)
             best_cost = c
     return (
         best_v,
@@ -1227,7 +1251,6 @@ def get_v_and_eb_differential_evolution(
     )
 
     p = res.x
-    c = res.fun
     v = unroll(p[n_eb:], n_b, n_imp)
     vt = v.reshape((n_eb, n_imp, n_imp))
     eb = p[:n_eb]
@@ -1250,6 +1273,9 @@ def get_v_and_eb_differential_evolution(
             em, vm = merge_bath_states(eb_g, v_g)
         eb_merged = np.append(eb_merged, em)
         v_merged = np.append(v_merged, vm, axis=0)
+    c = vectorized_cost_function(
+        np.append(eb_merged, inroll(v_merged)), eb_merged.shape[0], z, hyb, gamma
+    )
     return (
         v_merged,
         np.repeat(eb_merged, n_imp),
