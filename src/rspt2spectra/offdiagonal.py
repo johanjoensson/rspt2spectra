@@ -1108,6 +1108,31 @@ def get_v_and_eb(
     )
 
 
+def merge_overlapping_bath_states(ebs, vs, delta):
+    n_imp = vs.shape[1]
+    vt = vs.reshape((ebs.shape[0], n_imp, n_imp))
+    sorted_idx = np.argsort(ebs)
+    eb = ebs[sorted_idx]
+    vt = vt[sorted_idx]
+    e_diff = np.diff(eb)
+    # Delta gives Half width at half maximum
+    # If peaks are closer together than delta/5, combine them.
+    # delta/5 is half width at ~96% of maximum. If peaks are too closely spaced,
+    # they start overlapping way too much for the fitting procedure to make much sense.
+    split_indices = 1 + np.nonzero(e_diff > delta / 5)[0]
+    v_merged = np.empty((0, n_imp), dtype=vt.dtype)
+    eb_merged = np.empty((0), dtype=float)
+    for v_g, eb_g in zip(np.split(vt, split_indices), np.split(eb, split_indices)):
+        if v_g.shape[0] == 1:
+            vm = v_g[0]
+            em = eb_g
+        else:
+            em, vm = merge_bath_states(eb_g, v_g)
+        eb_merged = np.append(eb_merged, em)
+        v_merged = np.append(v_merged, vm, axis=0)
+    return eb_merged, v_merged.reshape(len(eb_merged) * n_imp, n_imp)
+
+
 def get_v_and_eb_basin_hopping(
     w,
     delta,
@@ -1170,27 +1195,8 @@ def get_v_and_eb_basin_hopping(
 
         p = res.x
         v = unroll(p[n_eb:], n_b, n_imp)
-        vt = v.reshape((n_eb, n_imp, n_imp))
         eb = p[:n_eb]
-        sorted_idx = np.argsort(eb)
-        eb = eb[sorted_idx]
-        vt = vt[sorted_idx]
-        e_diff = np.diff(eb)
-        # Delta gives Half width at half maximum
-        # If peaks are closer together than delta/5, combine them.
-        # delta/5 is half width at ~96% of maximum. If peaks are too closely spaced,
-        # they start overlapping way too much for the fitting procedure to make much sense.
-        split_indices = 1 + np.nonzero(e_diff > delta / 5)[0]
-        v_merged = np.empty((0, n_imp), dtype=vt.dtype)
-        eb_merged = np.empty((0), dtype=float)
-        for v_g, eb_g in zip(np.split(vt, split_indices), np.split(eb, split_indices)):
-            if v_g.shape[0] == 1:
-                vm = v_g[0]
-                em = eb_g
-            else:
-                em, vm = merge_bath_states(eb_g, v_g)
-            eb_merged = np.append(eb_merged, em)
-            v_merged = np.append(v_merged, vm, axis=0)
+        eb_merged, v_merged = merge_overlapping_bath_states(eb, v, delta)
         c = vectorized_cost_function(
             np.append(eb_merged, inroll(v_merged)), eb_merged.shape[0], z, hyb, gamma
         )
@@ -1251,28 +1257,9 @@ def get_v_and_eb_differential_evolution(
     )
 
     p = res.x
-    v = unroll(p[n_eb:], n_b, n_imp)
-    vt = v.reshape((n_eb, n_imp, n_imp))
-    eb = p[:n_eb]
-    sorted_idx = np.argsort(eb)
-    eb = eb[sorted_idx]
-    vt = vt[sorted_idx]
-    e_diff = np.diff(eb)
-    # Delta gives Half width at half maximum
-    # If peaks are closer together than delta/5, combine them.
-    # delta/5 is half width at ~96% of maximum. If peaks are too closely spaced,
-    # they start overlapping way too much for the fitting procedure to make much sense.
-    split_indices = 1 + np.nonzero(e_diff > delta / 5)[0]
-    v_merged = np.empty((0, n_imp), dtype=vt.dtype)
-    eb_merged = np.empty((0), dtype=float)
-    for v_g, eb_g in zip(np.split(vt, split_indices), np.split(eb, split_indices)):
-        if v_g.shape[0] == 1:
-            vm = v_g[0]
-            em = eb_g
-        else:
-            em, vm = merge_bath_states(eb_g, v_g)
-        eb_merged = np.append(eb_merged, em)
-        v_merged = np.append(v_merged, vm, axis=0)
+    eb_merged, v_merged = merge_overlapping_bath_states(
+        p[:n_eb], unroll(p[n_eb:], n_b, n_imp), delta
+    )
     c = vectorized_cost_function(
         np.append(eb_merged, inroll(v_merged)), eb_merged.shape[0], z, hyb, gamma
     )
