@@ -756,12 +756,15 @@ def inroll(v):
         Hybridization parameters as a stack of vectors.
 
     """
+    cplx = np.any(np.abs(v.imag)) > 0
     res_shape = tuple(v.shape[:-2] + (v.shape[-2] * v.shape[-1],))
-    return np.append(
-        v.real.reshape(res_shape),
-        v.imag.reshape(res_shape),
-        axis=-1,
-    )
+    if cplx:
+        return np.append(
+            v.real.reshape(res_shape),
+            v.imag.reshape(res_shape),
+            axis=-1,
+        )
+    return v.real.reshape(res_shape)
 
 
 def merge_bath_states(ebs, vs):
