@@ -11,7 +11,7 @@ off-diagonal hybridization functions.
 """
 
 import itertools
-import matplotlib.pylab as plt
+import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
 from os import environ
@@ -25,6 +25,12 @@ from scipy.optimize import (
 from time import perf_counter
 
 from rspt2spectra.energies import cog
+from importlib.metadata import version
+
+scipy_newer_than_3_16 = all(
+    int(installed_version) >= int(v_3_16)
+    for installed_version, v_3_16 in zip(version("scipy").split(".")[:2], ("3", "16"))
+)
 
 
 def plot_diagonal_and_offdiagonal(w, hyb_diagonal, hyb, xlim):
@@ -1161,45 +1167,48 @@ def get_v_and_eb_basin_hopping(
     def fun(p):
         return vectorized_cost_function(p[np.newaxis], n_eb, z, hyb, gamma)
 
+    v0_flat = inroll(vs)
+    if realvalue_v:
+        v0_flat = v0_flat[:, : n_imp * n_b]
+    initial_guesses = np.append(ebs, v0_flat, axis=1)
+    lower_bounds = np.empty((initial_guesses.shape[1]), dtype=float)
+    upper_bounds = np.empty_like(lower_bounds)
+    for i, (lb, ub) in enumerate(
+        itertools.chain(eb_bounds, [(-1, 1)] * v0_flat.shape[1])
+    ):
+        lower_bounds[i] = lb
+        upper_bounds[i] = ub
     best_cost = np.inf
     best_v = None
     best_eb = None
     for i in range(population_size):
-        eb = ebs[i]
-        v0_flat = inroll(vs[i])
-        if realvalue_v:
-            v0_flat = v0_flat[: n_imp * n_b]
-        lower_bounds = np.empty((len(eb) + v0_flat.shape[0]), dtype=float)
-        upper_bounds = np.empty_like(lower_bounds)
-        for i, (lb, ub) in enumerate(
-            itertools.chain(eb_bounds, [(-1, 1)] * v0_flat.shape[0])
-        ):
-            lower_bounds[i] = lb
-            upper_bounds[i] = ub
 
-        # OpTIMIZE!!!
         res = basinhopping(
             fun,
-            np.append(eb, v0_flat),
+            initial_guesses[i],
             niter=100,
             T=1e-3,
             minimizer_kwargs={
-                "tol": 1e-8,
+                "tol": 1e-4,
                 "method": "SLSQP",
                 "bounds": Bounds(
                     lb=lower_bounds,
                     ub=upper_bounds,
                     keep_feasible=np.array([True] * lower_bounds.shape[0]),
                 ),
-                "workers": environ.get("OMP_NUM_THREADS", 1),
+                "options": (
+                    {"workers": environ.get("OMP_NUM_THREADS", 1)}
+                    if scipy_newer_than_3_16
+                    else None
+                ),
             },
             disp=False,
         )
 
         p = res.x
-        v = unroll(p[n_eb:], n_b, n_imp)
-        eb = p[:n_eb]
-        eb_merged, v_merged = merge_overlapping_bath_states(eb, v, delta)
+        eb_merged, v_merged = merge_overlapping_bath_states(
+            p[:n_eb], unroll(p[n_eb:], n_b, n_imp), delta
+        )
         c = vectorized_cost_function(
             np.append(eb_merged, inroll(v_merged)), eb_merged.shape[0], z, hyb, gamma
         )
@@ -1233,6 +1242,8 @@ def get_v_and_eb_differential_evolution(
     z = w + 1j * delta_arr
 
     v0_flat = inroll(vs)
+    if realvalue_v:
+        v0_flat = v0_flat[:, : n_imp * n_b]
     initial_guesses = np.append(ebs, v0_flat, axis=1)
     lower_bounds = np.empty((initial_guesses.shape[1]), dtype=float)
     upper_bounds = np.empty_like(lower_bounds)
