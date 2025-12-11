@@ -12,6 +12,7 @@ from .offdiagonal import (
 import warnings
 
 
+
 def v_opt(a, b, _):
     return a if abs(a[-1]) <= abs(b[-1]) else b
 
