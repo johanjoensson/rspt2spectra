@@ -342,10 +342,6 @@ def reshuffle(eb, v, wborders, w_indices):
     """
     eb_new = []
     v_new = []
-    # print (f"wborders = {wborders}")
-    # print (f"eb = {eb}")
-    # print (f"v = {v}")
-    # print (f"w_indices = {w_indices}")
     for i, wborder in enumerate(wborders):
         # mask = np.logical_and(np.logical_and(wborder[0] <= eb, eb < wborder[1]), w_indices == i)
         mask = np.logical_and(wborder[0] <= eb, eb < wborder[1])
@@ -475,6 +471,7 @@ def get_hyb(z, eb, v):
     n_b, n_imp = v.shape
     hyb = np.zeros((n_w, n_imp, n_imp), dtype=complex)
 
+    np.multiply.outer(v.conj(), v)
     # Loop over all bath energies
     for b, e in enumerate(eb):
         # Add contributions from each bath
@@ -506,10 +503,6 @@ def get_hyb_2(z, eb, v):
 
     """
 
-    # numerator = np.conj(np.transpose(v, (0, 1, 3, 2))) @ v  # (S, N_B, N, N)
-    # print(f"{numerator=}")
-    # denominator = z[np.newaxis, :, np.newaxis] - eb[:, np.newaxis]  # (S, M, N_B)
-    # print(f"{denominator=}")
     return np.sum(
         (np.conj(np.transpose(v, (0, 1, 3, 2))) @ v)[:, np.newaxis]
         / (z[np.newaxis, :, np.newaxis] - eb[:, np.newaxis])[
@@ -574,10 +567,10 @@ def get_vs(z, hyb, wborders, ebs, gamma=0.0, imag_only=True):
 def generate_hopping_guess(z, hyb, eb, gamma, imag_only, realvalue_v):
     n_imp = hyb.shape[1]
     n_b = len(eb)
-    v0 = np.zeros((n_imp * n_b, n_imp), dtype=complex)
+    v0 = np.zeros((n_b, n_imp, n_imp), dtype=complex)
     for i in range(n_imp):
         for j in range(i + 1):
-            p0 = 2 * np.random.randn(n_b * 1 if realvalue_v else 2 * n_b * 1)
+            p0 = 2 * np.random.randn(n_b if realvalue_v else 2 * n_b)
             p0 /= np.linalg.norm(p0)
             fun = lambda p: vectorized_cost_function(
                 np.append(eb, p)[np.newaxis],
@@ -606,9 +599,9 @@ def generate_hopping_guess(z, hyb, eb, gamma, imag_only, realvalue_v):
                     tol=1e-3,
                 )
             v = unroll(res.x, n_b, 1).reshape((n_b,))
-            v0[i::n_imp, j] = v
-            v0[j::n_imp, i] = np.conj(v)
-    return v0
+            v0[:, i, j] = v
+            v0[:, j, i] = np.conj(v)
+    return v0 if not realvalue_v else v0.real
 
 
 def get_p0(z, hyb, eb, gamma, imag_only, realvalue_v):
@@ -732,19 +725,19 @@ def unroll(p, n_b, n_imp):
     p_c = p
     if onedimensional:
         r = p.shape[0]
-        if r != n_b * n_imp:
+        if r != n_b * n_imp * n_imp:
             # The real parts are the first r elements in p
             # the imaginary parts are the rest
             r //= 2
             p_c = p[:r] + 1j * p[r:]
-        return p_c.reshape((n_b, n_imp))
+        return p_c.reshape((n_b, n_imp, n_imp))
     r = p.shape[1]
-    if r != n_b * n_imp:
+    if r != n_b * n_imp * n_imp:
         # The real parts are the first r elements in p
         # the imaginary parts are the rest
         r //= 2
         p_c = p[:, :r] + 1j * p[:, r:]
-    return p_c.reshape((p.shape[0], n_b, n_imp))
+    return p_c.reshape((p.shape[0], n_b, n_imp, n_imp))
 
 
 def inroll(v):
@@ -753,7 +746,7 @@ def inroll(v):
 
     Parameters
     ----------
-    v : complex array(..., n_b, n_imp)
+    v : complex array(..., n_b, n_imp, n_imp)
         Hybridization parameters as a matrix.
 
     Returns
@@ -763,13 +756,9 @@ def inroll(v):
 
     """
     cplx = np.any(np.abs(v.imag)) > 0
-    res_shape = tuple(v.shape[:-2] + (v.shape[-2] * v.shape[-1],))
+    res_shape = tuple(v.shape[:-3] + (v.shape[-3] * v.shape[-2] * v.shape[-1],))
     if cplx:
-        return np.append(
-            v.real.reshape(res_shape),
-            v.imag.reshape(res_shape),
-            axis=-1,
-        )
+        return np.append(v.real.reshape(res_shape), v.imag.reshape(res_shape), axis=-1)
     return v.real.reshape(res_shape)
 
 
@@ -784,9 +773,7 @@ def merge_bath_states(ebs, vs):
     ebs = ebs[sorted_idx]
 
     zeroth_moments = np.conj(np.transpose(vs, (0, 2, 1))) @ vs
-    print(f"{zeroth_moments.shape=}")
     first_moments = ebs[:, np.newaxis, np.newaxis] * zeroth_moments
-    print(f"{first_moments.shape=}")
     # Vd V = Delta0
     # Vd Eb V = Delta1
     # eb * VdV = Delta1 = eb * Delta0
@@ -794,7 +781,7 @@ def merge_bath_states(ebs, vs):
     Eb = sp.linalg.cho_solve(V, np.sum(first_moments, axis=0))
     v = np.triu(V[0])
     eb = np.sum(np.diag(Eb)) / n_imp
-    return eb, v.reshape((n_imp, n_imp))
+    return eb.real, v.reshape((1, n_imp, n_imp))
 
 
 def calc_moments(f, x, max_moment):
@@ -1119,27 +1106,26 @@ def get_v_and_eb(
 
 def merge_overlapping_bath_states(ebs, vs, delta):
     n_imp = vs.shape[1]
-    vt = vs.reshape((ebs.shape[0], n_imp, n_imp))
     sorted_idx = np.argsort(ebs)
     eb = ebs[sorted_idx]
-    vt = vt[sorted_idx]
+    vs = vs[sorted_idx]
     e_diff = np.diff(eb)
     # Delta gives Half width at half maximum
     # If peaks are closer together than delta/5, combine them.
     # delta/5 is half width at ~96% of maximum. If peaks are too closely spaced,
     # they start overlapping way too much for the fitting procedure to make much sense.
     split_indices = 1 + np.nonzero(e_diff > delta / 5)[0]
-    v_merged = np.empty((0, n_imp), dtype=vt.dtype)
+    v_merged = np.empty((0, n_imp, n_imp), dtype=vs.dtype)
     eb_merged = np.empty((0), dtype=float)
-    for v_g, eb_g in zip(np.split(vt, split_indices), np.split(eb, split_indices)):
+    for v_g, eb_g in zip(np.split(vs, split_indices), np.split(eb, split_indices)):
         if v_g.shape[0] == 1:
-            vm = v_g[0]
+            vm = v_g[[0]]
             em = eb_g
         else:
             em, vm = merge_bath_states(eb_g, v_g)
         eb_merged = np.append(eb_merged, em)
         v_merged = np.append(v_merged, vm, axis=0)
-    return eb_merged, v_merged.reshape(len(eb_merged) * n_imp, n_imp)
+    return eb_merged, v_merged.reshape((len(eb_merged), n_imp, n_imp))
 
 
 def get_v_and_eb_basin_hopping(
@@ -1237,13 +1223,14 @@ def get_v_and_eb_differential_evolution(
 ):
     n_eb = ebs.shape[1]
     n_imp = np.shape(hyb)[1]
-    n_b = n_eb * n_imp
+    # n_b = n_eb * n_imp
     delta_arr = delta * (1 + 10 * (w / np.max(np.abs(w))) ** 2)
     z = w + 1j * delta_arr
 
     v0_flat = inroll(vs)
-    if realvalue_v:
-        v0_flat = v0_flat[:, : n_imp * n_b]
+
+    # if realvalue_v:
+    #     v0_flat = v0_flat[:, : n_imp * n_b]
     initial_guesses = np.append(ebs, v0_flat, axis=1)
     lower_bounds = np.empty((initial_guesses.shape[1]), dtype=float)
     upper_bounds = np.empty_like(lower_bounds)
@@ -1272,14 +1259,14 @@ def get_v_and_eb_differential_evolution(
 
     p = res.x
     eb_merged, v_merged = merge_overlapping_bath_states(
-        p[:n_eb], unroll(p[n_eb:], n_b, n_imp), delta
+        p[:n_eb], unroll(p[n_eb:], n_eb, n_imp), delta
     )
     c = vectorized_cost_function(
         np.append(eb_merged, inroll(v_merged)), eb_merged.shape[0], z, hyb, gamma
     )
     return (
         v_merged,
-        np.repeat(eb_merged, n_imp),
+        eb_merged,
         c,
     )
 
@@ -1324,7 +1311,8 @@ def vectorized_cost_function(
     eb = p[:, :n_eb]
 
     # Convert hopping parameters to physical shape.
-    v = unroll(p[:, n_eb:], n_b, n_imp).reshape((p.shape[0], n_eb, n_imp, n_imp))
+    v = unroll(p[:, n_eb:], n_eb, n_imp)
+    # v = unroll(p[:, n_eb:], n_eb, n_imp).reshape((p.shape[0], n_eb, n_imp, n_imp))
 
     # Model hybridization functions.
     hyb_model = get_hyb_2(z, eb, v)

@@ -52,7 +52,10 @@ def fit_hyb(
         return [
             np.array([], dtype=float) for ib in block_structure.inequivalent_blocks
         ], [
-            np.empty((0, len(block_structure.blocks[ib])), dtype=complex)
+            np.empty(
+                (0, len(block_structure.blocks[ib]), len(block_structure.blocks[ib])),
+                dtype=complex,
+            )
             for ib in block_structure.inequivalent_blocks
         ]
     if x_lim is not None:
@@ -76,7 +79,10 @@ def fit_hyb(
         np.empty((0,), dtype=float) for ib in block_structure.inequivalent_blocks
     ]
     vs_star = [
-        np.empty((0, len(block_structure.blocks[ib])), dtype=complex)
+        np.empty(
+            (0, len(block_structure.blocks[ib]), len(block_structure.blocks[ib])),
+            dtype=complex,
+        )
         for ib in block_structure.inequivalent_blocks
     ]
     states_per_inequivalent_block = get_state_per_inequivalent_block(
@@ -118,9 +124,7 @@ def fit_hyb(
             n_orb = block_hyb.shape[1]
 
             v_guess = None
-            bath_guess = np.array(
-                [eb for eb in bath_guess[::n_orb_old] for _ in range(n_orb)]
-            )
+            # bath_guess = np.array([eb for eb in bath_guess])
 
         block_eb_star, block_vs_star = fit_block(
             block_hyb[mask, :, :],
@@ -140,23 +144,24 @@ def fit_hyb(
             print()
         # Remove states with negligleble hopping
         bath_mask = []
-        for group_i in range(0, block_vs_star.shape[0], len(block)):
-            if np.any(
-                np.all(
-                    np.abs(block_vs_star[group_i : group_i + len(block)]) ** 2 < 1e-10,
-                    axis=1,
-                )
-            ):
-                bath_mask.extend([False] * len(block))
-            else:
-                bath_mask.extend([True] * len(block))
+        for group_i in range(block_vs_star.shape[0]):
+            bath_mask.append(np.linalg.norm(block_vs_star[group_i]) > 1e-10)
+            # if np.any(
+            #     np.all(
+            #         np.abs(block_vs_star[group_i]) ** 2 < 1e-10,
+            #         axis=1,
+            #     )
+            # ):
+            # bath_mask.extend([False] * len(block))
+            # else:
+            # bath_mask.extend([True] * len(block))
         block_vs_star = block_vs_star[bath_mask]
         block_eb_star = block_eb_star[bath_mask]
 
         vs_star[inequivalent_block_i] = block_vs_star
         ebs_star[inequivalent_block_i] = block_eb_star
     if verbose:
-        print("=" * 80)
+        print("=" * 80, flush=True)
 
     return ebs_star, vs_star
 
@@ -254,10 +259,9 @@ def fit_block(
             "Peak scores:       ",
             ", ".join(f"{el: ^16.3f}" for el in normalised_scores),
         )
-    # Do at least 5 fits per peak found
     population_size = 100
     eb_guess = np.empty((0, bath_states_per_orbital), dtype=float)
-    v_guess = np.empty((0, n_orb * bath_states_per_orbital, n_orb), dtype=complex)
+    v_guess = np.empty((0, bath_states_per_orbital, n_orb, n_orb), dtype=complex)
     for i in range(population_size):
         if bath_guess is not None and i == 0:
             bath_energies = np.array(list(bath_guess)).reshape((len(bath_guess)))
@@ -271,6 +275,10 @@ def fit_block(
             bath_energies = w[peaks[bath_index]]
         else:
             bath_energies = []
+        if hopping_guess is not None and i == 0:
+            v = v_guess
+        else:
+            v = np.empty((0, n_orb, n_orb), dtype=complex)
 
         bath_energies = np.append(
             bath_energies,
@@ -279,25 +287,15 @@ def fit_block(
                 high=w[-1],
                 size=max(bath_states_per_orbital - len(bath_energies), 0),
             ),
-            axis=0,
-        )
-        eb_guess = np.append(
-            eb_guess, [bath_energies[:bath_states_per_orbital]], axis=0
         )
 
-    for i in range(population_size):
-        if hopping_guess is not None and i == 0:
-            print(f"{v_guess=}", flush=True)
-            v = np.vstack(v_guess)
-        else:
-            v = np.empty((0, n_orb), dtype=complex)
         remainder = max(bath_states_per_orbital - v.shape[0], 0)
         v = np.append(
             v,
             generate_hopping_guess(
                 w + 1j * delta,
                 hyb,
-                eb_guess[i, -remainder:],
+                bath_energies[-remainder:],
                 gamma,
                 imag_only,
                 realvalue_v,
@@ -305,6 +303,9 @@ def fit_block(
             axis=0,
         )
         v_guess = np.append(v_guess, [v], axis=0)
+        eb_guess = np.append(
+            eb_guess, [bath_energies[:bath_states_per_orbital]], axis=0
+        )
 
     v, bath_energies, min_cost = get_v_and_eb_differential_evolution(
         # v, bath_energies, min_cost = get_v_and_eb_basin_hopping(
