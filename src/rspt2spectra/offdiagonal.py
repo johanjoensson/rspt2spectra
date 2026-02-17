@@ -787,9 +787,9 @@ def merge_bath_states(ebs, vs):
 def calc_moments(f, x, max_moment):
     if max_moment < 0:
         return np.zeros((0, f.shape[1].f.shape[2]))
-    moments = [np.trapz(f, x, axis=0)]
+    moments = [np.trapezoid(f, x, axis=0)]
     for m in range(1, max_moment + 1):
-        moments.append(np.trapz((x**m)[:, None, None] * f, x, axis=0))
+        moments.append(np.trapezoid((x**m)[:, None, None] * f, x, axis=0))
     return np.array(moments)
 
 

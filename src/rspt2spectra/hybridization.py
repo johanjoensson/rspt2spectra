@@ -327,7 +327,7 @@ def get_v_simple(w, hyb, eb, width=0.5):
         # Loop over bath states
         for e in eb[i]:
             mask = np.logical_and(e - width / 2 < w, w < e + width / 2)
-            vb[i].append(np.sqrt(np.trapz(-hyb[mask, i], w[mask]) / np.pi))
+            vb[i].append(np.sqrt(np.trapezoid(-hyb[mask, i], w[mask]) / np.pi))
     return np.array(vb)
 
 
@@ -376,7 +376,7 @@ def get_vb_and_eb(w, hyb, wborder):
         for j in range(len(wborder[i])):
             kmin = np.argmin(np.abs(w - wborder[i, j][0]))
             kmax = np.argmin(np.abs(w - wborder[i, j][1]))
-            vb[i, j] = np.sqrt(np.trapz(-hyb[i, kmin:kmax], w[kmin:kmax]) / pi)
+            vb[i, j] = np.sqrt(np.trapezoidz(-hyb[i, kmin:kmax], w[kmin:kmax]) / pi)
             eb[i, j] = cog(w[kmin:kmax], -hyb[i, kmin:kmax])
     return vb, eb
 
@@ -432,7 +432,7 @@ def get_vb_and_new_eb(w, hyb, eb, accept1=0.1, accept2=0.5, nbig=20):
             kmin = kmins[j]
             kmax = kmaxs[j]
             wborder[i, j, :] = [w[kmin], w[kmax]]
-            vb[i, j] = np.sqrt(np.trapz(-hyb[i, kmin:kmax], w[kmin:kmax]) / pi)
+            vb[i, j] = np.sqrt(np.trapezoid(-hyb[i, kmin:kmax], w[kmin:kmax]) / pi)
             eb_new[i, j] = cog(w[kmin:kmax], -hyb[i, kmin:kmax])
     return vb, eb_new, wborder
 

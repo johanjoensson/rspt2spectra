@@ -88,7 +88,7 @@ def integrate(x, y, xmin=None, xmax=None):
             mask = (xmin < x) & (x < xmax)
         x = x[mask]
         y = y[mask]
-    return np.trapz(y, x)
+    return np.trapezoid(y, x)
 
 
 def cog(x, y, xmin=None, xmax=None):

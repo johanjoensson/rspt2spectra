@@ -12,7 +12,6 @@ from .offdiagonal import (
 import warnings
 
 
-
 def v_opt(a, b, _):
     return a if abs(a[-1]) <= abs(b[-1]) else b
 
@@ -198,7 +197,7 @@ def get_state_per_inequivalent_block(
         idx = np.ix_(range(hyb.shape[0]), block, block)
         block_hyb = hyb[idx]
         weight_per_inequivalent_block[inequivalent_block_i] = (
-            np.trapz(
+            np.trapezoid(
                 -np.imag(np.sum(np.diagonal(block_hyb, axis1=1, axis2=2), axis=1))
                 * weight_fun(w),
                 w,
