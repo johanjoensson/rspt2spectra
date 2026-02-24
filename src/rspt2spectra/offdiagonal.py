@@ -787,9 +787,11 @@ def merge_bath_states(ebs, vs):
 def calc_moments(f, x, max_moment):
     if max_moment < 0:
         return np.zeros((0, f.shape[1].f.shape[2]))
-    moments = [np.trapezoid(f, x, axis=0)]
+    moments = [sp.integrate.simpson(f, x, axis=0)]
+    # moments = [np.trapezoid(f, x, axis=0)]
     for m in range(1, max_moment + 1):
-        moments.append(np.trapezoid((x**m)[:, None, None] * f, x, axis=0))
+        moments.append(sp.integrate.simpson((x**m)[:, None, None] * f, x, axis=0))
+        # moments.append(np.trapezoid((x**m)[:, None, None] * f, x, axis=0))
     return np.array(moments)
 
 
@@ -1327,7 +1329,7 @@ def vectorized_cost_function(
         / 2
         * np.pow(
             np.abs(
-                np.trapezoid(
+                sp.integrate.simpson(
                     np.pow(z.real[np.newaxis], np.arange(4)[:, np.newaxis])[
                         np.newaxis, :, :, np.newaxis, np.newaxis
                     ]
@@ -1335,6 +1337,14 @@ def vectorized_cost_function(
                     z.real,
                     axis=2,
                 )
+                # np.trapezoid(
+                #     np.pow(z.real[np.newaxis], np.arange(4)[:, np.newaxis])[
+                #         np.newaxis, :, :, np.newaxis, np.newaxis
+                #     ]
+                #     * diff[:, np.newaxis],
+                #     z.real,
+                #     axis=2,
+                # )
             ),
             2,
         )

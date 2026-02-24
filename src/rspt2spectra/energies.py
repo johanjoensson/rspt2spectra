@@ -14,6 +14,7 @@ import numpy as np
 import subprocess
 import sys
 from math import pi
+import scipy as sp
 from scipy.optimize import minimize, minimize_scalar
 import matplotlib.pylab as plt
 
@@ -88,7 +89,8 @@ def integrate(x, y, xmin=None, xmax=None):
             mask = (xmin < x) & (x < xmax)
         x = x[mask]
         y = y[mask]
-    return np.trapezoid(y, x)
+    return sp.integrate.trapezoid(y, x)
+    # return np.trapezoid(y, x)
 
 
 def cog(x, y, xmin=None, xmax=None):

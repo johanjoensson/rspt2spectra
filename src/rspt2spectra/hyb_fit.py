@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 from mpi4py import MPI
 import numpy as np
+import scipy as sp
 from scipy.signal import find_peaks, peak_widths
 from .offdiagonal import (
     get_hyb,
@@ -197,7 +198,8 @@ def get_state_per_inequivalent_block(
         idx = np.ix_(range(hyb.shape[0]), block, block)
         block_hyb = hyb[idx]
         weight_per_inequivalent_block[inequivalent_block_i] = (
-            np.trapezoid(
+            # np.trapezoid(
+            sp.integrate.trapezoid(
                 -np.imag(np.sum(np.diagonal(block_hyb, axis1=1, axis2=2), axis=1))
                 * weight_fun(w),
                 w,
