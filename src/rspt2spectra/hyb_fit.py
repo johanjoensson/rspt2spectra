@@ -1,3 +1,4 @@
+import itertools
 import matplotlib.pyplot as plt
 from mpi4py import MPI
 import numpy as np
@@ -5,6 +6,7 @@ import scipy as sp
 from scipy.signal import find_peaks, peak_widths
 from .offdiagonal import (
     get_hyb,
+    get_hyb_2,
     get_v_and_eb,
     get_v_and_eb_basin_hopping,
     get_v_and_eb_differential_evolution,
@@ -24,7 +26,6 @@ def fit_hyb(
     bath_states_per_orbital,
     block_structure,
     gamma,
-    imag_only,
     x_lim=None,
     verbose=True,
     comm=None,
@@ -59,7 +60,7 @@ def fit_hyb(
             for ib in block_structure.inequivalent_blocks
         ]
     if x_lim is not None:
-        mask = np.logical_and(x_lim[0] <= w, w < x_lim[1])
+        mask = [x_lim[0] <= w_i < x_lim[1] for w_i in w]
     else:
         mask = np.array([True] * len(w))
 
@@ -132,7 +133,6 @@ def fit_hyb(
             delta,
             states_per_inequivalent_block[inequivalent_block_i],
             gamma=gamma,
-            imag_only=imag_only,
             realvalue_v=realvalue_v,
             comm=comm,
             verbose=verbose,
@@ -143,18 +143,7 @@ def fit_hyb(
         if verbose:
             print()
         # Remove states with negligleble hopping
-        bath_mask = []
-        for group_i in range(block_vs_star.shape[0]):
-            bath_mask.append(np.linalg.norm(block_vs_star[group_i]) > 1e-10)
-            # if np.any(
-            #     np.all(
-            #         np.abs(block_vs_star[group_i]) ** 2 < 1e-10,
-            #         axis=1,
-            #     )
-            # ):
-            # bath_mask.extend([False] * len(block))
-            # else:
-            # bath_mask.extend([True] * len(block))
+        bath_mask = np.linalg.norm(block_vs_star, axis=(1, 2)) > 1e-10
         block_vs_star = block_vs_star[bath_mask]
         block_eb_star = block_eb_star[bath_mask]
 
@@ -199,7 +188,7 @@ def get_state_per_inequivalent_block(
         block_hyb = hyb[idx]
         weight_per_inequivalent_block[inequivalent_block_i] = (
             # np.trapezoid(
-            sp.integrate.trapezoid(
+            sp.integrate.simpson(
                 -np.imag(np.sum(np.diagonal(block_hyb, axis1=1, axis2=2), axis=1))
                 * weight_fun(w),
                 w,
@@ -223,7 +212,6 @@ def fit_block(
     delta,
     bath_states_per_orbital,
     gamma,
-    imag_only,
     realvalue_v,
     comm,
     verbose,
@@ -240,20 +228,32 @@ def fit_block(
     peaks, info = find_peaks(
         hyb_trace,
     )
+    _, w_h, l_lims, r_lims = peak_widths(hyb_trace, peaks, rel_height=0.9)
+    if False:
+        plt.plot(w, hyb_trace, color="tab:blue")
+        plt.hlines(
+            w_h,
+            np.interp(l_lims, range(len(w)), w),
+            np.interp(r_lims, range(len(w)), w),
+            colors="tab:orange",
+        )
+        plt.show()
+
     scores = weight_fun(w[peaks]) * hyb_trace[peaks]
     normalised_scores = scores / np.sum(scores)
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        _, _, left_ips, right_ips = peak_widths(hyb_trace, peaks, rel_height=0.8)
 
     if verbose:
         print("Peak positions:    ", ", ".join(f"{el: ^16.3f}" for el in w[peaks]))
         print(
             "Peak intervals:    ",
             ", ".join(
-                f"[{w[int(max(0, el))]: >6.3f}, {w[int(min(len(w) - 1, er))]: >6.3f}]"
-                for el, er in zip(left_ips, right_ips)
+                (
+                    f"[{el: >6.3f}, {er: >6.3f}]"
+                    for el, er in zip(
+                        np.interp(l_lims, range(len(w)), w),
+                        np.interp(r_lims, range(len(w)), w),
+                    )
+                ),
             ),
         )
         print(
@@ -263,32 +263,28 @@ def fit_block(
     population_size = 100
     eb_guess = np.empty((0, bath_states_per_orbital), dtype=float)
     v_guess = np.empty((0, bath_states_per_orbital, n_orb, n_orb), dtype=complex)
+
     for i in range(population_size):
+        bath_energies = []
         if bath_guess is not None and i == 0:
             bath_energies = np.array(list(bath_guess)).reshape((len(bath_guess)))
-        elif len(peaks) > 0:
-            bath_index = rng.choice(
-                np.arange(len(peaks)),
-                size=min(len(peaks), bath_states_per_orbital),
-                p=normalised_scores,
-                replace=False,
-            )
-            bath_energies = w[peaks[bath_index]]
-        else:
-            bath_energies = []
+        peak_index = rng.choice(
+            np.arange(len(peaks)),
+            size=bath_states_per_orbital - len(bath_energies),
+            p=normalised_scores,
+            replace=True,
+        )
+        bath_energies = np.append(
+            bath_energies,
+            rng.uniform(
+                low=np.interp(l_lims[peak_index], range(len(w)), w),
+                high=np.interp(r_lims[peak_index], range(len(w)), w),
+            ),
+        )
         if hopping_guess is not None and i == 0:
             v = v_guess
         else:
             v = np.empty((0, n_orb, n_orb), dtype=complex)
-
-        bath_energies = np.append(
-            bath_energies,
-            rng.uniform(
-                low=w[0],
-                high=w[-1],
-                size=max(bath_states_per_orbital - len(bath_energies), 0),
-            ),
-        )
 
         remainder = max(bath_states_per_orbital - v.shape[0], 0)
         v = np.append(
@@ -298,16 +294,42 @@ def fit_block(
                 hyb,
                 bath_energies[-remainder:],
                 gamma,
-                imag_only,
                 realvalue_v,
             ),
             axis=0,
         )
+
         v_guess = np.append(v_guess, [v], axis=0)
         eb_guess = np.append(
             eb_guess, [bath_energies[:bath_states_per_orbital]], axis=0
         )
 
+    if False:
+        hyb_model = get_hyb_2(w + 1j * delta, eb_guess, v_guess)
+        for pop_i in range(population_size):
+            fig, ax = plt.subplots(nrows=n_orb, ncols=n_orb, squeeze=False)
+            fig.suptitle(r"Re{$\Delta - \tilde{\Delta}$}")
+            for i, j in itertools.product(range(n_orb), repeat=2):
+                ax[i, j].fill_between(
+                    w,
+                    hyb[:, i, j].real,
+                    0,
+                    alpha=0.2,
+                    color="tab:blue",
+                )
+                ax[i, j].plot(w, hyb_model[pop_i, :, i, j].real, color="tab:orange")
+            fig, ax = plt.subplots(nrows=n_orb, ncols=n_orb, squeeze=False)
+            fig.suptitle(r"Im{$\Delta - \tilde{\Delta}$}")
+            for i, j in itertools.product(range(n_orb), repeat=2):
+                ax[i, j].fill_between(
+                    w,
+                    hyb[:, i, j].imag,
+                    0,
+                    alpha=0.2,
+                    color="tab:blue",
+                )
+                ax[i, j].plot(w, hyb_model[pop_i, :, i, j].imag, color="tab:orange")
+            plt.show()
     v, bath_energies, min_cost = get_v_and_eb_differential_evolution(
         # v, bath_energies, min_cost = get_v_and_eb_basin_hopping(
         w,
@@ -315,9 +337,8 @@ def fit_block(
         hyb,
         eb_guess,
         v_guess,
-        eb_bounds=[(w[0], w[-1])] * eb_guess.shape[1],
+        [(w[0], w[-1])] * eb_guess.shape[1],
         gamma=gamma,
-        imag_only=imag_only,
         realvalue_v=realvalue_v,
         scale_function=weight_fun,
     )
@@ -325,5 +346,7 @@ def fit_block(
         bath_energies, v, _ = comm.allreduce(
             (bath_energies, v, min_cost), op=MPI.Op.Create(v_opt, commute=True)
         )
+
+    # V = np.linalg.cholesky(A, upper=True)
 
     return bath_energies, v
