@@ -8,6 +8,7 @@ from .offdiagonal import (
     get_hyb,
     get_hyb_2,
     get_v_and_eb,
+    get_v_and_eb_multiple_optimizations,
     get_v_and_eb_basin_hopping,
     get_v_and_eb_differential_evolution,
     generate_hopping_guess,

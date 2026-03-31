@@ -26,6 +26,7 @@ from scipy.optimize import (
 from time import perf_counter
 
 from rspt2spectra.energies import cog
+from rspt2spectra.weight_functions import weight_functions
 from importlib.metadata import version
 import matplotlib.pyplot as plt
 
