@@ -566,29 +566,37 @@ def get_vs(z, hyb, wborders, ebs, gamma=0.0, imag_only=True):
     return vs, costs
 
 
-def generate_hopping_guess(z, hyb, eb, gamma, realvalue_v):
-    n_imp = hyb.shape[1]
-    n_b = len(eb)
-    v0 = np.zeros((n_b, n_imp, n_imp), dtype=complex)
-    rng = np.random.default_rng()
-    for i, j in itertools.product(range(n_imp), repeat=2):
-        p0 = rng.normal(0, 0.03, n_b if realvalue_v else 2 * n_b)
-        fun = lambda p: vectorized_cost_function(
-            np.append(eb, p),
-            n_b,
-            z,
-            hyb[:, i, j].reshape((len(z), 1, 1)),
-            gamma,
-        )
+def generate_hopping_guess(z, hyb, eb, gamma, realvalue_v, rng):
+    population_size = eb.shape[0]
+    n_eb = eb.shape[1]
+    n_orb = hyb.shape[1]
+    v = np.zeros((population_size, n_eb, n_orb, n_orb), dtype=complex)
+    x0 = rng.uniform(
+        low=0.1,
+        high=0.1,
+        # size=(population_size, n_eb if realvalue_v else 2 * n_eb),
+        size=(population_size, n_eb if realvalue_v else 2 * n_eb, n_orb, n_orb),
+    )
+    for p, i, j in itertools.product(
+        range(population_size), range(n_orb), range(n_orb)
+    ):
+        if j < i:
+            continue
         res = minimize(
-            fun,
-            p0,
+            lambda x, *args: vectorized_cost_function(np.append(eb[p], x), *args),
+            x0[p, :, i, j].reshape((-1,)),
+            jac=lambda x, *args: vectorized_jacobian(np.append(eb[p], x), *args)[n_eb:],
+            # jac="2-points",
+            method="SLSQP",
+            args=(n_eb, z, hyb[np.ix_(np.arange(len(z)), [i], [j])], gamma, "None"),
             tol=1e-3,
+            # options={"workers": int(environ.get("OMP_NUM_THREADS", "1"))},
         )
-        v0[:, i, j] = unroll(res.x[None], n_b, 1).reshape((n_b,))
+        v[p, :, i, j] = res.x[:n_eb]
+        if not realvalue_v:
+            v[p, :, i, j] += 1j * res.x[n_eb:]
 
-    v = np.linalg.cholesky(np.conj(np.transpose(v0, (0, 2, 1))) @ v0, upper=True)
-    return v if not realvalue_v else v.real
+    return v
 
 
 def get_p0(z, hyb, eb, gamma, imag_only, realvalue_v):
@@ -695,7 +703,7 @@ def unroll(p, n_b, n_imp):
 
     Parameters
     ----------
-    p : real array(S, K)
+    p : real array(K, S)
         Hybridization parameters as a stack of vectors.
     n_b : int
         Number of bath orbitals.
@@ -710,21 +718,23 @@ def unroll(p, n_b, n_imp):
     """
     onedimensional = len(p.shape) == 1
     p_c = p
-    if onedimensional:
-        r = p.shape[0]
-        if r != n_b * n_imp * n_imp:
-            # The real parts are the first r elements in p
-            # the imaginary parts are the rest
-            r //= 2
-            p_c = p[:r] + 1j * p[r:]
-        return p_c.reshape((n_b, n_imp, n_imp))
-    r = p.shape[1]
-    if r != n_b * n_imp * n_imp:
+    triu_rows, triu_columns = np.triu_indices(n_imp)
+    r = p.shape[0]
+    if r != n_b * len(triu_columns):
         # The real parts are the first r elements in p
         # the imaginary parts are the rest
         r //= 2
-        p_c = p[:, :r] + 1j * p[:, r:]
-    return p_c.reshape((p.shape[0], n_b, n_imp, n_imp))
+        p_c = p[:r] + 1j * p[r:]
+    if onedimensional:
+        # non_zero_indices = np.ix_(range(n_b), triu_rows, triu_columns)
+        res = np.zeros((n_b, n_imp, n_imp), dtype=complex)
+        res[:, triu_rows, triu_columns] = p_c.reshape((n_b, len(triu_columns)))
+        return res
+    # non_zero_indices = np.ix_(range(n_b), triu_rows, triu_columns, range(p.shape[1]))
+    res = np.zeros((n_b, n_imp, n_imp, p.shape[1]), dtype=complex)
+    # print(f"{res[non_zero_indices].shape=}")
+    res[:, triu_rows, triu_columns] = p_c.reshape((n_b, len(triu_columns), p.shape[1]))
+    return np.moveaxis(res, -1, 0)
 
 
 def inroll(v):
@@ -742,11 +752,23 @@ def inroll(v):
         Hybridization parameters as a stack of vectors.
 
     """
+    triu_rows, triu_columns = np.triu_indices(v.shape[-1])
     cplx = np.any(np.abs(v.imag)) > 0
-    res_shape = tuple(v.shape[:-3] + (v.shape[-3] * v.shape[-2] * v.shape[-1],))
+
+    # res_shape = v.shape[:-3] + (v.shape[-3] * v.shape[-2] * v.shape[-1],)
     if cplx:
-        return np.append(v.real.reshape(res_shape), v.imag.reshape(res_shape), axis=-1)
-    return v.real.reshape(res_shape)
+        return np.moveaxis(
+            np.append(
+                v[..., triu_rows, triu_columns].real,
+                v[..., triu_rows, triu_columns].imag,
+                axis=-1,
+            ).reshape(v.shape[:-3] + (-1,)),
+            0,
+            -1,
+        )
+    return np.moveaxis(
+        v[..., triu_rows, triu_columns].real.reshape(v.shape[:-3] + (-1,)), 0, -1
+    )
 
 
 def merge_bath_states(ebs, vs):
@@ -1099,12 +1121,12 @@ def merge_overlapping_bath_states(ebs, vs, delta):
     # delta/5 is half width at ~96% of maximum. If peaks are too closely spaced,
     # they start overlapping way too much for the fitting procedure to make much sense.
     split_indices = 1 + np.nonzero(e_diff > delta / 5)[0]
-    A_merged = np.empty((0, n_imp, n_imp), dtype=vs.dtype)
-    eb_merged = np.empty((0), dtype=float)
+    A_merged = np.empty((0, n_imp, n_imp), dtype=vs.dtype, order="F")
+    eb_merged = np.empty((0), dtype=float, order="F")
     for v_g, eb_g in zip(np.split(vs, split_indices), np.split(ebs, split_indices)):
         if v_g.shape[0] == 1:
             Am = (np.conj(np.transpose(v_g, (0, -1, -2))) @ v_g).reshape(
-                (1, n_imp, n_imp)
+                (1, n_imp, n_imp), order="F"
             )
             em = eb_g
         else:
@@ -1160,56 +1182,140 @@ def unroll_a(A):
     return A_flat
 
 
+def get_v_and_eb_multiple_optimizations(w, delta, hyb, ebs, vs, gamma, regularization):
+    assert (
+        vs.shape[0] == ebs.shape[0]
+    ), f"population size must match between eb and v. {ebs.shape[0]} != {vs.shape[0]}"
+    population_size = ebs.shape[1]
+    n_imp = np.shape(hyb)[1]
+    n_eb = ebs.shape[1]
+    delta_arr = delta * (1 + 0.5 * np.abs(w) ** 2)
+    z = w + 1j * delta_arr
+
+    v0_flat = inroll(vs)
+    initial_guesses = np.append(np.moveaxis(ebs, 0, -1), v0_flat, axis=0)
+    initial_costs = vectorized_cost_function(
+        initial_guesses, n_eb, z, hyb, gamma, regularization
+    )
+    mean_cost = np.mean(initial_costs)
+    stddev_cost = np.std(initial_costs, mean=mean_cost)
+    best_cost = np.inf
+    best_v = None
+    best_eb = None
+    sort_indices = np.argsort(initial_costs)
+    initial_guesses = initial_guesses[:, sort_indices]
+    for column in range(min(10, population_size)):
+        res = minimize(
+            vectorized_cost_function,
+            initial_guesses[:, column],
+            tol=1e-3,
+            method="SLSQP",
+            jac=vectorized_jacobian,
+            args=(n_eb, z, hyb, gamma, regularization),
+        )
+
+        p = res.x
+        eb_merged, v_merged = merge_overlapping_bath_states(
+            p[:n_eb], unroll(p[n_eb:], n_eb, n_imp), delta
+        )
+        c = vectorized_cost_function(
+            np.append(eb_merged, inroll(v_merged)),
+            eb_merged.shape[0],
+            z,
+            hyb,
+            gamma,
+            regularization,
+        )
+        if abs(c) < best_cost:
+            best_v = v_merged
+            best_eb = eb_merged
+            best_cost = c
+    return (
+        best_v,
+        best_eb,
+        best_cost,
+    )
+
+
 def get_v_and_eb_basin_hopping(
     w,
     delta,
     hyb,
     ebs,
     vs,
-    eb_bounds,
     gamma,
-    realvalue_v,
-    scale_function,
+    regularization,
+    weight_function,
 ):
     assert (
         vs.shape[0] == ebs.shape[0]
     ), f"population size must match between eb and v. {ebs.shape[0]} != {vs.shape[0]}"
-    population_size = ebs.shape[0]
+    population_size = ebs.shape[1]
     n_imp = np.shape(hyb)[1]
     n_eb = ebs.shape[1]
-    delta_arr = delta * (1 + 10 * (w / np.max(np.abs(w))) ** 2)
+    delta_arr = delta * (1 + 0.5 * np.abs(w) ** 2)
     z = w + 1j * delta_arr
 
-    def fun(p):
-        return vectorized_cost_function(p, n_eb, z, hyb, gamma)
-
     v0_flat = inroll(vs)
-    # if realvalue_v:
-    #     v0_flat = v0_flat[:, : n_imp * n_imp * n_eb]
-    initial_guesses = np.append(ebs, v0_flat, axis=1)
+    initial_guesses = np.append(np.moveaxis(ebs, 0, -1), v0_flat, axis=0)
+    initial_costs = vectorized_cost_function(
+        initial_guesses, n_eb, z, hyb, gamma, regularization, weight_function
+    )
+    mean_cost = np.mean(initial_costs)
+    stddev_cost = np.std(initial_costs, mean=mean_cost)
     best_cost = np.inf
     best_v = None
     best_eb = None
-    for i in range(population_size):
+    sort_indices = np.argsort(initial_costs)
+    initial_guesses = initial_guesses[:, sort_indices]
+    print(f"Initial guesses for bath energies:")
+    print(f"{initial_guesses[:n_eb, :5]}")
+    for column in range(min(1, population_size)):
+        if False:
+            hyb_model = get_hyb_2(
+                w + 1j * delta, ebs[sort_indices[[column]]], vs[sort_indices[[column]]]
+            )
+            fig, ax = plt.subplots(nrows=n_imp, ncols=n_imp, squeeze=False)
+            fig.suptitle(r"Re{$\Delta - \tilde{\Delta}$}")
+            for i, j in itertools.product(range(n_imp), repeat=2):
+                ax[i, j].fill_between(
+                    w,
+                    hyb[:, i, j].real,
+                    0,
+                    alpha=0.2,
+                    color="tab:blue",
+                )
+                ax[i, j].plot(w, hyb_model[0, :, i, j].real, color="tab:orange")
+            fig, ax = plt.subplots(nrows=n_imp, ncols=n_imp, squeeze=False)
+            fig.suptitle(r"Im{$\Delta - \tilde{\Delta}$}")
+            for i, j in itertools.product(range(n_imp), repeat=2):
+                ax[i, j].fill_between(
+                    w,
+                    hyb[:, i, j].imag,
+                    0,
+                    alpha=0.2,
+                    color="tab:blue",
+                )
+                ax[i, j].plot(w, hyb_model[0, :, i, j].imag, color="tab:orange")
+            plt.show()
+        guess = initial_guesses[:, column]
 
+        minimize
         res = basinhopping(
-            lambda x: vectorized_cost_function(
-                x, n_eb, z, hyb, gamma, regularization="L2"
-            ),
-            initial_guesses[i],
-            niter=10,
-            T=1e-3,
+            vectorized_cost_function,
+            guess,
+            niter=1000,
+            niter_success=75,
+            stepsize=0.5,
+            T=stddev_cost,
             minimizer_kwargs={
                 "tol": 1e-6,
-                # "method": "SLSQP",
-                "jac": lambda x: vectorized_jacobian(
-                    x, n_eb, z, hyb, gamma, regularization="L2"
-                ),
-                "options": (
-                    {"workers": environ.get("OMP_NUM_THREADS", 1), "maxiter": 500}
-                    if scipy_newer_than_3_16
-                    else None
-                ),
+                "jac": vectorized_jacobian,
+                "method": "SLSQP",
+                "options": {
+                    "maxiter": 1500,
+                },
+                "args": (n_eb, z, hyb, gamma, regularization, weight_function),
             },
             disp=False,
         )
@@ -1218,8 +1324,15 @@ def get_v_and_eb_basin_hopping(
         eb_merged, v_merged = merge_overlapping_bath_states(
             p[:n_eb], unroll(p[n_eb:], n_eb, n_imp), delta
         )
+        # if sum(eb_merged > w[-1]) > 1:
+        #     continue
         c = vectorized_cost_function(
-            np.append(eb_merged, inroll(v_merged)), eb_merged.shape[0], z, hyb, gamma
+            np.append(eb_merged, inroll(v_merged)),
+            eb_merged.shape[0],
+            z,
+            hyb,
+            gamma,
+            None,
         )
         if abs(c) < best_cost:
             best_v = v_merged
@@ -1233,15 +1346,7 @@ def get_v_and_eb_basin_hopping(
 
 
 def get_v_and_eb_differential_evolution(
-    w,
-    delta,
-    hyb,
-    ebs,
-    vs,
-    eb_bounds,
-    gamma,
-    realvalue_v,
-    scale_function,
+    w, delta, hyb, ebs, vs, gamma, regularization, weight_function
 ):
     n_eb = ebs.shape[1]
     n_imp = hyb.shape[1]
@@ -1249,35 +1354,38 @@ def get_v_and_eb_differential_evolution(
     z = w + 1j * delta_arr
 
     v0_flat = inroll(vs)
-    initial_guesses = np.append(ebs, v0_flat, axis=1)
-
-    n_workers = environ.get("OMP_NUM_THREADS", 1)
+    initial_guesses = np.append(np.moveaxis(ebs, 0, -1), v0_flat, axis=0)
 
     polish_func = partial(
-        minimize, args=(n_eb, z, hyb, gamma, "L2"), jac=vectorized_jacobian
+        minimize,
+        args=(n_eb, z, hyb, gamma, regularization),
+        jac=vectorized_jacobian,
+        method="SLSQP",
     )
 
     res = differential_evolution(
         vectorized_cost_function,
         Bounds(
-            lb=[w[0]] * ebs.shape[1] + [-2] * v0_flat.shape[1],
-            ub=[w[-1] + 1] * ebs.shape[1] + [2] * v0_flat.shape[1],
+            lb=[w[0] - 10] * n_eb + [-10] * v0_flat.shape[0],
+            ub=[w[-1] + 10] * n_eb + [10] * v0_flat.shape[0],
         ),
-        args=(n_eb, z, hyb, gamma, "L2"),
-        init=initial_guesses,
+        atol=1e-6,
+        args=(n_eb, z, hyb, gamma, regularization, weight_function),
+        init=initial_guesses.T,
         maxiter=1000,
-        workers=n_workers,
-        vectorized=n_workers == 1,
-        updating="immediate" if n_workers == 1 else "deferred",
+        vectorized=True,
+        updating="deferred",
         polish=polish_func,
+        disp=False,
     )
+    print(f"{res=}")
 
     p = res.x
     eb_merged, v_merged = merge_overlapping_bath_states(
         p[:n_eb], unroll(p[n_eb:], n_eb, n_imp), delta
     )
     c = vectorized_cost_function(
-        np.append(eb_merged[None], inroll(v_merged[None])),
+        np.append(eb_merged[:, None], inroll(v_merged)[:, None]),
         eb_merged.shape[0],
         z,
         hyb,
@@ -1290,7 +1398,44 @@ def get_v_and_eb_differential_evolution(
     )
 
 
-def vectorized_cost_function(p, n_eb, z, hyb, gamma, regularization="L1"):
+def calc_diff(eb, v, z, hyb):
+    hyb_model = get_hyb_2(z, eb, v)
+
+    # Difference between original and model hybridization functions
+    return hyb[np.newaxis] - hyb_model
+
+
+def calc_moment_diff(diff, z, hyb):
+    r"""
+    Integrate the difference between fitted and exact hybridization function
+    (calculate the difference between the integrals).
+    Prameters:
+    ==========
+    diff: np.ndarray((..., n_w, n_imp, n_imp)) - $$\Delta(\omega) - \tilde{\Delta}(\omega)$$
+    z: np.ndarray((n_w)) - $\omega + i*\delta$
+    Returns:
+    ========
+    M: np.ndarray((..., n, n_imp, n_imp)) - The integrals $$\int \omega^n (\Delta(\omega) - \tilde{\Delta}(\omega)) \mathrm{d}\omega$$, for n = 0, ...
+    """
+    return sp.integrate.simpson(
+        np.pow(z[:, None].real, np.arange(3)[None, :])[
+            np.newaxis, :, :, np.newaxis, np.newaxis
+        ]
+        * diff[..., None, :, :],
+        z.real,
+        axis=-4,
+    )
+
+
+def vectorized_cost_function(
+    p,
+    n_eb,
+    z,
+    hyb,
+    gamma,
+    regularization="L1",
+    weight_function=weight_functions["unit"](0, 1.0),
+):
     """
     Return cost function value.
 
@@ -1314,30 +1459,21 @@ def vectorized_cost_function(p, n_eb, z, hyb, gamma, regularization="L1"):
         Cost function value.
 
     """
+    # print(f"{p.shape=} {n_eb=} {hyb.shape=}")
     # Dimensions. Help variables.
     one_dim = len(p.shape) == 1
     if one_dim:
-        p = p[np.newaxis]
+        p = p[:, None]
     w = z.real
     n_w = len(z)
     n_imp = np.shape(hyb)[1]
-    eb = p[:, :n_eb]
+    eb = np.moveaxis(p[:n_eb], 0, -1)
 
     # Convert hopping parameters to physical shape.
-    v = unroll(p[:, n_eb:], n_eb, n_imp)
-
-    hyb_model = get_hyb_2(z, eb, v)
-
-    # Difference between original and model hybridization functions
-    diff = hyb_model - hyb[np.newaxis]
-    moment_diff = sp.integrate.simpson(
-        np.pow(w[:, None], np.arange(10)[None, :])[
-            np.newaxis, :, :, np.newaxis, np.newaxis
-        ]
-        * diff[:, :, None],
-        w,
-        axis=1,
-    )
+    v = unroll(p[n_eb:], n_eb, n_imp)
+    diff = calc_diff(eb, v, z, hyb)
+    diff *= weight_function(w)[None, :, None, None]
+    moment_diff = calc_moment_diff(diff, z, hyb)
 
     if False:
         plt.fill_between(z.real, hyb[:, 0, 0].imag, 0, color="tab:blue", alpha=0.5)
@@ -1356,22 +1492,32 @@ def vectorized_cost_function(p, n_eb, z, hyb, gamma, regularization="L1"):
     # For the integrated error, sum over two orbital indices, as well as all calcualted moments
     c += (
         1
-        / (moment_diff.shape[1] * n_imp * n_imp)
+        / (n_imp * n_imp * moment_diff.shape[1])
         * np.sum(np.abs(moment_diff), axis=tuple(range(1, moment_diff.ndim)))
     )
 
     # Add regularization terms
-    if regularization.lower() == "l1":
-        c += gamma / p.shape[1] * np.sum(np.abs(p), axis=-1)
+    if regularization is None or regularization.lower() == "none":
+        pass
+    elif regularization.lower() == "l1":
+        c += (gamma / p.shape[0]) * np.sum(np.abs(p), axis=0)
     elif regularization.lower() == "l2":
-        c += gamma / p.shape[1] * np.sum(p**2, axis=-1)
-    elif regularization is not None and regularization.lower() != "none":
+        c += (gamma / p.shape[0]) * np.sum(p**2, axis=0)
+    else:
         raise RuntimeError(f"Unknown regularization mode {regularization}")
 
     return c[0] if one_dim else c
 
 
-def vectorized_jacobian(p, n_eb, z, hyb, gamma, regularization="L1"):
+def vectorized_jacobian(
+    p,
+    n_eb,
+    z,
+    hyb,
+    gamma,
+    regularization="L1",
+    weight_function=weight_functions["unit"](0, 1.0),
+):
     """
     Return jacobian of the cost function.
 
@@ -1398,52 +1544,52 @@ def vectorized_jacobian(p, n_eb, z, hyb, gamma, regularization="L1"):
     # Dimensions. Help variables.
     one_dim = len(p.shape) == 1
     if one_dim:
-        p = p[np.newaxis]
+        p = p[:, None]
     J = np.zeros_like(p)
-    popsize = p.shape[0]
+    popsize = p.shape[1]
     n_w = len(z)
     n_imp = np.shape(hyb)[1]
-    eb = p[:, :n_eb]
+    eb = p[:n_eb]
+    eb = np.moveaxis(eb, -1, 0)
     w = z.real
     delta = z.imag
+    triu_rows, triu_cols = np.triu_indices(n_imp)
+    # Check to see if we have complex hopping parameters
+    realvalued = p.shape[0] - n_eb == n_eb * len(triu_cols)
 
     # Convert hopping parameters to physical shape.
-    v = unroll(p[:, n_eb:], n_eb, n_imp)
+    v = unroll(p[n_eb:], n_eb, n_imp)
     r_bjk = v.real
     i_bjk = v.imag
 
-    n_real = n_eb * n_imp * n_imp
-    n_imag = 0 if p.shape[1] == n_real else n_real
-
-    hyb_model = get_hyb_2(z, eb, v)
+    n_real = n_eb * n_imp * (n_imp + 1) // 2
+    n_imag = 0 if p.shape[0] == n_real else n_real
 
     # Difference between original and model hybridization functions
-    diff = hyb_model - hyb[np.newaxis]
-    moment_diff = sp.integrate.simpson(
-        np.pow(w[:, None], np.arange(10)[None, :])[
-            np.newaxis, :, :, np.newaxis, np.newaxis
-        ]
-        * diff[:, :, None],
-        w,
-        axis=1,
-    )
+    diff = calc_diff(eb, v, z, hyb)
+    diff *= weight_function(w)[None, :, None, None]
+    moment_diff = calc_moment_diff(diff, z, hyb)
 
-    a_b = np.conj(np.transpose(v, (0, 1, 3, 2))) @ v
+    ab = np.conj(np.transpose(v, (0, 1, 3, 2))) @ v
+
+    dfit_deb = (
+        ab[:, None] / ((z[None, :, None] - eb[:, None]) ** 2)[:, :, :, None, None]
+    )
 
     # Deritives w.r.t bath states
-    ddiff_deb = (
-        -a_b[:, None] / (z[None, :, None] - eb[:, None])[:, :, :, None, None] ** 2
-    )
+    ddiff_deb = -dfit_deb
     dabs_diff_deb = (
         1
         / np.abs(diff)[:, :, None]
         * (
             diff.real[:, :, None] * ddiff_deb.real
-            - diff.imag[:, :, None] * ddiff_deb.imag
+            + diff.imag[:, :, None] * ddiff_deb.imag
         )
     )
     dmoment_diff_deb = sp.integrate.simpson(
-        np.pow(w[:, None], np.arange(10)[None, :])[None, :, :, None, None, None]
+        np.pow(w[:, None], np.arange(moment_diff.shape[1])[None, :])[
+            None, :, :, None, None, None
+        ]
         * ddiff_deb[:, :, None],
         w,
         axis=1,
@@ -1453,145 +1599,105 @@ def vectorized_jacobian(p, n_eb, z, hyb, gamma, regularization="L1"):
         / np.abs(moment_diff)[:, :, None]
         * (
             moment_diff.real[:, :, None] * dmoment_diff_deb.real
-            - moment_diff.imag[:, :, None] * dmoment_diff_deb.imag
+            + moment_diff.imag[:, :, None] * dmoment_diff_deb.imag
         )
     )
-    J[:, :n_eb] = 1 / (n_w * n_imp * n_imp) * (np.sum(dabs_diff_deb, axis=(1, 3, 4)))
-    J[:, :n_eb] += (
+    J[:n_eb, :] = (
         1
-        / (moment_diff.shape[1] * n_imp * n_imp)
-        * (np.sum(dabs_moment_diff_deb, axis=(1, 3, 4)))
+        / (n_w * n_imp * n_imp)
+        * np.moveaxis(np.sum(dabs_diff_deb, axis=(1, 3, 4)), 0, -1)
+    )
+    J[:n_eb, :] += (
+        1
+        / (n_imp * n_imp * moment_diff.shape[1])
+        * np.moveaxis(np.sum(dabs_moment_diff_deb, axis=(1, 3, 4)), 0, -1)
     )
 
     # Deritives w.r.t real-part of hopping parameters
-    dab_dRbjk = np.zeros((p.shape[0], n_eb, n_imp * n_imp, n_imp, n_imp), dtype=complex)
+    dab_dRbjk = np.zeros((popsize, n_eb, n_imp, n_imp, n_imp, n_imp), dtype=complex)
     for i, j in itertools.product(range(n_imp), repeat=2):
+        if j < i:
+            continue
         # Real part
-        dab_dRbjk[:, :, i * n_imp + j, j, :] += r_bjk[:, :, i, :]
-        dab_dRbjk[:, :, i * n_imp + j, :, j] += r_bjk[:, :, i, :]
-        dab_dRbjk[:, :, i * n_imp + j, j, :] += 1j * i_bjk[:, :, i, :]
-        dab_dRbjk[:, :, i * n_imp + j, :, j] -= 1j * i_bjk[:, :, i, :]
-    ddiff_dRbjk = -(
-        (
-            (
-                (w[None, :, None] - eb[:, None])
-                / ((w[None, :, None] - eb[:, None]) ** 2 - delta[None, :, None] ** 2)
-            )[:, :, :, None, None, None]
-            * dab_dRbjk.real[:, None]
-            - (
-                delta[None, :, None]
-                / ((w[None, :, None] - eb[:, None]) ** 2 - delta[None, :, None] ** 2)
-            )[:, :, :, None, None, None]
-            * dab_dRbjk.imag[:, None]
-        )
-        + 1j
-        * (
-            (
-                (w[None, :, None] - eb[:, None])
-                / ((w[None, :, None] - eb[:, None]) ** 2 - delta[None, :, None] ** 2)
-            )[:, :, :, None, None, None]
-            * dab_dRbjk.imag[:, None]
-            - (
-                delta[None, :, None]
-                / ((w[None, :, None] - eb[:, None]) ** 2 - delta[None, :, None] ** 2)
-            )[:, :, :, None, None, None]
-            * dab_dRbjk.real[:, None]
-        )
+        dab_dRbjk[:, :, i, j, j, :] += r_bjk[:, :, i, :]
+        dab_dRbjk[:, :, i, j, :, j] += r_bjk[:, :, i, :]
+        dab_dRbjk[:, :, i, j, j, :] += 1j * i_bjk[:, :, i, :]
+        dab_dRbjk[:, :, i, j, :, j] -= 1j * i_bjk[:, :, i, :]
+    ddiff_dRbjk = (
+        -dab_dRbjk[:, None]
+        * 1
+        / (z[None, :, None] - eb[:, None])[:, :, :, None, None, None, None]
     )
     dabs_diff_dRbjk = (
         1
-        / np.abs(diff)[:, :, None, None]
+        / np.abs(diff)[:, :, None, None, None]
         * (
-            diff.real[:, :, None, None] * ddiff_dRbjk.real
-            - diff.imag[:, :, None, None] * ddiff_dRbjk.imag
+            diff.real[:, :, None, None, None] * ddiff_dRbjk.real
+            + diff.imag[:, :, None, None, None] * ddiff_dRbjk.imag
         )
     )
     dmoment_diff_dRbjk = sp.integrate.simpson(
-        np.pow(w[:, None], np.arange(10)[None, :])[None, :, :, None, None, None, None]
+        np.pow(w[:, None], np.arange(moment_diff.shape[1])[None, :])[
+            None, :, :, None, None, None, None, None
+        ]
         * ddiff_dRbjk[:, :, None],
         w,
         axis=1,
     )
     dabs_moment_diff_dRbjk = (
         1
-        / np.abs(moment_diff)[:, :, None, None]
+        / np.abs(moment_diff)[:, :, None, None, None]
         * (
-            moment_diff.real[:, :, None, None] * dmoment_diff_dRbjk.real
-            - moment_diff.imag[:, :, None, None] * dmoment_diff_dRbjk.imag
+            moment_diff.real[:, :, None, None, None] * dmoment_diff_dRbjk.real
+            + moment_diff.imag[:, :, None, None, None] * dmoment_diff_dRbjk.imag
         )
     )
-    J[:, n_eb : n_eb + n_real] = (
+    J[n_eb : n_eb + n_real, :] = np.moveaxis(
         1
         / (n_w * n_imp * n_imp)
-        * np.sum(dabs_diff_dRbjk, axis=(1, 4, 5)).reshape((popsize, -1))
+        * np.sum(dabs_diff_dRbjk, axis=(1, 5, 6))[..., triu_rows, triu_cols].reshape(
+            (popsize, -1), order="C"
+        ),
+        0,
+        -1,
     )
-    J[:, n_eb : n_eb + n_real] = (
+    J[n_eb : n_eb + n_real, :] += np.moveaxis(
         1
-        / (moment_diff.shape[1] * n_imp * n_imp)
-        * np.sum(dabs_moment_diff_dRbjk, axis=(1, 4, 5)).reshape((popsize, -1))
+        / (n_imp * n_imp * moment_diff.shape[1])
+        * np.sum(dabs_moment_diff_dRbjk, axis=(1, 5, 6))[
+            ..., triu_rows, triu_cols
+        ].reshape((popsize, -1), order="C"),
+        0,
+        -1,
     )
 
-    if np.any(np.abs(i_bjk) > 0):
+    if not realvalued:
         # Deritives w.r.t imaginary-part of hopping parameters
-        dab_dIbjk = np.zeros(
-            (p.shape[0], n_eb, n_imp * n_imp, n_imp, n_imp), dtype=complex
-        )
+        dab_dIbjk = np.zeros((popsize, n_eb, n_imp, n_imp, n_imp, n_imp), dtype=complex)
         for i, j in itertools.product(range(n_imp), repeat=2):
+            if j < i:
+                continue
             # Real part
-            dab_dIbjk[:, :, i * n_imp + j, j, :] -= i_bjk[:, :, j, :]
-            dab_dIbjk[:, :, i * n_imp + j, :, j] -= i_bjk[:, :, j, :]
-            dab_dIbjk[:, :, i * n_imp + j, :, j] += 1j * r_bjk[:, :, i, :]
-            dab_dIbjk[:, :, i * n_imp + j, j, :] -= 1j * r_bjk[:, :, i, :]
-        ddiff_dIbjk = -(
-            (
-                (
-                    (w[None, :, None] - eb[:, None])
-                    / (
-                        (w[None, :, None] - eb[:, None]) ** 2
-                        - delta[None, :, None] ** 2
-                    )
-                )[:, :, :, None, None, None]
-                * dab_dIbjk.real[:, None]
-                - (
-                    delta[None, :, None]
-                    / (
-                        (w[None, :, None] - eb[:, None, :]) ** 2
-                        - delta[None, :, None] ** 2
-                    )
-                )[:, :, :, None, None, None]
-                * dab_dIbjk.imag[:, None]
-            )
-            + 1j
-            * (
-                (
-                    (w[None, :, None] - eb[:, None])
-                    / (
-                        (w[None, :, None] - eb[:, None]) ** 2
-                        - delta[None, :, None] ** 2
-                    )
-                )[:, :, :, None, None, None]
-                * dab_dIbjk.imag[:, None]
-                - (
-                    delta[None, :, None]
-                    / (
-                        (w[None, :, None] - eb[:, None]) ** 2
-                        - delta[None, :, None] ** 2
-                    )
-                )[:, :, :, None, None, None]
-                * dab_dIbjk.real[:, None]
-            )
+            dab_dIbjk[:, :, i, j, j, :] += i_bjk[:, :, j, :]
+            dab_dIbjk[:, :, i, j, :, j] += i_bjk[:, :, j, :]
+            dab_dIbjk[:, :, i, j, :, j] += 1j * r_bjk[:, :, i, :]
+            dab_dIbjk[:, :, i, j, j, :] -= 1j * r_bjk[:, :, i, :]
+        ddiff_dIbjk = (
+            -dab_dIbjk[:, None]
+            * 1
+            / (z[None, :, None] - eb[:, None])[:, :, :, None, None, None, None]
         )
         dabs_diff_dIbjk = (
             1
-            / np.abs(diff)[:, :, None, None]
+            / np.abs(diff)[:, :, None, None, None]
             * (
-                diff.real[:, :, None, None] * ddiff_dIbjk.real
-                - diff.imag[:, :, None, None] * ddiff_dIbjk.imag
+                diff.real[:, :, None, None, None] * ddiff_dIbjk.real
+                + diff.imag[:, :, None, None, None] * ddiff_dIbjk.imag
             )
         )
         dmoment_diff_dIbjk = sp.integrate.simpson(
-            np.pow(w[:, None], np.arange(10)[None, :])[
-                None, :, :, None, None, None, None
+            np.pow(w[:, None], np.arange(moment_diff.shape[1])[None, :])[
+                None, :, :, None, None, None, None, None
             ]
             * ddiff_dIbjk[:, :, None],
             w,
@@ -1599,29 +1705,39 @@ def vectorized_jacobian(p, n_eb, z, hyb, gamma, regularization="L1"):
         )
         dabs_moment_diff_dIbjk = (
             1
-            / np.abs(moment_diff)[:, :, None, None]
+            / np.abs(moment_diff)[:, :, None, None, None]
             * (
-                moment_diff.real[:, :, None, None] * dmoment_diff_dIbjk.real
-                - moment_diff.imag[:, :, None, None] * dmoment_diff_dIbjk.imag
+                moment_diff.real[:, :, None, None, None] * dmoment_diff_dIbjk.real
+                + moment_diff.imag[:, :, None, None, None] * dmoment_diff_dIbjk.imag
             )
         )
-        J[:, n_eb + n_real :] = (
+        J[n_eb + n_real :, :] = np.moveaxis(
             1
             / (n_w * n_imp * n_imp)
-            * np.sum(dabs_diff_dIbjk, axis=(1, 4, 5)).reshape((popsize, -1))
+            * np.sum(dabs_diff_dIbjk, axis=(1, 5, 6))[
+                ..., triu_rows, triu_cols
+            ].reshape((popsize, -1), order="C"),
+            0,
+            -1,
         )
-        J[:, n_eb + n_real :] += (
+        J[n_eb + n_real :, :] += np.moveaxis(
             1
-            / (moment_diff.shape[1] * n_imp * n_imp)
-            * np.sum(dabs_moment_diff_dIbjk, axis=(1, 4, 5)).reshape((popsize, -1))
+            / (n_imp * n_imp * moment_diff.shape[1])
+            * np.sum(dabs_moment_diff_dIbjk, axis=(1, 5, 6))[
+                ..., triu_rows, triu_cols
+            ].reshape((popsize, -1), order="C"),
+            0,
+            -1,
         )
 
     # Add regularization terms
-    if regularization.lower() == "l1":
-        J += gamma / p.shape[1] * np.sign(p)
+    if regularization is None or regularization.lower() == "none":
+        pass
+    elif regularization.lower() == "l1":
+        J += (gamma / p.shape[0]) * np.sign(p)
     elif regularization.lower() == "l2":
-        J += gamma / p.shape[1] * 2 * p
-    elif regularization is not None and regularization.lower() != "none":
+        J += (gamma / p.shape[0]) * 2 * p
+    else:
         raise RuntimeError(f"Unknown regularization mode {regularization}")
 
-    return J[0] if one_dim else J
+    return J[:, 0] if one_dim else J

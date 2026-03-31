@@ -32,6 +32,7 @@ def fit_hyb(
     weight_fun=lambda w: np.ones_like(w),
     ebs_guess=None,
     vs_guess=None,
+    regularization=None,
 ):
     """
     Calculate the bath energies and hopping parameters for fitting the
@@ -139,6 +140,7 @@ def fit_hyb(
             weight_fun=weight_fun,
             bath_guess=bath_guess,
             hopping_guess=v_guess,
+            regularization=regularization,
         )
         if verbose:
             print()
@@ -218,7 +220,9 @@ def fit_block(
     weight_fun,
     bath_guess=None,
     hopping_guess=None,
+    regularization=None,
 ):
+    n_ranks = comm.size if comm is not None else 1
     n_proc = 1 if comm is None else comm.size
     rng = np.random.default_rng()
 
@@ -261,48 +265,28 @@ def fit_block(
             ", ".join(f"{el: ^16.3f}" for el in normalised_scores),
         )
     population_size = 100
-    eb_guess = np.empty((0, bath_states_per_orbital), dtype=float)
-    v_guess = np.empty((0, bath_states_per_orbital, n_orb, n_orb), dtype=complex)
 
-    for i in range(population_size):
-        bath_energies = []
-        if bath_guess is not None and i == 0:
-            bath_energies = np.array(list(bath_guess)).reshape((len(bath_guess)))
-        peak_index = rng.choice(
-            np.arange(len(peaks)),
-            size=bath_states_per_orbital - len(bath_energies),
-            p=normalised_scores,
-            replace=True,
-        )
-        bath_energies = np.append(
-            bath_energies,
-            rng.uniform(
-                low=np.interp(l_lims[peak_index], range(len(w)), w),
-                high=np.interp(r_lims[peak_index], range(len(w)), w),
-            ),
-        )
-        if hopping_guess is not None and i == 0:
-            v = v_guess
-        else:
-            v = np.empty((0, n_orb, n_orb), dtype=complex)
+    peak_index = rng.choice(
+        np.arange(len(peaks)),
+        size=(population_size, bath_states_per_orbital),
+        p=normalised_scores,
+        replace=True,
+    )
+    eb_guess = rng.uniform(
+        low=np.interp(l_lims[peak_index], range(len(w)), w),
+        high=np.interp(r_lims[peak_index], range(len(w)), w),
+    )
+    if bath_guess is not None:
+        n = min(bath_guess.shape[0], bath_states_per_orbital)
+        eb_guess[:n, 0] = bath_guess[:n]
+    eb_guess = np.sort(eb_guess, axis=1)
 
-        remainder = max(bath_states_per_orbital - v.shape[0], 0)
-        v = np.append(
-            v,
-            generate_hopping_guess(
-                w + 1j * delta,
-                hyb,
-                bath_energies[-remainder:],
-                gamma,
-                realvalue_v,
-            ),
-            axis=0,
-        )
-
-        v_guess = np.append(v_guess, [v], axis=0)
-        eb_guess = np.append(
-            eb_guess, [bath_energies[:bath_states_per_orbital]], axis=0
-        )
+    v_guess = generate_hopping_guess(
+        w + 1j * delta, hyb, eb_guess, gamma, realvalue_v, rng
+    )
+    if hopping_guess is not None:
+        n = min(hopping_guess.shape[0], bath_states_per_orbital)
+        v_guess[:n, 0] = hopping_guess[:n]
 
     if False:
         hyb_model = get_hyb_2(w + 1j * delta, eb_guess, v_guess)
@@ -330,18 +314,29 @@ def fit_block(
                 )
                 ax[i, j].plot(w, hyb_model[pop_i, :, i, j].imag, color="tab:orange")
             plt.show()
-    v, bath_energies, min_cost = get_v_and_eb_differential_evolution(
-        # v, bath_energies, min_cost = get_v_and_eb_basin_hopping(
-        w,
-        delta,
-        hyb,
-        eb_guess,
-        v_guess,
-        [(w[0], w[-1])] * eb_guess.shape[1],
-        gamma=gamma,
-        realvalue_v=realvalue_v,
-        scale_function=weight_fun,
-    )
+    if population_size > 4 and n_ranks > 1:
+        v, bath_energies, min_cost = get_v_and_eb_differential_evolution(
+            w,
+            delta,
+            hyb,
+            eb_guess,
+            v_guess,
+            gamma=gamma,
+            regularization="L1",
+            weight_function=weight_fun,
+        )
+    else:
+        # v, bath_energies, min_cost = get_v_and_eb_multiple_optimizations(
+        v, bath_energies, min_cost = get_v_and_eb_basin_hopping(
+            w,
+            delta,
+            hyb,
+            eb_guess,
+            v_guess,
+            gamma=gamma,
+            regularization="L1",
+            weight_function=weight_fun,
+        )
     if comm is not None:
         bath_energies, v, _ = comm.allreduce(
             (bath_energies, v, min_cost), op=MPI.Op.Create(v_opt, commute=True)
