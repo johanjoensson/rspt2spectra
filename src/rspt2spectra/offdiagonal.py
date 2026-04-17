@@ -587,11 +587,9 @@ def generate_hopping_guess(z, hyb, eb, gamma, realvalue_v, rng):
             lambda x, *args: vectorized_cost_function(np.append(eb[p], x), *args),
             x0[p, :, i, j].reshape((-1,)),
             jac=lambda x, *args: vectorized_jacobian(np.append(eb[p], x), *args)[n_eb:],
-            # jac="2-points",
             method="SLSQP",
-            args=(n_eb, z, hyb[np.ix_(np.arange(len(z)), [i], [j])], gamma, "None"),
+            args=(n_eb, z, hyb[np.ix_(np.arange(len(z)), [i], [j])], gamma, "L1"),
             tol=1e-3,
-            # options={"workers": int(environ.get("OMP_NUM_THREADS", "1"))},
         )
         v[p, :, i, j] = res.x[:n_eb]
         if not realvalue_v:
@@ -1243,6 +1241,7 @@ def get_v_and_eb_basin_hopping(
     delta,
     hyb,
     ebs,
+    eb_restrictions,
     vs,
     gamma,
     regularization,
@@ -1269,64 +1268,36 @@ def get_v_and_eb_basin_hopping(
     best_eb = None
     sort_indices = np.argsort(initial_costs)
     initial_guesses = initial_guesses[:, sort_indices]
-    print(f"Initial guesses for bath energies:")
-    print(f"{initial_guesses[:n_eb, :5]}")
     for column in range(min(1, population_size)):
-        if False:
-            hyb_model = get_hyb_2(
-                w + 1j * delta, ebs[sort_indices[[column]]], vs[sort_indices[[column]]]
-            )
-            fig, ax = plt.subplots(nrows=n_imp, ncols=n_imp, squeeze=False)
-            fig.suptitle(r"Re{$\Delta - \tilde{\Delta}$}")
-            for i, j in itertools.product(range(n_imp), repeat=2):
-                ax[i, j].fill_between(
-                    w,
-                    hyb[:, i, j].real,
-                    0,
-                    alpha=0.2,
-                    color="tab:blue",
-                )
-                ax[i, j].plot(w, hyb_model[0, :, i, j].real, color="tab:orange")
-            fig, ax = plt.subplots(nrows=n_imp, ncols=n_imp, squeeze=False)
-            fig.suptitle(r"Im{$\Delta - \tilde{\Delta}$}")
-            for i, j in itertools.product(range(n_imp), repeat=2):
-                ax[i, j].fill_between(
-                    w,
-                    hyb[:, i, j].imag,
-                    0,
-                    alpha=0.2,
-                    color="tab:blue",
-                )
-                ax[i, j].plot(w, hyb_model[0, :, i, j].imag, color="tab:orange")
-            plt.show()
         guess = initial_guesses[:, column]
 
-        minimize
         res = basinhopping(
             vectorized_cost_function,
             guess,
-            niter=1000,
-            niter_success=75,
-            stepsize=0.5,
+            niter=150,
+            # niter_success=50,
             T=stddev_cost,
             minimizer_kwargs={
                 "tol": 1e-6,
                 "jac": vectorized_jacobian,
-                "method": "SLSQP",
+                # "method": "SLSQP",
                 "options": {
-                    "maxiter": 1500,
+                    "maxiter": 500,
                 },
                 "args": (n_eb, z, hyb, gamma, regularization, weight_function),
+                "bounds": (
+                    eb_restrictions + [(None, None)] * (guess.shape[0] - n_eb)
+                    if eb_restrictions is not None
+                    else None
+                ),
             },
-            disp=False,
+            disp=True,
         )
 
         p = res.x
         eb_merged, v_merged = merge_overlapping_bath_states(
             p[:n_eb], unroll(p[n_eb:], n_eb, n_imp), delta
         )
-        # if sum(eb_merged > w[-1]) > 1:
-        #     continue
         c = vectorized_cost_function(
             np.append(eb_merged, inroll(v_merged)),
             eb_merged.shape[0],
@@ -1347,7 +1318,7 @@ def get_v_and_eb_basin_hopping(
 
 
 def get_v_and_eb_differential_evolution(
-    w, delta, hyb, ebs, vs, gamma, regularization, weight_function
+    w, delta, hyb, ebs, eb_restrictions, vs, gamma, regularization, weight_function
 ):
     n_eb = ebs.shape[1]
     n_imp = hyb.shape[1]
@@ -1361,25 +1332,26 @@ def get_v_and_eb_differential_evolution(
         minimize,
         args=(n_eb, z, hyb, gamma, regularization),
         jac=vectorized_jacobian,
-        method="SLSQP",
+        # method="SLSQP",
     )
 
     res = differential_evolution(
         vectorized_cost_function,
         Bounds(
-            lb=[w[0] - 10] * n_eb + [-10] * v0_flat.shape[0],
-            ub=[w[-1] + 10] * n_eb + [10] * v0_flat.shape[0],
+            lb=[e_r[0] for e_r in eb_restrictions] + [-10] * v0_flat.shape[0],
+            ub=[e_r[1] for e_r in eb_restrictions] + [10] * v0_flat.shape[0],
         ),
         atol=1e-6,
         args=(n_eb, z, hyb, gamma, regularization, weight_function),
         init=initial_guesses.T,
-        maxiter=1000,
+        maxiter=10000,
         vectorized=True,
         updating="deferred",
         polish=polish_func,
-        disp=False,
+        # disp=True,
+        # mutation=(0.75, 1.5),
+        # recombination=0.5,
     )
-    print(f"{res=}")
 
     p = res.x
     eb_merged, v_merged = merge_overlapping_bath_states(
@@ -1406,7 +1378,7 @@ def calc_diff(eb, v, z, hyb):
     return hyb[np.newaxis] - hyb_model
 
 
-def calc_moment_diff(diff, z, hyb):
+def calc_moment_diff(diff, z, hyb, max_moment=10):
     r"""
     Integrate the difference between fitted and exact hybridization function
     (calculate the difference between the integrals).
@@ -1418,13 +1390,17 @@ def calc_moment_diff(diff, z, hyb):
     ========
     M: np.ndarray((..., n, n_imp, n_imp)) - The integrals $$\int \omega^n (\Delta(\omega) - \tilde{\Delta}(\omega)) \mathrm{d}\omega$$, for n = 0, ...
     """
-    return sp.integrate.simpson(
-        np.pow(z[:, None].real, np.arange(3)[None, :])[
-            np.newaxis, :, :, np.newaxis, np.newaxis
-        ]
-        * diff[..., None, :, :],
-        z.real,
-        axis=-4,
+    return (
+        1
+        / (z[-1].real - z[0].real)
+        * sp.integrate.simpson(
+            np.pow(z[:, None].real, np.arange(max_moment)[None, :])[
+                np.newaxis, :, :, np.newaxis, np.newaxis
+            ]
+            * diff[..., None, :, :],
+            z.real,
+            axis=-4,
+        )
     )
 
 
@@ -1581,7 +1557,7 @@ def vectorized_jacobian(
     ddiff_deb = -dfit_deb
     dabs_diff_deb = (
         1
-        / np.abs(diff)[:, :, None]
+        / np.maximum(np.abs(diff)[:, :, None], 1e-12)
         * (
             diff.real[:, :, None] * ddiff_deb.real
             + diff.imag[:, :, None] * ddiff_deb.imag
@@ -1597,7 +1573,7 @@ def vectorized_jacobian(
     )
     dabs_moment_diff_deb = (
         1
-        / np.abs(moment_diff)[:, :, None]
+        / np.maximum(np.abs(moment_diff)[:, :, None], 1e-12)
         * (
             moment_diff.real[:, :, None] * dmoment_diff_deb.real
             + moment_diff.imag[:, :, None] * dmoment_diff_deb.imag
@@ -1631,7 +1607,7 @@ def vectorized_jacobian(
     )
     dabs_diff_dRbjk = (
         1
-        / np.abs(diff)[:, :, None, None, None]
+        / np.maximum(np.abs(diff)[:, :, None, None, None], 1e-12)
         * (
             diff.real[:, :, None, None, None] * ddiff_dRbjk.real
             + diff.imag[:, :, None, None, None] * ddiff_dRbjk.imag
@@ -1647,7 +1623,7 @@ def vectorized_jacobian(
     )
     dabs_moment_diff_dRbjk = (
         1
-        / np.abs(moment_diff)[:, :, None, None, None]
+        / np.maximum(np.abs(moment_diff)[:, :, None, None, None], 1e-12)
         * (
             moment_diff.real[:, :, None, None, None] * dmoment_diff_dRbjk.real
             + moment_diff.imag[:, :, None, None, None] * dmoment_diff_dRbjk.imag
@@ -1690,7 +1666,7 @@ def vectorized_jacobian(
         )
         dabs_diff_dIbjk = (
             1
-            / np.abs(diff)[:, :, None, None, None]
+            / np.maximum(np.abs(diff)[:, :, None, None, None], 1e-12)
             * (
                 diff.real[:, :, None, None, None] * ddiff_dIbjk.real
                 + diff.imag[:, :, None, None, None] * ddiff_dIbjk.imag
@@ -1706,7 +1682,7 @@ def vectorized_jacobian(
         )
         dabs_moment_diff_dIbjk = (
             1
-            / np.abs(moment_diff)[:, :, None, None, None]
+            / np.maximum(np.abs(moment_diff)[:, :, None, None, None], 1e-12)
             * (
                 moment_diff.real[:, :, None, None, None] * dmoment_diff_dIbjk.real
                 + moment_diff.imag[:, :, None, None, None] * dmoment_diff_dIbjk.imag

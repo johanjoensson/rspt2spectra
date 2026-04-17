@@ -142,6 +142,8 @@ def fit_hyb(
             bath_guess=bath_guess,
             hopping_guess=v_guess,
             regularization=regularization,
+            use_bounds=True,
+            # use_bounds=x_lim is not None,
         )
         if verbose:
             print()
@@ -222,6 +224,7 @@ def fit_block(
     bath_guess=None,
     hopping_guess=None,
     regularization=None,
+    use_bounds=True,
 ):
     n_ranks = comm.size if comm is not None else 1
     n_proc = 1 if comm is None else comm.size
@@ -265,7 +268,7 @@ def fit_block(
             "Peak scores:       ",
             ", ".join(f"{el: ^16.3f}" for el in normalised_scores),
         )
-    population_size = 100
+    population_size = 200
 
     peak_index = rng.choice(
         np.arange(len(peaks)),
@@ -279,15 +282,35 @@ def fit_block(
     )
     if bath_guess is not None:
         n = min(bath_guess.shape[0], bath_states_per_orbital)
-        eb_guess[:n, 0] = bath_guess[:n]
+        eb_guess[0, :n] = bath_guess[:n]
     eb_guess = np.sort(eb_guess, axis=1)
+    if use_bounds:
+        eb_guess = np.append(
+            eb_guess,
+            # np.array([[w[-1] + 5]] * population_size), axis=1
+            rng.uniform(low=w[-1] + 1, high=w[-1] + 10, size=(population_size, 1)),
+            axis=1,
+        )
 
     v_guess = generate_hopping_guess(
         w + 1j * delta, hyb, eb_guess, gamma, realvalue_v, rng
     )
+    # v_guess = (
+    #     rng.normal(
+    #         loc=0.0, scale=2.0, size=(population_size, eb_guess.shape[1], n_orb, n_orb)
+    #     )
+    #     + 0j
+    # )
+    # if not realvalue_v:
+    #     v_guess += 1j * rng.normal(
+    #         loc=0.0, scale=2.0, size=(population_size, eb_guess.shape[1], n_orb, n_orb)
+    #     )
+    # v_guess = np.linalg.cholesky(
+    #     np.conj(np.transpose(v_guess, axes=(0, 1, 3, 2))) @ v_guess, upper=True
+    # )
     if hopping_guess is not None:
         n = min(hopping_guess.shape[0], bath_states_per_orbital)
-        v_guess[:n, 0] = hopping_guess[:n]
+        v_guess[0, :n] = hopping_guess[:n]
 
     if False:
         hyb_model = get_hyb_2(w + 1j * delta, eb_guess, v_guess)
@@ -315,15 +338,19 @@ def fit_block(
                 )
                 ax[i, j].plot(w, hyb_model[pop_i, :, i, j].imag, color="tab:orange")
             plt.show()
-    if population_size > 4 and n_ranks > 1:
+    eb_bounds = [(w[0], w[-1])] * bath_states_per_orbital
+    if use_bounds:
+        eb_bounds += [(w[-1] + 1, w[-1] + 10)]
+    if n_orb > 0:
         v, bath_energies, min_cost = get_v_and_eb_differential_evolution(
             w,
             delta,
             hyb,
             eb_guess,
+            eb_bounds,
             v_guess,
             gamma=gamma,
-            regularization="L1",
+            regularization=regularization,
             weight_function=weight_fun,
         )
     else:
@@ -333,9 +360,10 @@ def fit_block(
             delta,
             hyb,
             eb_guess,
+            eb_bounds,
             v_guess,
             gamma=gamma,
-            regularization="L1",
+            regularization=regularization,
             weight_function=weight_fun,
         )
     if comm is not None:
