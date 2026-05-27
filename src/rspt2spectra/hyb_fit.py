@@ -270,16 +270,21 @@ def fit_block(
         )
     population_size = 200
 
-    peak_index = rng.choice(
-        np.arange(len(peaks)),
-        size=(population_size, bath_states_per_orbital),
-        p=normalised_scores,
-        replace=True,
-    )
-    eb_guess = rng.uniform(
-        low=np.interp(l_lims[peak_index], range(len(w)), w),
-        high=np.interp(r_lims[peak_index], range(len(w)), w),
-    )
+    if len(peaks) > 0:
+        peak_index = rng.choice(
+            np.arange(len(peaks)),
+            size=(population_size, bath_states_per_orbital),
+            p=normalised_scores,
+            replace=True,
+        )
+        eb_guess = rng.uniform(
+            low=np.interp(l_lims[peak_index], range(len(w)), w),
+            high=np.interp(r_lims[peak_index], range(len(w)), w),
+        )
+    else:
+        eb_guess = rng.uniform(
+            low=w[0], high=w[-1], size=(population_size, bath_states_per_orbital)
+        )
     if bath_guess is not None:
         n = min(bath_guess.shape[0], bath_states_per_orbital)
         eb_guess[0, :n] = bath_guess[:n]
