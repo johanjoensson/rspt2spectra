@@ -62,7 +62,7 @@ def fit_hyb(
             for ib in block_structure.inequivalent_blocks
         ]
     if x_lim is not None:
-        mask = [x_lim[0] <= w_i < x_lim[1] for w_i in w]
+        mask = np.logical_and(x_lim[0] <= w, w < x_lim[1])
     else:
         mask = np.array([True] * len(w))
 
@@ -346,7 +346,7 @@ def fit_block(
     eb_bounds = [(w[0], w[-1])] * bath_states_per_orbital
     if use_bounds:
         eb_bounds += [(w[-1] + 1, w[-1] + 10)]
-    if n_orb > 0:
+    if n_orb == 1 or False:
         v, bath_energies, min_cost = get_v_and_eb_differential_evolution(
             w,
             delta,
