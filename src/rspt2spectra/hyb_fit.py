@@ -64,7 +64,7 @@ def fit_hyb(
     if x_lim is not None:
         mask = np.logical_and(x_lim[0] <= w, w < x_lim[1])
     else:
-        mask = np.array([True] * len(w))
+        mask = np.ones(len(w), bool)
 
     if verbose:
 
@@ -106,7 +106,7 @@ def fit_hyb(
         idx = np.ix_(range(hyb.shape[0]), block, block)
         block_hyb = hyb[idx]
         realvalue_v = np.all(
-            np.abs(block_hyb - np.transpose(block_hyb, (0, 2, 1))) < 1e-6
+            np.abs(block_hyb - np.conj(np.transpose(block_hyb, (0, 2, 1)))) < 1e-6
         )
 
         bath_guess = None
@@ -167,14 +167,12 @@ def get_state_per_inequivalent_block(
     w,
     weight_fun,
 ):
-    (
-        blocks,
-        identical_blocks,
-        transposed_blocks,
-        particle_hole_blocks,
-        particle_hole_and_transpose_blocks,
-        inequivalent_blocks,
-    ) = block_structure
+    blocks = block_structure.blocks
+    identical_blocks = block_structure.identical_blocks
+    transposed_blocks = block_structure.transposed_blocks
+    particle_hole_blocks = block_structure.particle_hole_blocks
+    particle_hole_and_transpose_blocks = block_structure.particle_hole_transposed_blocks
+    inequivalent_blocks = block_structure.inequivalent_blocks
 
     orbitals_per_inequivalent_block = [0] * len(inequivalent_blocks)
     weight_per_inequivalent_block = np.zeros((len(inequivalent_blocks)), dtype=float)
@@ -226,9 +224,13 @@ def fit_block(
     regularization=None,
     use_bounds=True,
 ):
-    n_ranks = comm.size if comm is not None else 1
-    n_proc = 1 if comm is None else comm.size
-    rng = np.random.default_rng()
+    rank = comm.rank if comm is not None else 0
+    size = comm.size if comm is not None else 1
+    # Set up a sequence of RNG seeds, so that each MPI rank gets its own unique seed, and therefore also initial guess.
+    base_seed = 12  # Just because
+    seed_sequence = np.random.SeedSequence(base_seed)
+    child_seeds = seed_sequence.spawn(size)
+    rng = np.random.default_rng(seed=child_seeds[rank])
 
     hyb_trace = -np.imag(np.sum(np.diagonal(hyb, axis1=1, axis2=2), axis=1))
     hyb_trace[hyb_trace < 0] = 0
@@ -239,6 +241,8 @@ def fit_block(
     _, w_h, l_lims, r_lims = peak_widths(hyb_trace, peaks, rel_height=0.9)
     if False:
         plt.plot(w, hyb_trace, color="tab:blue")
+        plt.plot(w, weight_fun(w), "--", color="tab:gray")
+        plt.plot(w, hyb_trace * weight_fun(w), "--", color="tab:blue")
         plt.hlines(
             w_h,
             np.interp(l_lims, range(len(w)), w),
@@ -248,7 +252,10 @@ def fit_block(
         plt.show()
 
     scores = weight_fun(w[peaks]) * hyb_trace[peaks]
-    normalised_scores = scores / np.sum(scores)
+    score_sum = np.sum(scores)
+    normalised_scores = (
+        scores / score_sum if score_sum > 0 else np.ones_like(scores) / len(scores)
+    )
 
     if verbose:
         print("Peak positions:    ", ", ".join(f"{el: ^16.3f}" for el in w[peaks]))

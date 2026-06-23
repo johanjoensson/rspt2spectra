@@ -11,7 +11,6 @@ off-diagonal hybridization functions.
 """
 
 import itertools
-from functools import partial
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy as sp
@@ -27,13 +26,7 @@ from time import perf_counter
 
 from rspt2spectra.energies import cog
 from rspt2spectra.weight_functions import weight_functions
-from importlib.metadata import version
 import matplotlib.pyplot as plt
-
-scipy_newer_than_3_16 = all(
-    int(installed_version) >= int(v_3_16)
-    for installed_version, v_3_16 in zip(version("scipy").split(".")[:2], ("3", "16"))
-)
 
 
 def plot_diagonal_and_offdiagonal(w, hyb_diagonal, hyb, xlim):
@@ -474,7 +467,6 @@ def get_hyb(z, eb, v):
     n_b, n_imp = v.shape
     hyb = np.zeros((n_w, n_imp, n_imp), dtype=complex)
 
-    np.multiply.outer(v.conj(), v)
     # Loop over all bath energies
     for b, e in enumerate(eb):
         # Add contributions from each bath
@@ -563,32 +555,39 @@ def get_vs(z, hyb, wborders, ebs, gamma=0.0, imag_only=True):
 
 
 def generate_hopping_guess(z, hyb, eb, gamma, realvalue_v, rng):
+    """
+    Build hopping-parameter guesses for each population member via a
+    vectorised linear least-squares solve.
+
+    For fixed bath energies eb[p], the hybridization model is linear in
+    A[b] = V[b]^H V[b]:
+        hyb_model[z, i, j] = sum_b  A[b, i, j] / (z - eb[p, b])
+    We solve G @ A_flat = hyb_upper (one lstsq per population member, all
+    orbital pairs at once) and recover V via a PSD-safe eigh factorisation.
+    This replaces the previous O(population * n_pairs) SLSQP loop.
+    """
     population_size = eb.shape[0]
     n_eb = eb.shape[1]
     n_orb = hyb.shape[1]
+    triu_i, triu_j = np.triu_indices(n_orb)
+    tril_i, tril_j = np.tril_indices(n_orb, k=-1)
+
     v = np.zeros((population_size, n_eb, n_orb, n_orb), dtype=complex)
-    x0 = rng.uniform(
-        low=0.1,
-        high=0.1,
-        # size=(population_size, n_eb if realvalue_v else 2 * n_eb),
-        size=(population_size, n_eb if realvalue_v else 2 * n_eb, n_orb, n_orb),
-    )
-    for p, i, j in itertools.product(
-        range(population_size), range(n_orb), range(n_orb)
-    ):
-        if j < i:
-            continue
-        res = minimize(
-            lambda x, *args: vectorized_cost_function(np.append(eb[p], x), *args),
-            x0[p, :, i, j].reshape((-1,)),
-            # jac=lambda x, *args: vectorized_jacobian(np.append(eb[p], x), *args)[n_eb:],
-            method="SLSQP",
-            args=(n_eb, z, hyb[np.ix_(np.arange(len(z)), [i], [j])], gamma, "L1"),
-            tol=1e-3,
-        )
-        v[p, :, i, j] = res.x[:n_eb]
-        if not realvalue_v:
-            v[p, :, i, j] += 1j * res.x[n_eb:]
+    for p in range(population_size):
+        # G[m, b] = 1 / (z[m] - eb[p, b])
+        G = 1.0 / (z[:, None] - eb[p, None, :])  # (M, n_eb)
+        # Solve for all upper-triangle pairs simultaneously.
+        # A_flat: (n_eb, n_triu)  where A_flat[b, k] ≈ A[b, triu_i[k], triu_j[k]]
+        A_flat, _, _, _ = np.linalg.lstsq(G, hyb[:, triu_i, triu_j], rcond=None)
+        A = np.zeros((n_eb, n_orb, n_orb), dtype=complex)
+        A[:, triu_i, triu_j] = A_flat.T
+        A[:, tril_i, tril_j] = np.conj(A[:, tril_j, tril_i])  # Hermitian completion
+        if realvalue_v:
+            A = A.real
+        # PSD-safe V such that V[b]^H V[b] = A[b].
+        lam, U = np.linalg.eigh(A)
+        lam = np.clip(lam.real, 0.0, None)
+        v[p] = np.sqrt(lam)[:, :, None] * np.conj(np.swapaxes(U, -1, -2))
 
     return v
 
@@ -776,9 +775,14 @@ def merge_bath_states(ebs, vs):
     zeroth_moments = np.conj(np.transpose(vs, (0, 2, 1))) @ vs
     first_moments = ebs[..., np.newaxis, np.newaxis] * zeroth_moments
     A = np.sum(zeroth_moments, axis=0)
-    V = sp.linalg.cho_factor(A, lower=False)
-    Eb = sp.linalg.cho_solve(V, np.sum(first_moments, axis=0))
-    eb = np.sum(np.linalg.eigvals(Eb).real) / Eb.size
+    # Use eigh-based pseudoinverse: safe when A is rank-deficient (zero-coupling orbitals).
+    lam_A, U_A = np.linalg.eigh(A)
+    tol = np.max(np.abs(lam_A)) * n_imp * np.finfo(float).eps * 1e4
+    inv_lam = np.where(
+        np.abs(lam_A) > tol, 1.0 / np.where(np.abs(lam_A) > tol, lam_A, 1.0), 0.0
+    )
+    Eb = (U_A * inv_lam) @ (np.conj(U_A.T) @ np.sum(first_moments, axis=0))
+    eb = np.mean(np.linalg.eigvals(Eb).real)
     return eb.real[None], A[None]
 
 
@@ -1127,7 +1131,10 @@ def merge_overlapping_bath_states(ebs, vs, delta):
             em, Am = merge_bath_states(eb_g, v_g)
         eb_merged = np.append(eb_merged, em, axis=0)
         A_merged = np.append(A_merged, Am, axis=0)
-    return eb_merged, np.linalg.cholesky(A_merged, upper=True)
+    lam, U = np.linalg.eigh(A_merged)
+    lam = np.clip(lam, 0.0, None)
+    # V such that V^H V = A_merged, safe for rank-deficient A.
+    return eb_merged, np.sqrt(lam)[:, :, None] * np.conj(np.swapaxes(U, -1, -2))
 
 
 def inroll_a(p, n_eb, n_imp):
@@ -1176,7 +1183,39 @@ def unroll_a(A):
     return A_flat
 
 
-def get_v_and_eb_multiple_optimizations(w, delta, hyb, ebs, vs, gamma, regularization):
+def moment_weights(w, max_moment):
+    r"""
+    Weights for the scaled spectral moments used in the cost function.
+
+    Returns W_mn such that
+        (W_mn.T @ f)[n] == (1/M) * sum_m (w[m] / w_scale)^n * f[m]
+    i.e. the sample mean of (w/w_scale)^n * f.  Dividing by M keeps the
+    moment contribution O(1) regardless of the mesh size, matching the
+    scale of the old Simpson-integral formulation.  w_scale = max(|w|)
+    keeps the normalised frequency in [-1, 1] so high-order terms don't
+    blow up.
+
+    Pre-computing W_mn outside the optimisation loop avoids repeated
+    exponentiation inside the cost function.
+
+    Parameters
+    ----------
+    w : array(M)
+        Real frequency mesh.
+    max_moment : int
+        Number of moments (powers 0 .. max_moment - 1).
+
+    Returns
+    -------
+    W_mn : array(M, max_moment)
+    """
+    w_scale = np.max(np.abs(w))
+    return np.pow(w[:, None] / w_scale, np.arange(max_moment)[None, :]) / len(w)
+
+
+def get_v_and_eb_multiple_optimizations(
+    w, delta, hyb, ebs, vs, gamma, regularization, weight_function=None, max_moment=3
+):
     assert (
         vs.shape[0] == ebs.shape[0]
     ), f"population size must match between eb and v. {ebs.shape[0]} != {vs.shape[0]}"
@@ -1186,14 +1225,10 @@ def get_v_and_eb_multiple_optimizations(w, delta, hyb, ebs, vs, gamma, regulariz
     delta_arr = delta * (1 + 0.5 * np.abs(w) ** 2)
     z = w + 1j * delta_arr
 
-    weight_array = np.ones_like(w)
-    simpson_weights = sp.integrate.simpson(np.eye(len(w)), w, axis=0)
-    max_moment = 10
-    W_mn = (
-        simpson_weights[:, None]
-        * np.pow(w[:, None], np.arange(max_moment)[None, :])
-        / (w[-1] - w[0])
+    weight_array = (
+        weight_function(w) if weight_function is not None else np.ones_like(w)
     )
+    W_mn = moment_weights(w, max_moment)
 
     v0_flat = inroll(vs)
     initial_guesses = np.append(np.moveaxis(ebs, 0, -1), v0_flat, axis=0)
@@ -1213,7 +1248,7 @@ def get_v_and_eb_multiple_optimizations(w, delta, hyb, ebs, vs, gamma, regulariz
             initial_guesses[:, column],
             tol=1e-3,
             method="SLSQP",
-            # jac=vectorized_jacobian,
+            jac=vectorized_jacobian,
             args=(n_eb, z, hyb, gamma, regularization, weight_array, W_mn),
         )
 
@@ -1252,6 +1287,7 @@ def get_v_and_eb_basin_hopping(
     gamma,
     regularization,
     weight_function,
+    max_moment=3,
 ):
     assert (
         vs.shape[0] == ebs.shape[0]
@@ -1263,13 +1299,7 @@ def get_v_and_eb_basin_hopping(
     z = w + 1j * delta_arr
 
     weight_array = weight_function(w)
-    simpson_weights = sp.integrate.simpson(np.eye(len(w)), w, axis=0)
-    max_moment = 10
-    W_mn = (
-        simpson_weights[:, None]
-        * np.pow(w[:, None], np.arange(max_moment)[None, :])
-        / (w[-1] - w[0])
-    )
+    W_mn = moment_weights(w, max_moment)
 
     v0_flat = inroll(vs)
     initial_guesses = np.append(np.moveaxis(ebs, 0, -1), v0_flat, axis=0)
@@ -1278,6 +1308,8 @@ def get_v_and_eb_basin_hopping(
     )
     mean_cost = np.mean(initial_costs)
     stddev_cost = np.std(initial_costs, mean=mean_cost)
+    # Floor prevents T=0 when initial guesses are near-identical (degenerate population).
+    T = max(stddev_cost, 1e-3 * abs(mean_cost))
     best_cost = np.inf
     best_v = None
     best_eb = None
@@ -1291,10 +1323,10 @@ def get_v_and_eb_basin_hopping(
             guess,
             niter=150,
             # niter_success=50,
-            T=stddev_cost,
+            T=T,
             minimizer_kwargs={
                 "tol": 1e-6,
-                # "jac": vectorized_jacobian,
+                "jac": vectorized_jacobian,
                 "method": "SLSQP",
                 "options": {
                     "maxiter": 500,
@@ -1335,7 +1367,16 @@ def get_v_and_eb_basin_hopping(
 
 
 def get_v_and_eb_differential_evolution(
-    w, delta, hyb, ebs, eb_restrictions, vs, gamma, regularization, weight_function
+    w,
+    delta,
+    hyb,
+    ebs,
+    eb_restrictions,
+    vs,
+    gamma,
+    regularization,
+    weight_function,
+    max_moment=3,
 ):
     n_eb = ebs.shape[1]
     n_imp = hyb.shape[1]
@@ -1343,23 +1384,11 @@ def get_v_and_eb_differential_evolution(
     z = w + 1j * delta_arr
 
     weight_array = weight_function(w)
-    simpson_weights = sp.integrate.simpson(np.eye(len(w)), w, axis=0)
-    max_moment = 10
-    W_mn = (
-        simpson_weights[:, None]
-        * np.pow(w[:, None], np.arange(max_moment)[None, :])
-        / (w[-1] - w[0])
-    )
+    W_mn = moment_weights(w, max_moment)
 
     v0_flat = inroll(vs)
     initial_guesses = np.append(np.moveaxis(ebs, 0, -1), v0_flat, axis=0)
-
-    polish_func = partial(
-        minimize,
-        args=(n_eb, z, hyb, gamma, regularization, weight_array, W_mn),
-        # jac=vectorized_jacobian,
-        method="SLSQP",
-    )
+    opt_args = (n_eb, z, hyb, gamma, regularization, weight_array, W_mn)
 
     res = differential_evolution(
         vectorized_cost_function,
@@ -1368,18 +1397,26 @@ def get_v_and_eb_differential_evolution(
             ub=[e_r[1] for e_r in eb_restrictions] + [10] * v0_flat.shape[0],
         ),
         atol=1e-6,
-        args=(n_eb, z, hyb, gamma, regularization, weight_array, W_mn),
+        args=opt_args,
         init=initial_guesses.T,
         maxiter=10000,
         vectorized=True,
         updating="deferred",
-        polish=polish_func,
+        polish=False,  # we polish manually below with analytic jacobian via SLSQP
         # disp=True,
         # mutation=(0.75, 1.5),
         # recombination=0.5,
     )
 
-    p = res.x
+    res_polish = minimize(
+        vectorized_cost_function,
+        res.x,
+        jac=vectorized_jacobian,
+        method="SLSQP",
+        args=opt_args,
+        options={"maxiter": 1000},
+    )
+    p = res_polish.x
     eb_merged, v_merged = merge_overlapping_bath_states(
         p[:n_eb], unroll(p[n_eb:], n_eb, n_imp), delta
     )
@@ -1461,9 +1498,13 @@ def vectorized_cost_function(
     if regularization is None or regularization.lower() == "none":
         pass
     elif regularization.lower() == "l1":
-        c += (gamma / p_batched.shape[0]) * np.sum(np.abs(p_batched), axis=0)
+        c += (gamma / (p_batched.shape[0] - n_eb)) * np.sum(
+            np.abs(p_batched[n_eb:]), axis=0
+        )
     elif regularization.lower() == "l2":
-        c += (gamma / p_batched.shape[0]) * np.sum(p_batched**2, axis=0)
+        c += (gamma / (p_batched.shape[0] - n_eb)) * np.sum(
+            p_batched[n_eb:] ** 2, axis=0
+        )
     else:
         raise RuntimeError(f"Unknown regularization mode {regularization}")
 
@@ -1567,9 +1608,9 @@ def vectorized_jacobian(
     if regularization is None or regularization.lower() == "none":
         pass
     elif regularization.lower() == "l1":
-        J += (gamma / p.shape[0]) * np.sign(p)
+        J[n_eb:] += (gamma / (p.shape[0] - n_eb)) * np.sign(p[n_eb:])
     elif regularization.lower() == "l2":
-        J += (gamma / p.shape[0]) * 2 * p
+        J[n_eb:] += (gamma / (p.shape[0] - n_eb)) * 2 * p[n_eb:]
     else:
         raise RuntimeError(f"Unknown regularization mode {regularization}")
 
