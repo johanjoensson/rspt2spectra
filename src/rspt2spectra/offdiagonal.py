@@ -580,7 +580,7 @@ def generate_hopping_guess(z, hyb, eb, gamma, realvalue_v, rng):
         # A_flat: (n_eb, n_triu)  where A_flat[b, k] ≈ A[b, triu_i[k], triu_j[k]]
         A_flat, _, _, _ = np.linalg.lstsq(G, hyb[:, triu_i, triu_j], rcond=None)
         A = np.zeros((n_eb, n_orb, n_orb), dtype=complex)
-        A[:, triu_i, triu_j] = A_flat.T
+        A[:, triu_i, triu_j] = A_flat  # .T
         A[:, tril_i, tril_j] = np.conj(A[:, tril_j, tril_i])  # Hermitian completion
         if realvalue_v:
             A = A.real
@@ -1114,11 +1114,10 @@ def merge_overlapping_bath_states(ebs, vs, delta):
     ebs = ebs[sorted_idx]
     vs = vs[sorted_idx]
     e_diff = np.diff(ebs)
-    # Delta gives Half width at half maximum
-    # If peaks are closer together than delta/5, combine them.
-    # delta/5 is half width at ~96% of maximum. If peaks are too closely spaced,
-    # they start overlapping way too much for the fitting procedure to make much sense.
-    split_indices = 1 + np.nonzero(e_diff > delta / 5)[0]
+    # delta is the HWHM of the Lorentzian broadening.  Two bath states whose
+    # separation is less than delta have overlapping Lorentzians with no local
+    # minimum between them and are indistinguishable by the fit.
+    split_indices = 1 + np.nonzero(e_diff > delta)[0]
     A_merged = np.empty((0, n_imp, n_imp), dtype=vs.dtype, order="F")
     eb_merged = np.empty((0), dtype=float, order="F")
     for v_g, eb_g in zip(np.split(vs, split_indices), np.split(ebs, split_indices)):
@@ -1211,6 +1210,174 @@ def moment_weights(w, max_moment):
     """
     w_scale = np.max(np.abs(w))
     return np.pow(w[:, None] / w_scale, np.arange(max_moment)[None, :]) / len(w)
+
+
+def _varpro_inner_solve(eb, z, hyb, realvalue_v):
+    """
+    For fixed bath energies, find optimal PSD residues via lstsq + projection.
+
+    Solves hyb ≈ sum_k A_k / (z - eb[k]) for Hermitian PSD A_k given eb,
+    and returns the hopping factor V such that V[k]^H V[k] = A_psd[k].
+
+    Returns (A_psd, V, G) where G[m, k] = 1 / (z[m] - eb[k]).
+    """
+    n_bath = len(eb)
+    n_imp = hyb.shape[1]
+    M = len(z)
+
+    G = 1.0 / (z[:, None] - eb[None, :])  # (M, n_bath)
+
+    A_flat, _, _, _ = np.linalg.lstsq(
+        G, hyb.reshape(M, n_imp * n_imp), rcond=None
+    )  # (n_bath, n_imp^2)
+    A = A_flat.reshape(n_bath, n_imp, n_imp)
+
+    A = 0.5 * (A + np.conj(np.swapaxes(A, -1, -2)))  # Hermitize
+    if realvalue_v:
+        A = A.real
+
+    lam, U = np.linalg.eigh(A)
+    lam = np.clip(lam.real, 0.0, None)
+    A_psd = (U * lam[:, None, :]) @ np.conj(np.swapaxes(U, -1, -2))
+    V = np.sqrt(lam)[:, :, None] * np.conj(np.swapaxes(U, -1, -2))  # (n_bath, n_imp, n_imp)
+
+    return A_psd, V, G
+
+
+def _varpro_cost_and_grad(eb, z, hyb, weight_array, W_mn, realvalue_v):
+    """
+    VARPRO cost and its gradient w.r.t. bath energies.
+
+    For each eb proposal, solves for optimal PSD residues via
+    `_varpro_inner_solve`, evaluates the fit cost, and returns the partial
+    gradient w.r.t. eb (treating A_psd as fixed at its optimal value).
+    This is exact for unconstrained lstsq by the VARPRO theorem; the PSD
+    projection makes it an approximation, but the direction remains useful.
+
+    Returns (cost, grad_eb, V).
+    """
+    A_psd, V, G = _varpro_inner_solve(eb, z, hyb, realvalue_v)
+
+    max_moment = W_mn.shape[1]
+    hyb_model = np.einsum('mk, kij -> mij', G, A_psd)  # (M, n_imp, n_imp)
+    diff = hyb - hyb_model
+
+    # Pointwise cost
+    w2 = weight_array ** 2
+    N = diff.size
+    c = np.sum(w2[:, None, None] * 0.5 * np.abs(diff) ** 2) / N
+
+    # Moment cost
+    moment_diff = np.einsum('mn, mij -> nij', W_mn, diff)  # (max_moment, n_imp, n_imp)
+    P = moment_diff[0].size * max_moment
+    c += np.sum(0.5 * np.abs(moment_diff) ** 2) / P
+
+    # Partial gradient w.r.t. eb[k]:
+    #   d(hyb_model[m,i,j])/d(eb[k]) = A_psd[k,i,j] / (z[m] - eb[k])^2
+    # => dc/d(eb[k]) = -Re{ sum_m w2[m] * dGdeb[m,k]
+    #                        * sum_ij conj(diff[m,i,j]) * A_psd[k,i,j] } / N
+    #                  - Re{ sum_n WdG[k,n] * sum_ij conj(moment_diff[n,i,j]) * A_psd[k,i,j] } / P
+    dGdeb = G ** 2  # (M, n_bath)
+
+    conj_diff_A = np.einsum('mij, kij -> mk', np.conj(diff), A_psd)  # (M, n_bath)
+    grad = -np.real(np.einsum('m, mk, mk -> k', w2, dGdeb, conj_diff_A)) / N
+
+    WdG = np.einsum('mn, mk -> kn', W_mn, dGdeb)  # (n_bath, max_moment)
+    conj_mdf_A = np.einsum('nij, kij -> kn', np.conj(moment_diff), A_psd)  # (n_bath, max_moment)
+    grad -= np.real(np.einsum('kn, kn -> k', WdG, conj_mdf_A)) / P
+
+    return c, grad, V
+
+
+def get_v_and_eb_varpro_basin_hopping(
+    w,
+    delta,
+    hyb,
+    ebs,
+    eb_restrictions,
+    gamma,
+    regularization,
+    weight_function,
+    realvalue_v,
+    max_moment=3,
+):
+    """
+    VARPRO basin-hopping: optimise only over bath energies, with residues
+    solved analytically via lstsq + PSD projection at each step.
+
+    The search space shrinks from n_bath*(1 + n_imp^2) to n_bath, with each
+    evaluation costing one lstsq + eigh solve.  After basin-hopping, a final
+    SLSQP polish refines both energies and hoppings jointly with the analytic
+    Jacobian.
+    """
+    n_imp = hyb.shape[1]
+
+    delta_arr = delta * (1 + 0.5 * np.abs(w) ** 2)
+    z = w + 1j * delta_arr
+    weight_array = weight_function(w)
+    W_mn = moment_weights(w, max_moment)
+
+    # Seed the basin-hopping temperature from the spread of initial costs.
+    initial_costs = np.array([
+        _varpro_cost_and_grad(eb, z, hyb, weight_array, W_mn, realvalue_v)[0]
+        for eb in ebs
+    ])
+    mean_cost = np.mean(initial_costs)
+    stddev_cost = np.std(initial_costs)
+    T = max(stddev_cost, 1e-3 * abs(mean_cost))
+
+    x0 = ebs[np.argmin(initial_costs)]
+
+    def _fg(eb):
+        c, g, _ = _varpro_cost_and_grad(eb, z, hyb, weight_array, W_mn, realvalue_v)
+        return float(c), g
+
+    res = basinhopping(
+        _fg,
+        x0,
+        niter=150,
+        T=T,
+        minimizer_kwargs={
+            "method": "L-BFGS-B",
+            "jac": True,
+            "tol": 1e-6,
+            "options": {"maxiter": 500},
+            "bounds": eb_restrictions,
+        },
+        disp=True,
+    )
+
+    # Extract hoppings for the converged bath energies then merge close states.
+    _, V_opt, _ = _varpro_inner_solve(res.x, z, hyb, realvalue_v)
+    eb_merged, v_merged = merge_overlapping_bath_states(res.x, V_opt, delta)
+
+    # Final SLSQP polish over both eb and V with the analytic Jacobian.
+    n_eb_merged = len(eb_merged)
+    p0 = np.append(eb_merged, inroll(v_merged))
+    bounds_polish = (
+        eb_restrictions[:n_eb_merged] + [(None, None)] * (len(p0) - n_eb_merged)
+        if eb_restrictions is not None
+        else None
+    )
+    res_polish = minimize(
+        vectorized_cost_function,
+        p0,
+        method="SLSQP",
+        jac=vectorized_jacobian,
+        tol=1e-8,
+        options={"maxiter": 1000},
+        args=(n_eb_merged, z, hyb, gamma, regularization, weight_array, W_mn),
+        bounds=bounds_polish,
+    )
+
+    p = res_polish.x
+    eb_final = p[:n_eb_merged]
+    v_final = unroll(p[n_eb_merged:], n_eb_merged, n_imp)
+    c_final = float(vectorized_cost_function(
+        p, n_eb_merged, z, hyb, gamma, None, weight_array, W_mn
+    ))
+
+    return v_final, eb_final, c_final
 
 
 def get_v_and_eb_multiple_optimizations(

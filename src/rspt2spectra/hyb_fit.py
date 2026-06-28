@@ -11,6 +11,7 @@ from .offdiagonal import (
     get_v_and_eb_multiple_optimizations,
     get_v_and_eb_basin_hopping,
     get_v_and_eb_differential_evolution,
+    get_v_and_eb_varpro_basin_hopping,
     generate_hopping_guess,
 )
 import warnings
@@ -299,85 +300,31 @@ def fit_block(
     if use_bounds:
         eb_guess = np.append(
             eb_guess,
-            # np.array([[w[-1] + 5]] * population_size), axis=1
             rng.uniform(low=w[-1] + 1, high=w[-1] + 10, size=(population_size, 1)),
             axis=1,
         )
 
-    v_guess = generate_hopping_guess(
-        w + 1j * delta, hyb, eb_guess, gamma, realvalue_v, rng
-    )
-    # v_guess = (
-    #     rng.normal(
-    #         loc=0.0, scale=2.0, size=(population_size, eb_guess.shape[1], n_orb, n_orb)
-    #     )
-    #     + 0j
-    # )
-    # if not realvalue_v:
-    #     v_guess += 1j * rng.normal(
-    #         loc=0.0, scale=2.0, size=(population_size, eb_guess.shape[1], n_orb, n_orb)
-    #     )
-    # v_guess = np.linalg.cholesky(
-    #     np.conj(np.transpose(v_guess, axes=(0, 1, 3, 2))) @ v_guess, upper=True
+    # v_guess = generate_hopping_guess(
+    #     w + 1j * delta, hyb, eb_guess, gamma, realvalue_v, rng
     # )
     if hopping_guess is not None:
         n = min(hopping_guess.shape[0], bath_states_per_orbital)
         v_guess[0, :n] = hopping_guess[:n]
 
-    if False:
-        hyb_model = get_hyb_2(w + 1j * delta, eb_guess, v_guess)
-        for pop_i in range(population_size):
-            fig, ax = plt.subplots(nrows=n_orb, ncols=n_orb, squeeze=False)
-            fig.suptitle(r"Re{$\Delta - \tilde{\Delta}$}")
-            for i, j in itertools.product(range(n_orb), repeat=2):
-                ax[i, j].fill_between(
-                    w,
-                    hyb[:, i, j].real,
-                    0,
-                    alpha=0.2,
-                    color="tab:blue",
-                )
-                ax[i, j].plot(w, hyb_model[pop_i, :, i, j].real, color="tab:orange")
-            fig, ax = plt.subplots(nrows=n_orb, ncols=n_orb, squeeze=False)
-            fig.suptitle(r"Im{$\Delta - \tilde{\Delta}$}")
-            for i, j in itertools.product(range(n_orb), repeat=2):
-                ax[i, j].fill_between(
-                    w,
-                    hyb[:, i, j].imag,
-                    0,
-                    alpha=0.2,
-                    color="tab:blue",
-                )
-                ax[i, j].plot(w, hyb_model[pop_i, :, i, j].imag, color="tab:orange")
-            plt.show()
     eb_bounds = [(w[0], w[-1])] * bath_states_per_orbital
     if use_bounds:
         eb_bounds += [(w[-1] + 1, w[-1] + 10)]
-    if n_orb == 1 or False:
-        v, bath_energies, min_cost = get_v_and_eb_differential_evolution(
-            w,
-            delta,
-            hyb,
-            eb_guess,
-            eb_bounds,
-            v_guess,
-            gamma=gamma,
-            regularization=regularization,
-            weight_function=weight_fun,
-        )
-    else:
-        # v, bath_energies, min_cost = get_v_and_eb_multiple_optimizations(
-        v, bath_energies, min_cost = get_v_and_eb_basin_hopping(
-            w,
-            delta,
-            hyb,
-            eb_guess,
-            eb_bounds,
-            v_guess,
-            gamma=gamma,
-            regularization=regularization,
-            weight_function=weight_fun,
-        )
+    v, bath_energies, min_cost = get_v_and_eb_varpro_basin_hopping(
+        w,
+        delta,
+        hyb,
+        eb_guess,
+        eb_bounds,
+        gamma=gamma,
+        regularization=regularization,
+        weight_function=weight_fun,
+        realvalue_v=realvalue_v,
+    )
     if comm is not None:
         bath_energies, v, _ = comm.allreduce(
             (bath_energies, v, min_cost), op=MPI.Op.Create(v_opt, commute=True)
