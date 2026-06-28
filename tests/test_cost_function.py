@@ -7,6 +7,8 @@ from rspt2spectra.offdiagonal import (
     calc_moment_diff,
     inroll,
     unroll,
+    inroll_C,
+    unroll_C,
     merge_bath_states,
     merge_overlapping_bath_states,
     get_hyb_2,
@@ -100,6 +102,115 @@ def test_jacobian_real():
 
     err = check_grad(func, grad, p, epsilon=1e-5)
 
+    assert err / np.linalg.norm(grad(p)) < 1e-4
+
+
+# --- C (constant shift) tests ---
+
+def test_inroll_C_unroll_C_real():
+    n_imp = 3
+    triu_i, triu_j = np.triu_indices(n_imp)
+    C = np.zeros((n_imp, n_imp))
+    C[triu_i, triu_j] = np.arange(1, len(triu_i) + 1, dtype=float)
+    C[triu_j, triu_i] = C[triu_i, triu_j]
+    p_C = inroll_C(C)
+    assert len(p_C) == n_imp * (n_imp + 1) // 2
+    C_rt = unroll_C(p_C, n_imp)
+    assert np.allclose(C_rt.real, C)
+    assert np.allclose(C_rt.imag, 0)
+
+
+def test_inroll_C_unroll_C_complex():
+    n_imp = 2
+    C = np.array([[1.0, 2.0 + 3j], [2.0 - 3j, 4.0]])
+    p_C = inroll_C(C)
+    n_triu = n_imp * (n_imp + 1) // 2
+    n_off = n_imp * (n_imp - 1) // 2
+    assert len(p_C) == n_triu + n_off
+    C_rt = unroll_C(p_C, n_imp)
+    assert np.allclose(C_rt, C)
+    assert np.allclose(C_rt, np.conj(C_rt.T))
+
+
+def test_cost_function_with_C():
+    n_b = eb.shape[0]
+    n_imp = vs.shape[1]
+    z = w + 1j * delta
+    weight_array = np.ones_like(w)
+    W_mn = moment_weights(w, 4)
+
+    C = np.eye(n_imp) * 0.5
+    p_C = inroll_C(C)
+    n_C = len(p_C)
+    p = np.concatenate([eb, inroll(vs), p_C])
+
+    c_with_C = vectorized_cost_function(
+        p, n_b, z, hyb, 0.0, regularization="none",
+        weight_array=weight_array, W_mn=W_mn, n_C=n_C,
+    )
+    C_reconstructed = unroll_C(p_C, n_imp)
+    diff = calc_diff(eb[None], vs[None], z, hyb, C=C_reconstructed)[0]
+    moment_diff = calc_moment_diff(diff[None], W_mn)[0]
+    expected = (
+        np.sum(0.5 * np.abs(diff) ** 2) / diff.size
+        + np.sum(0.5 * np.abs(moment_diff) ** 2) / (n_imp * n_imp * moment_diff.shape[0])
+    )
+    assert np.allclose(c_with_C, expected)
+
+
+def test_jacobian_with_C_real():
+    n_b = eb.shape[0]
+    z = w + 1j * delta
+    weight_array = np.ones_like(w)
+    W_mn = moment_weights(w, 4)
+
+    C0 = np.eye(vs.shape[1]) * 0.1
+    p_C = inroll_C(C0)
+    n_C = len(p_C)
+    p = np.concatenate([eb, inroll(vs), p_C])
+
+    def func(x):
+        return vectorized_cost_function(
+            x, n_b, z, hyb, 0.0, regularization="none",
+            weight_array=weight_array, W_mn=W_mn, n_C=n_C,
+        )
+
+    def grad(x):
+        return vectorized_jacobian(
+            x, n_b, z, hyb, 0.0, regularization="none",
+            weight_array=weight_array, W_mn=W_mn, n_C=n_C,
+        )
+
+    err = check_grad(func, grad, p, epsilon=1e-5)
+    assert err / np.linalg.norm(grad(p)) < 1e-4
+
+
+def test_jacobian_with_C_complex():
+    n_b = eb.shape[0]
+    z = w + 1j * delta
+    weight_array = np.ones_like(w)
+    W_mn = moment_weights(w, 4)
+
+    np.random.seed(7)
+    vs_c = vs + 0.1j * np.random.randn(*vs.shape)
+    C0 = np.array([[0.5, 0.1 + 0.2j], [0.1 - 0.2j, 0.3]])
+    p_C = inroll_C(C0)
+    n_C = len(p_C)
+    p = np.concatenate([eb, inroll(vs_c), p_C])
+
+    def func(x):
+        return vectorized_cost_function(
+            x, n_b, z, hyb, 0.0, regularization="none",
+            weight_array=weight_array, W_mn=W_mn, n_C=n_C,
+        )
+
+    def grad(x):
+        return vectorized_jacobian(
+            x, n_b, z, hyb, 0.0, regularization="none",
+            weight_array=weight_array, W_mn=W_mn, n_C=n_C,
+        )
+
+    err = check_grad(func, grad, p, epsilon=1e-5)
     assert err / np.linalg.norm(grad(p)) < 1e-4
 
 

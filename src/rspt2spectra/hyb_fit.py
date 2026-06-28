@@ -18,6 +18,7 @@ import warnings
 
 
 def v_opt(a, b, _):
+    # a and b are (bath_energies, v, C, cost) tuples; pick the lower-cost one.
     return a if abs(a[-1]) <= abs(b[-1]) else b
 
 
@@ -52,16 +53,25 @@ def fit_hyb(
     eb          -- Bath energies
     v           -- Hopping parameters
     """
+    n_blocks = len(block_structure.inequivalent_blocks)
     if bath_states_per_orbital == 0:
-        return [
-            np.array([], dtype=float) for ib in block_structure.inequivalent_blocks
-        ], [
-            np.empty(
-                (0, len(block_structure.blocks[ib]), len(block_structure.blocks[ib])),
-                dtype=complex,
-            )
-            for ib in block_structure.inequivalent_blocks
-        ]
+        return (
+            [np.array([], dtype=float) for _ in range(n_blocks)],
+            [
+                np.empty(
+                    (0, len(block_structure.blocks[ib]), len(block_structure.blocks[ib])),
+                    dtype=complex,
+                )
+                for ib in block_structure.inequivalent_blocks
+            ],
+            [
+                np.zeros(
+                    (len(block_structure.blocks[ib]), len(block_structure.blocks[ib])),
+                    dtype=complex,
+                )
+                for ib in block_structure.inequivalent_blocks
+            ],
+        )
     if x_lim is not None:
         mask = np.logical_and(x_lim[0] <= w, w < x_lim[1])
     else:
@@ -79,12 +89,17 @@ def fit_hyb(
         )
         print("=" * 80)
 
-    ebs_star = [
-        np.empty((0,), dtype=float) for ib in block_structure.inequivalent_blocks
-    ]
+    ebs_star = [np.empty((0,), dtype=float) for _ in range(n_blocks)]
     vs_star = [
         np.empty(
             (0, len(block_structure.blocks[ib]), len(block_structure.blocks[ib])),
+            dtype=complex,
+        )
+        for ib in block_structure.inequivalent_blocks
+    ]
+    Cs_star = [
+        np.zeros(
+            (len(block_structure.blocks[ib]), len(block_structure.blocks[ib])),
             dtype=complex,
         )
         for ib in block_structure.inequivalent_blocks
@@ -130,7 +145,7 @@ def fit_hyb(
             v_guess = None
             # bath_guess = np.array([eb for eb in bath_guess])
 
-        block_eb_star, block_vs_star = fit_block(
+        block_eb_star, block_vs_star, block_C_star = fit_block(
             block_hyb[mask, :, :],
             w[mask],
             delta,
@@ -144,21 +159,21 @@ def fit_hyb(
             hopping_guess=v_guess,
             regularization=regularization,
             use_bounds=True,
-            # use_bounds=x_lim is not None,
         )
         if verbose:
             print()
-        # Remove states with negligleble hopping
+        # Remove states with negligible hopping
         bath_mask = np.linalg.norm(block_vs_star, axis=(1, 2)) > 1e-10
         block_vs_star = block_vs_star[bath_mask]
         block_eb_star = block_eb_star[bath_mask]
 
         vs_star[inequivalent_block_i] = block_vs_star
         ebs_star[inequivalent_block_i] = block_eb_star
+        Cs_star[inequivalent_block_i] = block_C_star
     if verbose:
         print("=" * 80, flush=True)
 
-    return ebs_star, vs_star
+    return ebs_star, vs_star, Cs_star
 
 
 def get_state_per_inequivalent_block(
@@ -297,39 +312,43 @@ def fit_block(
         n = min(bath_guess.shape[0], bath_states_per_orbital)
         eb_guess[0, :n] = bath_guess[:n]
     eb_guess = np.sort(eb_guess, axis=1)
-    if use_bounds:
-        eb_guess = np.append(
-            eb_guess,
-            rng.uniform(low=w[-1] + 1, high=w[-1] + 10, size=(population_size, 1)),
-            axis=1,
-        )
 
-    # v_guess = generate_hopping_guess(
-    #     w + 1j * delta, hyb, eb_guess, gamma, realvalue_v, rng
-    # )
+    v_guess = generate_hopping_guess(
+        w + 1j * delta, hyb, eb_guess, gamma, realvalue_v, rng
+    )
     if hopping_guess is not None:
         n = min(hopping_guess.shape[0], bath_states_per_orbital)
         v_guess[0, :n] = hopping_guess[:n]
 
     eb_bounds = [(w[0], w[-1])] * bath_states_per_orbital
-    if use_bounds:
-        eb_bounds += [(w[-1] + 1, w[-1] + 10)]
-    v, bath_energies, min_cost = get_v_and_eb_varpro_basin_hopping(
-        w,
-        delta,
-        hyb,
-        eb_guess,
-        eb_bounds,
-        gamma=gamma,
-        regularization=regularization,
-        weight_function=weight_fun,
-        realvalue_v=realvalue_v,
-    )
+    if n_orb == 1 or False:
+        v, bath_energies, C, min_cost = get_v_and_eb_differential_evolution(
+            w,
+            delta,
+            hyb,
+            eb_guess,
+            eb_bounds,
+            gamma=gamma,
+            regularization=regularization,
+            weight_function=weight_fun,
+            realvalue_v=realvalue_v,
+        )
+    else:
+        v, bath_energies, C, min_cost = get_v_and_eb_varpro_basin_hopping(
+            w,
+            delta,
+            hyb,
+            eb_guess,
+            eb_bounds,
+            gamma=gamma,
+            regularization=regularization,
+            weight_function=weight_fun,
+            realvalue_v=realvalue_v,
+        )
     if comm is not None:
-        bath_energies, v, _ = comm.allreduce(
-            (bath_energies, v, min_cost), op=MPI.Op.Create(v_opt, commute=True)
+        bath_energies, v, C, _ = comm.allreduce(
+            (bath_energies, v, C, min_cost), op=MPI.Op.Create(v_opt, commute=True)
         )
 
-    # V = np.linalg.cholesky(A, upper=True)
-
-    return bath_energies, v
+    print(f"Found bath energies: {bath_energies}")
+    return bath_energies, v, C
