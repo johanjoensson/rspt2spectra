@@ -17,6 +17,52 @@ from .offdiagonal import (
 import warnings
 
 
+_LINE_WIDTH = 72
+
+
+def _rule(title="", char="="):
+    """Return a horizontal rule, optionally with a centered title."""
+    if not title:
+        return char * _LINE_WIDTH
+    label = f" {title} "
+    pad = max(_LINE_WIDTH - len(label), 2)
+    left = pad // 2
+    return char * left + label + char * (pad - left)
+
+
+def _fmt_floats(values, fmt="{: .3f}"):
+    """Format a sequence of numbers as a compact, comma-separated string."""
+    values = np.real(np.atleast_1d(np.asarray(values, dtype=complex)))
+    if values.size == 0:
+        return "(none)"
+    return ", ".join(fmt.format(v) for v in values)
+
+
+def _print_block_structure(block_structure):
+    rows = [
+        ("Blocks", block_structure.blocks),
+        ("Inequivalent", block_structure.inequivalent_blocks),
+        ("Identical", block_structure.identical_blocks),
+        ("Transposed", block_structure.transposed_blocks),
+        ("Particle-hole", block_structure.particle_hole_blocks),
+        ("Particle-hole + transposed", block_structure.particle_hole_transposed_blocks),
+    ]
+    width = max(len(label) for label, _ in rows)
+    print("Block structure")
+    for label, value in rows:
+        print(f"  {label:<{width}} : {value}")
+
+
+def _print_peaks(positions, left, right, scores):
+    if len(positions) == 0:
+        print("Peaks: none found (falling back to uniform guesses)")
+        return
+    print(f"Peaks ({len(positions)})")
+    print(f"  {'position':>9}  {'interval':>18}  {'score':>6}")
+    for p, l, r, s in zip(positions, left, right, scores):
+        print(f"  {p:>9.3f}  [{l:>7.3f}, {r:>7.3f}]  {s:>6.3f}")
+
+
 def v_opt(a, b, _):
     # a and b are (bath_energies, v, C, cost) tuples; pick the lower-cost one.
     return a if abs(a[-1]) <= abs(b[-1]) else b
@@ -82,16 +128,8 @@ def fit_hyb(
         mask = np.ones(len(w), bool)
 
     if verbose:
-
-        print(f"Blocks: {block_structure.blocks}")
-        print(f"Inequivalent blocks: {block_structure.inequivalent_blocks}")
-        print(f"Identical blocks: {block_structure.identical_blocks}")
-        print(f"Transposed blocks: {block_structure.transposed_blocks}")
-        print(f"Particle hole blocks: {block_structure.particle_hole_blocks}")
-        print(
-            f"Particle hole transposed blocks: {block_structure.particle_hole_transposed_blocks}"
-        )
-        print("=" * 80)
+        print(_rule("Hybridization fit"))
+        _print_block_structure(block_structure)
 
     # ebs_star = [np.empty((0,), dtype=float) for _ in range(n_blocks)]
     ebs_star = [
@@ -125,7 +163,9 @@ def fit_hyb(
             continue
         block = block_structure.blocks[block_i]
         if verbose:
-            print(f"Fitting hybridization function for impurity orbitals {block}")
+            n_states = states_per_inequivalent_block[inequivalent_block_i]
+            print()
+            print(_rule(f"Orbitals {block}  ·  {n_states} bath states", "-"))
         idx = np.ix_(range(hyb.shape[0]), block, block)
         block_hyb = hyb[idx]
         realvalue_v = np.all(
@@ -167,8 +207,6 @@ def fit_hyb(
             regularization=regularization,
             use_bounds=True,
         )
-        if verbose:
-            print()
         # Remove states with negligible hopping
         bath_mask = np.linalg.norm(block_vs_star, axis=(1, 2)) > 1e-10
         block_vs_star = block_vs_star[bath_mask]
@@ -178,7 +216,7 @@ def fit_hyb(
         ebs_star[inequivalent_block_i] = block_eb_star
         Cs_star[inequivalent_block_i] = block_C_star
     if verbose:
-        print("=" * 80, flush=True)
+        print(_rule(), flush=True)
 
     return ebs_star, vs_star, Cs_star
 
@@ -281,22 +319,11 @@ def fit_block(
     )
 
     if verbose:
-        print("Peak positions:    ", ", ".join(f"{el: ^16.3f}" for el in w[peaks]))
-        print(
-            "Peak intervals:    ",
-            ", ".join(
-                (
-                    f"[{el: >6.3f}, {er: >6.3f}]"
-                    for el, er in zip(
-                        np.interp(l_lims, range(len(w)), w),
-                        np.interp(r_lims, range(len(w)), w),
-                    )
-                ),
-            ),
-        )
-        print(
-            "Peak scores:       ",
-            ", ".join(f"{el: ^16.3f}" for el in normalised_scores),
+        _print_peaks(
+            w[peaks],
+            np.interp(l_lims, range(len(w)), w),
+            np.interp(r_lims, range(len(w)), w),
+            normalised_scores,
         )
     population_size = 200
 
@@ -350,5 +377,7 @@ def fit_block(
             (bath_energies, v, C, min_cost), op=MPI.Op.Create(v_opt, commute=True)
         )
 
-    print(f"Found bath energies: {bath_energies}")
+    if verbose:
+        print(f"Final cost:    {abs(min_cost):.3e}")
+        print(f"Bath energies: {_fmt_floats(bath_energies)}")
     return bath_energies, v, C
