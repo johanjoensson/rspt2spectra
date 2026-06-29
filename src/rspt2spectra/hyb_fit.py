@@ -59,7 +59,11 @@ def fit_hyb(
             [np.array([], dtype=float) for _ in range(n_blocks)],
             [
                 np.empty(
-                    (0, len(block_structure.blocks[ib]), len(block_structure.blocks[ib])),
+                    (
+                        0,
+                        len(block_structure.blocks[ib]),
+                        len(block_structure.blocks[ib]),
+                    ),
                     dtype=complex,
                 )
                 for ib in block_structure.inequivalent_blocks
@@ -89,7 +93,10 @@ def fit_hyb(
         )
         print("=" * 80)
 
-    ebs_star = [np.empty((0,), dtype=float) for _ in range(n_blocks)]
+    # ebs_star = [np.empty((0,), dtype=float) for _ in range(n_blocks)]
+    ebs_star = [
+        np.empty((0,), dtype=float) for _ in block_structure.inequivalent_blocks
+    ]
     vs_star = [
         np.empty(
             (0, len(block_structure.blocks[ib]), len(block_structure.blocks[ib])),
@@ -313,15 +320,8 @@ def fit_block(
         eb_guess[0, :n] = bath_guess[:n]
     eb_guess = np.sort(eb_guess, axis=1)
 
-    v_guess = generate_hopping_guess(
-        w + 1j * delta, hyb, eb_guess, gamma, realvalue_v, rng
-    )
-    if hopping_guess is not None:
-        n = min(hopping_guess.shape[0], bath_states_per_orbital)
-        v_guess[0, :n] = hopping_guess[:n]
-
     eb_bounds = [(w[0], w[-1])] * bath_states_per_orbital
-    if n_orb == 1 or False:
+    if n_orb == 1 and False:
         v, bath_energies, C, min_cost = get_v_and_eb_differential_evolution(
             w,
             delta,

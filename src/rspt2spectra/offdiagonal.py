@@ -505,7 +505,7 @@ def get_hyb_2(z, eb, v, C=None):
     if C is not None:
         if C.ndim == 2:  # single (n_imp, n_imp): broadcast over S and M
             result = result + C[np.newaxis, np.newaxis]
-        else:            # batched (S, n_imp, n_imp): broadcast over M only
+        else:  # batched (S, n_imp, n_imp): broadcast over M only
             result = result + C[:, np.newaxis]
     return result
 
@@ -1284,7 +1284,7 @@ def _varpro_inner_solve(eb, z, hyb, realvalue_v):
     C_raw = X[n_bath].reshape(n_imp, n_imp)
 
     A = 0.5 * (A + np.conj(np.swapaxes(A, -1, -2)))  # Hermitize residues
-    C = 0.5 * (C_raw + np.conj(C_raw.T))              # Hermitize C (no PSD constraint)
+    C = 0.5 * (C_raw + np.conj(C_raw.T))  # Hermitize C (no PSD constraint)
     if realvalue_v:
         A = A.real
         C = C.real
@@ -1292,7 +1292,9 @@ def _varpro_inner_solve(eb, z, hyb, realvalue_v):
     lam, U = np.linalg.eigh(A)
     lam = np.clip(lam.real, 0.0, None)
     A_psd = (U * lam[:, None, :]) @ np.conj(np.swapaxes(U, -1, -2))
-    V = np.sqrt(lam)[:, :, None] * np.conj(np.swapaxes(U, -1, -2))  # (n_bath, n_imp, n_imp)
+    V = np.sqrt(lam)[:, :, None] * np.conj(
+        np.swapaxes(U, -1, -2)
+    )  # (n_bath, n_imp, n_imp)
 
     return A_psd, V, G, C
 
@@ -1311,26 +1313,28 @@ def _varpro_cost_and_grad(eb, z, hyb, weight_array, W_mn, realvalue_v):
     A_psd, V, G, C = _varpro_inner_solve(eb, z, hyb, realvalue_v)
 
     max_moment = W_mn.shape[1]
-    hyb_model = np.einsum('mk, kij -> mij', G, A_psd) + C[None]  # (M, n_imp, n_imp)
+    hyb_model = np.einsum("mk, kij -> mij", G, A_psd) + C[None]  # (M, n_imp, n_imp)
     diff = hyb - hyb_model
 
-    w2 = weight_array ** 2
+    w2 = weight_array**2
     N = diff.size
     c = np.sum(w2[:, None, None] * 0.5 * np.abs(diff) ** 2) / N
 
-    moment_diff = np.einsum('mn, mij -> nij', W_mn, diff)  # (max_moment, n_imp, n_imp)
+    moment_diff = np.einsum("mn, mij -> nij", W_mn, diff)  # (max_moment, n_imp, n_imp)
     P = moment_diff[0].size * max_moment
     c += np.sum(0.5 * np.abs(moment_diff) ** 2) / P
 
     # Partial VARPRO gradient w.r.t. eb: C is treated as fixed, so only the
     # A_psd / (z - eb)^2 term contributes (C has no eb dependence at fixed A).
-    dGdeb = G ** 2  # (M, n_bath)
-    conj_diff_A = np.einsum('mij, kij -> mk', np.conj(diff), A_psd)  # (M, n_bath)
-    grad = -np.real(np.einsum('m, mk, mk -> k', w2, dGdeb, conj_diff_A)) / N
+    dGdeb = G**2  # (M, n_bath)
+    conj_diff_A = np.einsum("mij, kij -> mk", np.conj(diff), A_psd)  # (M, n_bath)
+    grad = -np.real(np.einsum("m, mk, mk -> k", w2, dGdeb, conj_diff_A)) / N
 
-    WdG = np.einsum('mn, mk -> kn', W_mn, dGdeb)  # (n_bath, max_moment)
-    conj_mdf_A = np.einsum('nij, kij -> kn', np.conj(moment_diff), A_psd)  # (n_bath, max_moment)
-    grad -= np.real(np.einsum('kn, kn -> k', WdG, conj_mdf_A)) / P
+    WdG = np.einsum("mn, mk -> kn", W_mn, dGdeb)  # (n_bath, max_moment)
+    conj_mdf_A = np.einsum(
+        "nij, kij -> kn", np.conj(moment_diff), A_psd
+    )  # (n_bath, max_moment)
+    grad -= np.real(np.einsum("kn, kn -> k", WdG, conj_mdf_A)) / P
 
     return c, grad, V, C
 
@@ -1363,10 +1367,12 @@ def get_v_and_eb_varpro_basin_hopping(
     weight_array = weight_function(w)
     W_mn = moment_weights(w, max_moment)
 
-    initial_costs = np.array([
-        _varpro_cost_and_grad(eb, z, hyb, weight_array, W_mn, realvalue_v)[0]
-        for eb in ebs
-    ])
+    initial_costs = np.array(
+        [
+            _varpro_cost_and_grad(eb, z, hyb, weight_array, W_mn, realvalue_v)[0]
+            for eb in ebs
+        ]
+    )
     mean_cost = np.mean(initial_costs)
     stddev_cost = np.std(initial_costs)
     T = max(stddev_cost, 1e-3 * abs(mean_cost))
@@ -1389,7 +1395,7 @@ def get_v_and_eb_varpro_basin_hopping(
             "options": {"maxiter": 500},
             "bounds": eb_restrictions,
         },
-        disp=True,
+        disp=False,
     )
 
     # Extract hoppings and C for the converged bath energies, then merge.
@@ -1421,9 +1427,11 @@ def get_v_and_eb_varpro_basin_hopping(
     eb_final = p[:n_eb_merged]
     v_final = unroll(p[n_eb_merged:-n_C], n_eb_merged, n_imp)
     C_final = unroll_C(p[-n_C:], n_imp)
-    c_final = float(vectorized_cost_function(
-        p, n_eb_merged, z, hyb, gamma, None, weight_array, W_mn, n_C
-    ))
+    c_final = float(
+        vectorized_cost_function(
+            p, n_eb_merged, z, hyb, gamma, None, weight_array, W_mn, n_C
+        )
+    )
 
     return v_final, eb_final, C_final, c_final
 
@@ -1652,9 +1660,11 @@ def get_v_and_eb_differential_evolution(
     eb_final = p[:n_eb_merged]
     v_final = unroll(p[n_eb_merged:-n_C], n_eb_merged, n_imp)
     C_final = unroll_C(p[-n_C:], n_imp)
-    c_final = float(vectorized_cost_function(
-        p, n_eb_merged, z, hyb, gamma, None, weight_array, W_mn, n_C
-    ))
+    c_final = float(
+        vectorized_cost_function(
+            p, n_eb_merged, z, hyb, gamma, None, weight_array, W_mn, n_C
+        )
+    )
     return v_final, eb_final, C_final, c_final
 
 
@@ -1751,7 +1761,7 @@ def vectorized_cost_function(
     elif regularization.lower() == "l1":
         c += (gamma / n_v) * np.sum(np.abs(p_v), axis=0)
     elif regularization.lower() == "l2":
-        c += (gamma / n_v) * np.sum(p_v ** 2, axis=0)
+        c += (gamma / n_v) * np.sum(p_v**2, axis=0)
     else:
         raise RuntimeError(f"Unknown regularization mode {regularization}")
 
@@ -1875,13 +1885,17 @@ def vectorized_jacobian(
         off_i, off_j = triu_rows[off_mask], triu_cols[off_mask]
         n_triu = len(triu_rows)
 
-        weighted_diff = np.einsum("m, smij -> sij", weight_array, diff)  # (S, n_imp, n_imp)
+        weighted_diff = np.einsum(
+            "m, smij -> sij", weight_array, diff
+        )  # (S, n_imp, n_imp)
         N = n_w * n_imp * n_imp
 
         # For triu (p,q): upper[k] = weighted_diff[p,q], lower[k] = weighted_diff[q,p].
         # d(cost)/d(Re(C[p,q])) = -(1/N)*Re(upper + I(p!=q)*lower)
         upper = weighted_diff[:, triu_rows, triu_cols]  # (S, n_triu)
-        lower = weighted_diff[:, triu_cols, triu_rows]  # (S, n_triu) — transposed indices
+        lower = weighted_diff[
+            :, triu_cols, triu_rows
+        ]  # (S, n_triu) — transposed indices
         sum_RL = upper.copy()
         sum_RL[:, off_mask] += lower[:, off_mask]
         J_C_real = -(1.0 / N) * np.real(np.moveaxis(sum_RL, 0, -1))  # (n_triu, S)
@@ -1889,7 +1903,9 @@ def vectorized_jacobian(
         if W_mn is not None:
             P = n_imp * n_imp * moment_diff.shape[1]
             W_sum = W_mn.sum(axis=0)  # (max_moment,)
-            weighted_mdiff = np.einsum("n, snij -> sij", W_sum, moment_diff)  # (S, n_imp, n_imp)
+            weighted_mdiff = np.einsum(
+                "n, snij -> sij", W_sum, moment_diff
+            )  # (S, n_imp, n_imp)
             mupper = weighted_mdiff[:, triu_rows, triu_cols]
             mlower = weighted_mdiff[:, triu_cols, triu_rows]
             sum_mRL = mupper.copy()
