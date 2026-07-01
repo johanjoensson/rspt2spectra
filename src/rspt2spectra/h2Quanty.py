@@ -78,9 +78,7 @@ def print_QuantyH_from_dense_rsptH(
     if save21:
         # Transform matrix into one Quanty operator.
         # Save to disk.
-        write_quanty_opp(
-            h_quanty, nf, op_name="H_0", ishift=ishift, jshift=jshift, filename="H0.lua"
-        )
+        write_quanty_opp(h_quanty, nf, op_name="H_0", ishift=ishift, jshift=jshift, filename="H0.lua")
 
 
 def quanty_index(i, ang=2):
@@ -143,9 +141,7 @@ def rspt_2_quanty_matrix(x, ang=2):
     return xt
 
 
-def write_quanty_opp(
-    x, nf, op_name="Opp", ishift=0, jshift=0, filename="tmp.lua", mode="a"
-):
+def write_quanty_opp(x, nf, op_name="Opp", ishift=0, jshift=0, filename="tmp.lua", mode="a"):
     r"""
     Write matrix to disk, as one Quanty operator.
 
@@ -202,9 +198,7 @@ def write_quanty_opp(
     f.close()
 
 
-def write_quanty_opps(
-    x, nf, n=1, op_name="Opp", ishift=0, jshift=0, filename="tmp.lua", mode="a"
-):
+def write_quanty_opps(x, nf, n=1, op_name="Opp", ishift=0, jshift=0, filename="tmp.lua", mode="a"):
     """
     Write matrix x to disk, by dividing it into
     several Quanty operators.

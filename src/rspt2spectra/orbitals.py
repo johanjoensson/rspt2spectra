@@ -55,18 +55,12 @@ def write_proj_file(x, spinpol=False, filename="proj-LABEL-IrrXXXX.inp", tol=1e-
             f.write("{:d} {:d} {:d}".format(n, n, counter))
         else:
             f.write("{:d} {:d} {:d}".format(n, 2 * n, counter))
-        f.write(
-            " ! presize, dmftsize, #lines, each row has" " (i,j,Re v[i,j],Im v[i,j])."
-        )
+        f.write(" ! presize, dmftsize, #lines, each row has" " (i,j,Re v[i,j],Im v[i,j]).")
         f.write("Eigenvectors on columns. \n")
         for j in range(m):
             for i in range(n):
                 if np.abs(x[i, j]) > tol:
-                    f.write(
-                        "{:d} {:d} {:20.15f} {:20.15f} \n".format(
-                            i + 1, j + 1, x[i, j].real, x[i, j].imag
-                        )
-                    )
+                    f.write("{:d} {:d} {:20.15f} {:20.15f} \n".format(i + 1, j + 1, x[i, j].real, x[i, j].imag))
 
 
 def get_u_transformation(
@@ -127,9 +121,7 @@ def get_u_transformation(
         for row in content[1:]:
             lst = row.split()
             if lst:
-                vtr[int(lst[0]) - 1, int(lst[1]) - 1] = float(lst[2]) + 1j * float(
-                    lst[3]
-                )
+                vtr[int(lst[0]) - 1, int(lst[1]) - 1] = float(lst[2]) + 1j * float(lst[3])
     else:
         # No unitary transformation needed
         # Spherical harmonics to spherical harmonics.
@@ -154,9 +146,7 @@ def get_u_transformation(
         nb_sets = n // n_imp - 1
         if spinpol:
             for i in range(nb_sets):
-                u[
-                    nc * (1 + i) : nc * (1 + i + 1), nc * (1 + i) : nc * (1 + i + 1)
-                ] = utr
+                u[nc * (1 + i) : nc * (1 + i + 1), nc * (1 + i) : nc * (1 + i + 1)] = utr
         else:
             for i in range(nb_sets):
                 u[

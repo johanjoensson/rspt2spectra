@@ -16,7 +16,6 @@ from .offdiagonal import (
 )
 import warnings
 
-
 _LINE_WIDTH = 72
 
 
@@ -132,9 +131,7 @@ def fit_hyb(
         _print_block_structure(block_structure)
 
     # ebs_star = [np.empty((0,), dtype=float) for _ in range(n_blocks)]
-    ebs_star = [
-        np.empty((0,), dtype=float) for _ in block_structure.inequivalent_blocks
-    ]
+    ebs_star = [np.empty((0,), dtype=float) for _ in block_structure.inequivalent_blocks]
     vs_star = [
         np.empty(
             (0, len(block_structure.blocks[ib]), len(block_structure.blocks[ib])),
@@ -168,9 +165,7 @@ def fit_hyb(
             print(_rule(f"Orbitals {block}  ·  {n_states} bath states", "-"))
         idx = np.ix_(range(hyb.shape[0]), block, block)
         block_hyb = hyb[idx]
-        realvalue_v = np.all(
-            np.abs(block_hyb - np.conj(np.transpose(block_hyb, (0, 2, 1)))) < 1e-6
-        )
+        realvalue_v = np.all(np.abs(block_hyb - np.conj(np.transpose(block_hyb, (0, 2, 1)))) < 1e-6)
 
         bath_guess = None
         v_guess = None
@@ -181,11 +176,7 @@ def fit_hyb(
 
         # Block structure has changed!
         # Remove all hopping guesses, but keep the bath energies
-        if (
-            v_guess is not None
-            and bath_guess is not None
-            and v_guess.shape[1] != block_hyb.shape[1]
-        ):
+        if v_guess is not None and bath_guess is not None and v_guess.shape[1] != block_hyb.shape[1]:
             n_orb_old = v_guess.shape[1]
             n_orb = block_hyb.shape[1]
 
@@ -245,16 +236,13 @@ def get_state_per_inequivalent_block(
             + len(particle_hole_blocks[block_i])
             + len(particle_hole_and_transpose_blocks[block_i])
         )
-        orbitals_per_inequivalent_block[inequivalent_block_i] = (
-            len(block) * block_multiplicity
-        )
+        orbitals_per_inequivalent_block[inequivalent_block_i] = len(block) * block_multiplicity
         idx = np.ix_(range(hyb.shape[0]), block, block)
         block_hyb = hyb[idx]
         weight_per_inequivalent_block[inequivalent_block_i] = (
             # np.trapezoid(
             sp.integrate.simpson(
-                -np.imag(np.sum(np.diagonal(block_hyb, axis1=1, axis2=2), axis=1))
-                * weight_fun(w),
+                -np.imag(np.sum(np.diagonal(block_hyb, axis1=1, axis2=2), axis=1)) * weight_fun(w),
                 w,
             )
             * block_multiplicity
@@ -314,9 +302,7 @@ def fit_block(
 
     scores = weight_fun(w[peaks]) * hyb_trace[peaks]
     score_sum = np.sum(scores)
-    normalised_scores = (
-        scores / score_sum if score_sum > 0 else np.ones_like(scores) / len(scores)
-    )
+    normalised_scores = scores / score_sum if score_sum > 0 else np.ones_like(scores) / len(scores)
 
     if verbose:
         _print_peaks(
@@ -339,9 +325,7 @@ def fit_block(
             high=np.interp(r_lims[peak_index], range(len(w)), w),
         )
     else:
-        eb_guess = rng.uniform(
-            low=w[0], high=w[-1], size=(population_size, bath_states_per_orbital)
-        )
+        eb_guess = rng.uniform(low=w[0], high=w[-1], size=(population_size, bath_states_per_orbital))
     if bath_guess is not None:
         n = min(bath_guess.shape[0], bath_states_per_orbital)
         eb_guess[0, :n] = bath_guess[:n]
@@ -373,9 +357,7 @@ def fit_block(
             realvalue_v=realvalue_v,
         )
     if comm is not None:
-        bath_energies, v, C, _ = comm.allreduce(
-            (bath_energies, v, C, min_cost), op=MPI.Op.Create(v_opt, commute=True)
-        )
+        bath_energies, v, C, _ = comm.allreduce((bath_energies, v, C, min_cost), op=MPI.Op.Create(v_opt, commute=True))
 
     if verbose:
         print(f"Final cost:    {abs(min_cost):.3e}")

@@ -25,56 +25,53 @@ from rspt2spectra import orbitals
 from rspt2spectra import readfile
 from rspt2spectra.constants import eV
 from rspt2spectra.h2Quanty import print_QuantyH_from_dense_rsptH
+
 # Read input parameters from local file
 import rspt2spectra_parameters_diag as r2s
 
-
 # Help variables
 # Number of orbitals, 5 for d-system, 7 for f-system
-norb = 2*int(r2s.basis_tag[3]) + 1
+norb = 2 * int(r2s.basis_tag[3]) + 1
 # Number of non-equivalent correlated spin-orbitals
-nc = 2*norb if r2s.spinpol else norb
+nc = 2 * norb if r2s.spinpol else norb
 # Number of non-equivalent on-site energies
-no = 2*norb if r2s.spinpol and not r2s.spinavg else norb
+no = 2 * norb if r2s.spinpol and not r2s.spinavg else norb
 # Center of gravity energy windows
-wmin0s = [r2s.wmin0]*no
-wmax0s = [r2s.wmax0]*no
+wmin0s = [r2s.wmin0] * no
+wmax0s = [r2s.wmax0] * no
 # Name of RSPt's output file.
-outfile = 'out'
+outfile = "out"
 # Files for hybridization function
-file_re_hyb = 'real-hyb-' + r2s.basis_tag + '.dat'
-file_im_hyb = 'imag-hyb-' + r2s.basis_tag + '.dat'
+file_re_hyb = "real-hyb-" + r2s.basis_tag + ".dat"
+file_im_hyb = "imag-hyb-" + r2s.basis_tag + ".dat"
 if r2s.off_diag_hyb:
-    file_re_off_hyb = 'real-offdiag-hyb-' + r2s.basis_tag + '.dat'
-    file_im_off_hyb = 'imag-offdiag-hyb-' + r2s.basis_tag + '.dat'
+    file_re_off_hyb = "real-offdiag-hyb-" + r2s.basis_tag + ".dat"
+    file_im_off_hyb = "imag-offdiag-hyb-" + r2s.basis_tag + ".dat"
 if r2s.self_energy:
     # File for interacting PDOS
-    file_pdos = 'pdos-' + r2s.basis_tag + '.dat'
+    file_pdos = "pdos-" + r2s.basis_tag + ".dat"
     # Files for self-energies
-    file_re_sig = 'real-sig-realaxis-' + r2s.basis_tag + '.dat'
-    file_im_sig = 'imag-sig-realaxis-' + r2s.basis_tag + '.dat'
-    file_re_off_sig = 'real-offdiag-sig-realaxis-' + r2s.basis_tag + '.dat'
-    file_im_off_sig = 'imag-offdiag-sig-realaxis-' + r2s.basis_tag + '.dat'
+    file_re_sig = "real-sig-realaxis-" + r2s.basis_tag + ".dat"
+    file_im_sig = "imag-sig-realaxis-" + r2s.basis_tag + ".dat"
+    file_re_off_sig = "real-offdiag-sig-realaxis-" + r2s.basis_tag + ".dat"
+    file_im_off_sig = "imag-offdiag-sig-realaxis-" + r2s.basis_tag + ".dat"
 
 # Diagonal hybridization functions.
-w, hyb_rspt = readfile.hyb(file_re_hyb, file_im_hyb, r2s.spinpol,
-                           only_diagonal_part=True)
+w, hyb_rspt = readfile.hyb(file_re_hyb, file_im_hyb, r2s.spinpol, only_diagonal_part=True)
 # Plot diagonal elements of RSPt's hybridization function
 if r2s.verbose_fig:
     hybridization.plot_hyb(w, hyb_rspt, r2s.xlim, r2s.spinpol)
 print("Calculate hybridization strengths and bath energies")
 if "eb_initial" in dir(r2s) and "wborder" not in dir(r2s):
     assert np.shape(r2s.eb_initial)[0] == nc
-    vb, eb, wborder = hybridization.get_vb_and_new_eb(w, hyb_rspt.imag,
-                                                      r2s.eb_initial,
-                                                      accept1=0.2, accept2=0.5)
+    vb, eb, wborder = hybridization.get_vb_and_new_eb(w, hyb_rspt.imag, r2s.eb_initial, accept1=0.2, accept2=0.5)
 elif "wborder" in dir(r2s) and "eb_initial" not in dir(r2s):
     assert np.shape(r2s.wborder)[0] == nc
     wborder = np.copy(r2s.wborder)
     vb, eb = hybridization.get_vb_and_eb(w, hyb_rspt.imag, wborder)
 else:
     sys.exit("Either the eb_initial or the wborder variable is needed...")
-hyb = hybridization.hyb_d(w + 1j*r2s.eim, eb, vb)
+hyb = hybridization.hyb_d(w + 1j * r2s.eim, eb, vb)
 print("eb:")
 print(eb)
 print("wborder:")
@@ -83,16 +80,15 @@ print("vb:")
 print(vb)
 # Number of bath orbitals per correlated orbitals
 nb = np.shape(eb)[1]
-s = '{:6.3f},' * nb
+s = "{:6.3f}," * nb
 print("hoppings (eV):")
 for i in range(nc):
-    print(str(i) + ': V_b =' + s.format(*vb[i]))
+    print(str(i) + ": V_b =" + s.format(*vb[i]))
 print()
 
 # Plot discretized hybridization function
 if r2s.verbose_fig:
-    hybridization.plot_discrete_hyb(w, np.imag(hyb), hyb_rspt.imag, eb, vb,
-                                    wborder, nc, r2s.spinpol, r2s.xlim)
+    hybridization.plot_discrete_hyb(w, np.imag(hyb), hyb_rspt.imag, eb, vb, wborder, nc, r2s.spinpol, r2s.xlim)
 
 
 # #### Calculate RSPt's non-interacting PDOS
@@ -126,7 +122,7 @@ for h, label in zip(hs, labels):
     if label == r2s.basis_tag:
         print("Extract diagonal of local H0 from cluster:", label)
         print()
-        e_rspt = eV*np.real(h.diagonal() - mu)
+        e_rspt = eV * np.real(h.diagonal() - mu)
 e_rspt = e_rspt[:no]  # select non-equivalent on-site energies
 
 # Construct the non-interacting PDOS, in three different ways.
@@ -137,13 +133,11 @@ e_rspt = e_rspt[:no]  # select non-equivalent on-site energies
 if no == nc:
     p0d_rspt = energies.pdos(w, r2s.eim, e_rspt, hyb_rspt)
     p0d_initial = energies.pdos(w, r2s.eim, e_rspt, hyb)
-    p0d_initial_alg2, eig, weight = energies.get_pdos0_eig_weight(e_rspt, eb,
-                                                          vb, w, r2s.eim)
+    p0d_initial_alg2, eig, weight = energies.get_pdos0_eig_weight(e_rspt, eb, vb, w, r2s.eim)
 else:
-    p0d_rspt = energies.pdos(w, r2s.eim, 2*list(e_rspt), hyb_rspt)
-    p0d_initial = energies.pdos(w, r2s.eim, 2*list(e_rspt), hyb)
-    p0d_initial_alg2, eig, weight = energies.get_pdos0_eig_weight(
-        2*list(e_rspt), eb, vb, w, r2s.eim)
+    p0d_rspt = energies.pdos(w, r2s.eim, 2 * list(e_rspt), hyb_rspt)
+    p0d_initial = energies.pdos(w, r2s.eim, 2 * list(e_rspt), hyb)
+    p0d_initial_alg2, eig, weight = energies.get_pdos0_eig_weight(2 * list(e_rspt), eb, vb, w, r2s.eim)
 assert np.all(np.abs(p0d_initial - p0d_initial_alg2) < 1e-13)
 
 # Plot non-interacting PDOS
@@ -162,53 +156,50 @@ if r2s.verbose_fig:
 if r2s.verbose_text:
     if nc == no:
         for i in range(no):
-            tmp = energies.get_deviation(e_rspt[i], eb[i], vb[i], w, r2s.eim,
-                                         p0d_rspt[i], wmin0s[i], wmax0s[i])
+            tmp = energies.get_deviation(e_rspt[i], eb[i], vb[i], w, r2s.eim, p0d_rspt[i], wmin0s[i], wmax0s[i])
             print("deviation(e_rspt) =", tmp)
     else:
         for i in range(no):
-                tmp = energies.get_deviation_magnetic_nonSpinPol(
-                    e_rspt[i], [eb[i], eb[i + no]], [vb[i], vb[i + no]],
-                    w, r2s.eim, [p0d_rspt[i], p0d_rspt[i + no]],
-                    wmin0s[i], wmax0s[i])
-                print("deviation(e_rspt) =", tmp)
+            tmp = energies.get_deviation_magnetic_nonSpinPol(
+                e_rspt[i],
+                [eb[i], eb[i + no]],
+                [vb[i], vb[i + no]],
+                w,
+                r2s.eim,
+                [p0d_rspt[i], p0d_rspt[i + no]],
+                wmin0s[i],
+                wmax0s[i],
+            )
+            print("deviation(e_rspt) =", tmp)
     print()
 # Calculate adjusted on-site energies
-e0d = energies.get_e0(w,r2s.eim,p0d_rspt,eb,vb,nc,no,r2s.bounds,
-                      wmin0s,wmax0s,r2s.verbose_text)
+e0d = energies.get_e0(w, r2s.eim, p0d_rspt, eb, vb, nc, no, r2s.bounds, wmin0s, wmax0s, r2s.verbose_text)
 # non-interacting PDOS
 if nc == no:
     p0d = energies.pdos(w, r2s.eim, e0d, hyb)
 else:
     p0d = energies.pdos(w, r2s.eim, 2 * list(e0d), hyb)
 
-print('e_rspt:', e_rspt, 'eV')
-print('e_0d:', e0d, 'eV')
+print("e_rspt:", e_rspt, "eV")
+print("e_0d:", e0d, "eV")
 print()
 
 # Check how well the fitting worked
 if r2s.verbose_text:
-    print("If the adjustment worked, the second value should be close"
-          " to the first value")
+    print("If the adjustment worked, the second value should be close" " to the first value")
     for i in range(nc):
         if i < no:
-            print('<w>_p0d_rspt =', energies.cog(w, p0d_rspt[i],
-                                                 wmin0s[i], wmax0s[i]))
-            print('<w>_p0d =', energies.cog(w, p0d[i],
-                                            wmin0s[i], wmax0s[i]))
+            print("<w>_p0d_rspt =", energies.cog(w, p0d_rspt[i], wmin0s[i], wmax0s[i]))
+            print("<w>_p0d =", energies.cog(w, p0d[i], wmin0s[i], wmax0s[i]))
         else:
-            print('<w>_p0d_rspt =', energies.cog(w, p0d_rspt[i],
-                                                 wmin0s[i - norb],
-                                                 wmax0s[i - norb]))
-            print('<w>_p0d =', energies.cog(w, p0d[i],wmin0s[i - norb],
-                                            wmax0s[i - norb]))
+            print("<w>_p0d_rspt =", energies.cog(w, p0d_rspt[i], wmin0s[i - norb], wmax0s[i - norb]))
+            print("<w>_p0d =", energies.cog(w, p0d[i], wmin0s[i - norb], wmax0s[i - norb]))
         print()
 
 # Plot non-interacting PDOS,
 # using $\epsilon_\mathrm{rspt}$ and adjusted $\epsilon_{0,d}$.
 if r2s.verbose_fig:
-    energies.plot_pdos0_3(w, p0d_rspt, p0d_initial, p0d, nc, r2s.spinpol,
-                          r2s.xlim)
+    energies.plot_pdos0_3(w, p0d_rspt, p0d_initial, p0d, nc, r2s.spinpol, r2s.xlim)
 
 # Off-diagonal hybridization functions
 # Consider off-diagonal hybridization elements.
@@ -218,16 +209,14 @@ if r2s.off_diag_hyb:
     # using full-matrix RSPt hybridization function
     if nc == no:
         p0_rspt = np.diagonal(energies.pdos(w, r2s.eim, e_rspt, hybM_rspt)).T
-    elif nc == 2*no:
-        p0_rspt = np.diagonal(energies.pdos(w, r2s.eim, 2*list(e_rspt),
-                                            hybM_rspt)).T
+    elif nc == 2 * no:
+        p0_rspt = np.diagonal(energies.pdos(w, r2s.eim, 2 * list(e_rspt), hybM_rspt)).T
 
 if r2s.verbose_fig and r2s.off_diag_hyb:
     # Plot off-diagonal hybridization elements
-    hybridization.plot_hyb_off_diagonal(w,hybM_rspt,nc,r2s.xlim)
+    hybridization.plot_hyb_off_diagonal(w, hybM_rspt, nc, r2s.xlim)
     # Plot non-interacting PDOSes
-    energies.plot_pdos0_from_off_diagonal_hyb(w, p0d_rspt, p0_rspt, p0d,
-                                              r2s.xlim)
+    energies.plot_pdos0_from_off_diagonal_hyb(w, p0d_rspt, p0_rspt, p0d, r2s.xlim)
 
 
 # Repeat adjustment procedure above, but now fit to non-interacting PDOS
@@ -252,41 +241,33 @@ if r2s.verbose_fig and r2s.off_diag_hyb:
 
 if r2s.off_diag_hyb:
     # Calculate adjusted on-site energies
-    e0 = energies.get_e0(w, r2s.eim, p0_rspt, eb, vb, nc, no, r2s.bounds,
-                         wmin0s, wmax0s, r2s.verbose_text)
+    e0 = energies.get_e0(w, r2s.eim, p0_rspt, eb, vb, nc, no, r2s.bounds, wmin0s, wmax0s, r2s.verbose_text)
     # non-interacting PDOS
     if nc == no:
         p0 = energies.pdos(w, r2s.eim, e0d, hyb)
     else:
         p0 = energies.pdos(w, r2s.eim, 2 * list(e0d), hyb)
     print("Compare on-site energies:")
-    print('e_rspt:', e_rspt, 'eV')
-    print('e_0d:', e0d, 'eV')
-    print('e_0:', e0, 'eV')
+    print("e_rspt:", e_rspt, "eV")
+    print("e_0d:", e0d, "eV")
+    print("e_0:", e0, "eV")
     print()
 
     # Check how well the fitting worked
     if r2s.verbose_text:
-        print("If the adjustment worked, the second value should be close"
-              " to the first value")
+        print("If the adjustment worked, the second value should be close" " to the first value")
         for i in range(nc):
             if i < no:
-                print('<w>_p0d_rspt =', energies.cog(w, p0_rspt[i],
-                                                     wmin0s[i], wmax0s[i]))
-                print('<w>_p0d =', energies.cog(w, p0[i],
-                                                wmin0s[i], wmax0s[i]))
+                print("<w>_p0d_rspt =", energies.cog(w, p0_rspt[i], wmin0s[i], wmax0s[i]))
+                print("<w>_p0d =", energies.cog(w, p0[i], wmin0s[i], wmax0s[i]))
             else:
-                print('<w>_p0d_rspt =', energies.cog(w, p0_rspt[i],
-                                                     wmin0s[i - norb],
-                                                     wmax0s[i - norb]))
-                print('<w>_p0d =', energies.cog(w, p0[i],wmin0s[i - norb],
-                                                wmax0s[i - norb]))
+                print("<w>_p0d_rspt =", energies.cog(w, p0_rspt[i], wmin0s[i - norb], wmax0s[i - norb]))
+                print("<w>_p0d =", energies.cog(w, p0[i], wmin0s[i - norb], wmax0s[i - norb]))
             print()
 
     # Plot non-interacting PDOS, including off-diagonal hybridization elements
     if r2s.verbose_fig:
-        energies.plot_pdos0_4(w, p0d_rspt, p0d, p0_rspt, p0, norb, r2s.spinpol,
-                              r2s.xlim)
+        energies.plot_pdos0_4(w, p0d_rspt, p0d, p0_rspt, p0, norb, r2s.spinpol, r2s.xlim)
 
 
 # Interacting PDOS
@@ -296,29 +277,22 @@ if r2s.self_energy:
     # Load interacting PDOS from file
     _, p_rspt = readfile.pdos(file_pdos, norb, r2s.spinpol)
 
-    _, sigmaM, sigma = readfile.self_energy(file_re_sig,file_im_sig,
-                                            r2s.spinpol, file_re_off_sig,
-                                            file_im_off_sig)
+    _, sigmaM, sigma = readfile.self_energy(file_re_sig, file_im_sig, r2s.spinpol, file_re_off_sig, file_im_off_sig)
 
     # Calculate RSPt PDOS in two ways:
     # - Using full-matrix RSPt hybridization function
     # - Using diagonal RSPt hybridization function
     if r2s.off_diag_hyb:
         if nc == no:
-            p_rspt_alg1 = np.diagonal(energies.pdos(w, r2s.eim, e_rspt,
-                                                    hybM_rspt, sigmaM)).T
-            p_rspt_alg2 = np.diagonal(energies.pdos(w, r2s.eim, e_rspt,
-                                                    hyb_rspt, sigmaM)).T
+            p_rspt_alg1 = np.diagonal(energies.pdos(w, r2s.eim, e_rspt, hybM_rspt, sigmaM)).T
+            p_rspt_alg2 = np.diagonal(energies.pdos(w, r2s.eim, e_rspt, hyb_rspt, sigmaM)).T
         elif nc == 2 * no:
-            p_rspt_alg1 = np.diagonal(energies.pdos(w, r2s.eim, 2*list(e_rspt),
-                                                    hybM_rspt, sigmaM)).T
-            p_rspt_alg2 = np.diagonal(energies.pdos(w, r2s.eim, 2*list(e_rspt),
-                                                    hyb_rspt, sigmaM)).T
+            p_rspt_alg1 = np.diagonal(energies.pdos(w, r2s.eim, 2 * list(e_rspt), hybM_rspt, sigmaM)).T
+            p_rspt_alg2 = np.diagonal(energies.pdos(w, r2s.eim, 2 * list(e_rspt), hyb_rspt, sigmaM)).T
 
     # Plot interacting PDOS
-    if r2s.verbose_fig :
-        energies.plot_pdos_3(w, p_rspt, p_rspt_alg1, p_rspt_alg2,
-                             r2s.off_diag_hyb, r2s.spinpol)
+    if r2s.verbose_fig:
+        energies.plot_pdos_3(w, p_rspt, p_rspt_alg1, p_rspt_alg2, r2s.off_diag_hyb, r2s.spinpol)
 
 
 # Repeat the adjustment of the on-site energy, as done previously.
@@ -343,30 +317,28 @@ if r2s.self_energy:
 
 if r2s.self_energy:
     # Calculate adjusted on-site energies
-    e = energies.get_e(w, r2s.eim, p_rspt, hyb, sigmaM, e0, r2s.wmin, r2s.wmax,
-                       r2s.verbose_text)
+    e = energies.get_e(w, r2s.eim, p_rspt, hyb, sigmaM, e0, r2s.wmin, r2s.wmax, r2s.verbose_text)
     # Calculate approximative PDOS
     if nc == no:
         p = np.diagonal(energies.pdos(w, r2s.eim, e, hyb, sigmaM)).T
     elif nc == 2 * no:
         p = np.diagonal(energies.pdos(w, r2s.eim, 2 * list(e), hyb, sigmaM)).T
     print
-    'e_rspt:', e_rspt, 'eV'
+    "e_rspt:", e_rspt, "eV"
     print
-    'e_0d:', e0d, 'eV'
+    "e_0d:", e0d, "eV"
     if r2s.off_diag_hyb:
         print
-        'e_0:', e0, 'eV'
+        "e_0:", e0, "eV"
     print
-    'e:', e, 'eV'
+    "e:", e, "eV"
 
 # Plot interacting PDOS, using adjusted on-site energies $\epsilon$
 if r2s.verbose_fig and r2s.self_energy:
     energies.plot_pdos_2(w, p_rspt, p, r2s.xlim)
 
 if r2s.verbose_fig and r2s.self_energy and r2s.off_diag_hyb:
-    energies.plot_pdos_5([e_rspt, e0d, e0, e], w, r2s.eim, p_rspt, hyb, sigmaM,
-                         r2s.spinpol)
+    energies.plot_pdos_5([e_rspt, e0d, e0, e], w, r2s.eim, p_rspt, hyb, sigmaM, r2s.spinpol)
 
 # Construct the non-relativistic non-interacting Hamiltonian
 # in the Anderson model.
@@ -389,7 +361,7 @@ elif r2s.e_method == 3:
 h = energies.get_h0(e_onsite, eb, vb, r2s.spinpol)
 
 if r2s.verbose_text:
-    print('Size of H: {:d}'.format(np.shape(h)[0]))
+    print("Size of H: {:d}".format(np.shape(h)[0]))
     print()
     print("Correlated orbitals:")
     print("Real part:")
@@ -398,11 +370,9 @@ if r2s.verbose_text:
     print(np.array_str(h[:nc, :nc].imag, precision=3, suppress_small=True))
     print("First set of bath on-site energies:")
     print("Real part:")
-    print(np.array_str(h[2*norb:2*norb + nc, 2*norb:2*norb + nc].real,
-                       precision=3, suppress_small=True))
+    print(np.array_str(h[2 * norb : 2 * norb + nc, 2 * norb : 2 * norb + nc].real, precision=3, suppress_small=True))
     print("Imag part:")
-    print(np.array_str(h[2*norb:2*norb + nc, 2*norb:2*norb + nc].imag,
-                       precision=3, suppress_small=True))
+    print(np.array_str(h[2 * norb : 2 * norb + nc, 2 * norb : 2 * norb + nc].imag, precision=3, suppress_small=True))
     print()
     print("Eigenvalues of H:")
     eigenvalues, eigenvectors = np.linalg.eigh(h)
@@ -411,9 +381,15 @@ if r2s.verbose_text:
 # Make sure Hamiltonian is hermitian
 assert np.sum(np.abs(h - np.conj(h.T))) < 1e-10
 # Get unitary transformation matrix.
-u = orbitals.get_u_transformation(np.shape(h)[0], r2s.basis_tag, (norb-1)//2,
-                                  r2s.irr_flag, r2s.spherical_bath_basis,
-                                  r2s.spinpol, r2s.verbose_text)
+u = orbitals.get_u_transformation(
+    np.shape(h)[0],
+    r2s.basis_tag,
+    (norb - 1) // 2,
+    r2s.irr_flag,
+    r2s.spherical_bath_basis,
+    r2s.spinpol,
+    r2s.verbose_text,
+)
 # Rotate (back) to spherical harmonics basis
 h_sph = np.dot(np.transpose(np.conj(u)), np.dot(h, u))
 # Make sure Hamiltonian is hermitian
@@ -424,42 +400,34 @@ if r2s.verbose_text:
     print("Hamiltonian in spherical harmonics basis:")
     print("Correlated block:")
     print("Real part:")
-    print(np.array_str(h_sph[:2*norb, :2*norb].real, precision=3,
-                       suppress_small=True))
-    print('Imag part:')
-    print(np.array_str(h_sph[:2*norb, :2*norb].imag, precision=3,
-                       suppress_small=True))
+    print(np.array_str(h_sph[: 2 * norb, : 2 * norb].real, precision=3, suppress_small=True))
+    print("Imag part:")
+    print(np.array_str(h_sph[: 2 * norb, : 2 * norb].imag, precision=3, suppress_small=True))
     print()
     print("First bath set:")
     print("Real part:")
-    print(np.array_str(h_sph[2*norb:4*norb, 2*norb:4*norb].real, precision=3,
-                       suppress_small=True))
+    print(np.array_str(h_sph[2 * norb : 4 * norb, 2 * norb : 4 * norb].real, precision=3, suppress_small=True))
     print("Imag part:")
-    print(np.array_str(h_sph[2*norb:4*norb, 2*norb:4*norb].imag, precision=3,
-                       suppress_small=True))
+    print(np.array_str(h_sph[2 * norb : 4 * norb, 2 * norb : 4 * norb].imag, precision=3, suppress_small=True))
     print()
     print("Hopping to first bath set:")
     print("Real part:")
-    print(np.array_str(h_sph[2*norb:4*norb, :2*norb].real, precision=3,
-                       suppress_small=True))
+    print(np.array_str(h_sph[2 * norb : 4 * norb, : 2 * norb].real, precision=3, suppress_small=True))
     print("Imag part:")
-    print(np.array_str(h_sph[2*norb:4*norb, :2*norb].imag, precision=3,
-                       suppress_small=True))
+    print(np.array_str(h_sph[2 * norb : 4 * norb, : 2 * norb].imag, precision=3, suppress_small=True))
     print()
-    print("Number of non-zero elements in H:",len(np.flatnonzero(h_sph)))
+    print("Number of non-zero elements in H:", len(np.flatnonzero(h_sph)))
 
 if r2s.save2Quanty:
-    print_QuantyH_from_dense_rsptH(h_sph, ang=(norb-1)//2, previous_orbitals=6)
+    print_QuantyH_from_dense_rsptH(h_sph, ang=(norb - 1) // 2, previous_orbitals=6)
 
-hOperator = h2imp.get_H_operator_from_dense_rspt_H_matrix(h_sph,
-                                                          ang=(norb-1)//2)
+hOperator = h2imp.get_H_operator_from_dense_rspt_H_matrix(h_sph, ang=(norb - 1) // 2)
 if r2s.verbose_text:
     print("Hamiltonian operator:")
     print(hOperator)
-    #repr(hOperator)
+    # repr(hOperator)
     print()
-    assert (np.shape(h_sph)[0] - 2*norb) % (2*norb) == 0
-    print('{:d} bath states per impurity spin-orbital.'.format(
-        (np.shape(h_sph)[0] - 2*norb)//(2*norb)))
-    print('{:d} bath states in total.'.format(np.shape(h_sph)[0] - 2*norb))
+    assert (np.shape(h_sph)[0] - 2 * norb) % (2 * norb) == 0
+    print("{:d} bath states per impurity spin-orbital.".format((np.shape(h_sph)[0] - 2 * norb) // (2 * norb)))
+    print("{:d} bath states in total.".format(np.shape(h_sph)[0] - 2 * norb))
 h2imp.write_to_file(hOperator, r2s.output_filename)

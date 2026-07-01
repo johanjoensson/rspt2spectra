@@ -72,13 +72,7 @@ def get_Slater_F(r, f1, f2, k):
     s = 0
     for i in range(n):
         for j in range(n):
-            s += (
-                dr[i]
-                * dr[j]
-                * (r[i] * r[j] * f1[i] * f2[j]) ** 2
-                * min(r[i], r[j]) ** k
-                / max(r[i], r[j]) ** (k + 1)
-            )
+            s += dr[i] * dr[j] * (r[i] * r[j] * f1[i] * f2[j]) ** 2 * min(r[i], r[j]) ** k / max(r[i], r[j]) ** (k + 1)
     return s
 
 

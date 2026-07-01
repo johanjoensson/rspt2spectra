@@ -20,9 +20,7 @@ from .energies import cog
 from .constants import eV
 
 
-def get_wborders(
-    n_val=10, n_con=1, wlim_val=(-8, 0), wlim_con=(0, 2), n_orb=5, spinpol=False
-):
+def get_wborders(n_val=10, n_con=1, wlim_val=(-8, 0), wlim_con=(0, 2), n_orb=5, spinpol=False):
     """
     Return energy window borders.
 
@@ -195,9 +193,7 @@ def plot_discrete_hyb(w, hyb_im, hyb_im_rspt, eb, vb, wborder, nc, spinpol, xlim
         axarr[0].set_title("Spin and orbital resolved hybridization")
     else:
         axarr[0].set_title("Orbital resolved hybridization")
-    plt.subplots_adjust(
-        left=0.12, bottom=0.07, right=0.91, top=0.95, hspace=0.0, wspace=0
-    )
+    plt.subplots_adjust(left=0.12, bottom=0.07, right=0.91, top=0.95, hspace=0.0, wspace=0)
     plt.show()
 
     if spinpol:
@@ -237,9 +233,7 @@ def plot_discrete_hyb(w, hyb_im, hyb_im_rspt, eb, vb, wborder, nc, spinpol, xlim
         axarr[0].set_xlim(xlim)
         axarr[0].legend(loc="best")
         axarr[0].set_title("Spin and orbital resolved hybridization")
-        plt.subplots_adjust(
-            left=0.17, bottom=0.10, right=0.83, top=0.98, hspace=0.0, wspace=0
-        )
+        plt.subplots_adjust(left=0.17, bottom=0.10, right=0.83, top=0.98, hspace=0.0, wspace=0)
         plt.show()
         # New figure
         fig, axarr = plt.subplots(norb, figsize=(6, 7), sharex=True)
@@ -268,9 +262,7 @@ def plot_discrete_hyb(w, hyb_im, hyb_im_rspt, eb, vb, wborder, nc, spinpol, xlim
         axarr[0].set_xlim(xlim)
         axarr[0].legend(loc=1)
         axarr[0].set_title("Spin and orbital resolved hybridization")
-        plt.subplots_adjust(
-            left=0.16, bottom=0.16, right=0.99, top=0.99, hspace=0, wspace=0
-        )
+        plt.subplots_adjust(left=0.16, bottom=0.16, right=0.99, top=0.99, hspace=0, wspace=0)
         plt.show()
 
 
@@ -328,9 +320,7 @@ def get_v_simple(w, hyb, eb, width=0.5):
         # Loop over bath states
         for e in eb[i]:
             mask = np.logical_and(e - width / 2 < w, w < e + width / 2)
-            vb[i].append(
-                np.sqrt(sp.integrate.trapezoid(-hyb[mask, i], w[mask]) / np.pi)
-            )
+            vb[i].append(np.sqrt(sp.integrate.trapezoid(-hyb[mask, i], w[mask]) / np.pi))
             # vb[i].append(np.sqrt(np.trapezoid(-hyb[mask, i], w[mask]) / np.pi))
     return np.array(vb)
 
@@ -380,9 +370,7 @@ def get_vb_and_eb(w, hyb, wborder):
         for j in range(len(wborder[i])):
             kmin = np.argmin(np.abs(w - wborder[i, j][0]))
             kmax = np.argmin(np.abs(w - wborder[i, j][1]))
-            vb[i, j] = np.sqrt(
-                sp.integrate.trapezoid(-hyb[i, kmin:kmax], w[kmin:kmax]) / pi
-            )
+            vb[i, j] = np.sqrt(sp.integrate.trapezoid(-hyb[i, kmin:kmax], w[kmin:kmax]) / pi)
             # vb[i, j] = np.sqrt(np.trapezoidz(-hyb[i, kmin:kmax], w[kmin:kmax]) / pi)
             eb[i, j] = cog(w[kmin:kmax], -hyb[i, kmin:kmax])
     return vb, eb
@@ -439,9 +427,7 @@ def get_vb_and_new_eb(w, hyb, eb, accept1=0.1, accept2=0.5, nbig=20):
             kmin = kmins[j]
             kmax = kmaxs[j]
             wborder[i, j, :] = [w[kmin], w[kmax]]
-            vb[i, j] = np.sqrt(
-                sp.integrate.trapezoid(-hyb[i, kmin:kmax], w[kmin:kmax]) / pi
-            )
+            vb[i, j] = np.sqrt(sp.integrate.trapezoid(-hyb[i, kmin:kmax], w[kmin:kmax]) / pi)
             # vb[i, j] = np.sqrt(np.trapezoid(-hyb[i, kmin:kmax], w[kmin:kmax]) / pi)
             eb_new[i, j] = cog(w[kmin:kmax], -hyb[i, kmin:kmax])
     return vb, eb_new, wborder
@@ -532,9 +518,7 @@ def get_border_index(x, y, eb, accept1, accept2, nbig):
         # Find left border
         if np.any(other_peaks < e):
             left_peak_index = np.argmin(np.abs(e - other_peaks[other_peaks < e]))
-            k_left = np.argmin(
-                np.abs(other_peaks[other_peaks < e][left_peak_index] - x)
-            )
+            k_left = np.argmin(np.abs(other_peaks[other_peaks < e][left_peak_index] - x))
         else:
             k_left = 0
         # Check if bath state is an edge bath state
@@ -572,9 +556,7 @@ def get_border_index(x, y, eb, accept1, accept2, nbig):
         # find right border
         if np.any(other_peaks > e):
             right_peak_index = np.argmin(np.abs(e - other_peaks[other_peaks > e]))
-            k_right = np.argmin(
-                np.abs(other_peaks[other_peaks > e][right_peak_index] - x)
-            )
+            k_right = np.argmin(np.abs(other_peaks[other_peaks > e][right_peak_index] - x))
         else:
             k_right = len(x) - 1
         # Check if bath state is an edge bath state
@@ -619,14 +601,10 @@ def get_border_index(x, y, eb, accept1, accept2, nbig):
         for i in chain(range(e_index), range(e_index + 1, len(eb))):
             # check for overlap to the left
             if eb[i] < e and kmin < kmaxs[i]:
-                kmins_new[e_index] = np.argmin(
-                    np.abs(x - (x[kmin] + x[kmaxs[i]]) / 2.0)
-                )
+                kmins_new[e_index] = np.argmin(np.abs(x - (x[kmin] + x[kmaxs[i]]) / 2.0))
             # check for overlap to the right
             if eb[i] > e and kmax > kmins[i]:
-                kmaxs_new[e_index] = np.argmin(
-                    np.abs(x - (x[kmax] + x[kmins[i]]) / 2.0)
-                )
+                kmaxs_new[e_index] = np.argmin(np.abs(x - (x[kmax] + x[kmins[i]]) / 2.0))
     return kmins_new, kmaxs_new
 
 
@@ -655,7 +633,7 @@ def hyb_d(z, eb, vb):
     eb = np.atleast_2d(eb)
     vb = np.atleast_2d(vb)
     # Number of different impurity orbitals
-    (norb, nb) = np.shape(eb)
+    norb, nb = np.shape(eb)
     # Hybridization function
     d = np.zeros((norb, len(z)), dtype=complex)
     # Loop over correlated obitals

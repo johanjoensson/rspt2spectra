@@ -305,13 +305,8 @@ def get_Quanty_spectrum(
     if peak is None and loc is None and h is None:
         return w, xasa
     elif peak is None or loc is None or h is None:
-        print(
-            "Either none or all of the parameters:"
-            "peak, loc and h should be specified."
-        )
+        print("Either none or all of the parameters:" "peak, loc and h should be specified.")
         return w, xasa
     else:
-        shift, scale = get_normalization(
-            w, xasa, loc, h, peak=peak, peakorder=peakorder
-        )
+        shift, scale = get_normalization(w, xasa, loc, h, peak=peak, peakorder=peakorder)
         return w + shift, scale * xasa

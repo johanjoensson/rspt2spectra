@@ -190,9 +190,7 @@ def plot_pdos0_3(w, p0d_rspt, p0d_initial, p0d, nc, spinpol, xlim):
     for i, ax in enumerate(axes):
         ax.grid()
     axes[0].set_title(r"Orbital resolved PDOS$_0$")
-    plt.subplots_adjust(
-        left=0.15, bottom=0.11, right=0.99, top=0.95, hspace=0, wspace=0
-    )
+    plt.subplots_adjust(left=0.15, bottom=0.11, right=0.99, top=0.95, hspace=0, wspace=0)
     plt.show()
 
     if spinpol:
@@ -214,9 +212,7 @@ def plot_pdos0_3(w, p0d_rspt, p0d_initial, p0d, nc, spinpol, xlim):
         axes[-1].set_xlabel(r"$\omega$  (eV)")
         axes[0].legend(loc=2)
         axes[0].set_xlim(xlim)
-        plt.subplots_adjust(
-            left=0.15, bottom=0.11, right=0.99, top=0.98, hspace=0, wspace=0
-        )
+        plt.subplots_adjust(left=0.15, bottom=0.11, right=0.99, top=0.98, hspace=0, wspace=0)
         plt.show()
 
 
@@ -249,9 +245,7 @@ def plot_pdos0_4(w, p0d_rspt, p0d, p0_rspt, p0, norb, spinpol, xlim):
         axes[-1].set_xlabel(r"$\omega$  (eV)")
         axes[0].legend(loc=2)
         axes[0].set_xlim(xlim)
-        plt.subplots_adjust(
-            left=0.15, bottom=0.11, right=0.99, top=0.98, hspace=0, wspace=0
-        )
+        plt.subplots_adjust(left=0.15, bottom=0.11, right=0.99, top=0.98, hspace=0, wspace=0)
         plt.show()
 
 
@@ -510,9 +504,7 @@ def get_e(w, eim, p_rspt, hyb, sigmaM, e0, wmin, wmax, verbose_text):
     if verbose_text:
         print(
             "deviation(e_start) = ",
-            get_deviation_using_self_energy(
-                e_start, avgErspt, w[mask], eim, hybM_mask, sigmaM_mask
-            ),
+            get_deviation_using_self_energy(e_start, avgErspt, w[mask], eim, hybM_mask, sigmaM_mask),
         )
         print("devation(e) = ", res.fun)
         print("nit = ", res.nit)
@@ -863,9 +855,7 @@ def pdos(w, eim, e, hyb, sig=0):
         assert nw == np.shape(hyb)[2] and nw == np.shape(sig)[2]
         g = np.zeros((n, n, nw), dtype=complex)
         for i, x in enumerate(w):
-            g[:, :, i] = np.linalg.inv(
-                (x + 1j * eim) * np.eye(n) - e[:, :] - hyb[:, :, i] - sig[:, :, i]
-            )
+            g[:, :, i] = np.linalg.inv((x + 1j * eim) * np.eye(n) - e[:, :] - hyb[:, :, i] - sig[:, :, i])
     dos = -1 / pi * np.imag(g)
     return dos
 
@@ -924,7 +914,7 @@ def eig_and_weight1(h0):
     """
     h0 = np.atleast_3d(h0)
     # number of types
-    (nt, nh) = np.shape(h0)[:-1]
+    nt, nh = np.shape(h0)[:-1]
     eig = np.zeros((nt, nh))
     weight = np.zeros((nt, nh))
     # loop over types
@@ -967,7 +957,7 @@ def h_d0(e, eb=None, v=None):
         eb = np.atleast_2d(eb)
         v = np.atleast_2d(v)
     # number of types and bath states
-    (nt, nb) = np.shape(eb)
+    nt, nb = np.shape(eb)
     ht = []
     # loop over the types
     for t in range(nt):

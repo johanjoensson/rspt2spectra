@@ -12,7 +12,6 @@ This module contains functions which are useful for materials with D4h or Oh sym
 import numpy as np
 import sys
 
-
 # Functions related to crystal-field splitting of localized orbitals
 
 

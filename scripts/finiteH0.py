@@ -125,11 +125,7 @@ if rank == 0:
     print("v_median = ", v_median)
     r_cutoff = 0.01
     mask = np.abs(v) < r_cutoff * np.max(np.abs(v))
-    print(
-        "{:d} elements in v are smaller than {:.3f}*v_max.".format(
-            v[mask].size, r_cutoff
-        )
-    )
+    print("{:d} elements in v are smaller than {:.3f}*v_max.".format(v[mask].size, r_cutoff))
 
     # Check small non-zero values.
     mask = np.logical_and(0 < np.abs(v), np.abs(v) < r_cutoff * np.max(np.abs(v)))
@@ -190,29 +186,19 @@ if r2s.verbose_text and rank == 0:
     print("Hamiltonian in spherical harmonics basis:")
     print("Correlated block:")
     print("Real part:")
-    print(
-        np.array_str(np.real(h_sph[:n_imp, :n_imp]), precision=3, suppress_small=True)
-    )
+    print(np.array_str(np.real(h_sph[:n_imp, :n_imp]), precision=3, suppress_small=True))
     print("Imag part:")
-    print(
-        np.array_str(np.imag(h_sph[:n_imp, :n_imp]), precision=3, suppress_small=True)
-    )
+    print(np.array_str(np.imag(h_sph[:n_imp, :n_imp]), precision=3, suppress_small=True))
     print("Number of non-zero elements in H:", len(np.flatnonzero(h_sph)))
 
-hOperator = h2imp.get_H_operator_from_dense_rspt_H_matrix(
-    h_sph, ang=(n_imp // 2 - 1) // 2
-)
+hOperator = h2imp.get_H_operator_from_dense_rspt_H_matrix(h_sph, ang=(n_imp // 2 - 1) // 2)
 if r2s.verbose_text and rank == 0:
     print("Hamiltonian operator:")
     print(hOperator)
     # repr(hOperator)
     print()
     print("len(hOperator) = {:d}".format(len(hOperator)))
-    print(
-        "{:.3f} bath states per impurity spin-orbital.".format(
-            (np.shape(h_sph)[0] - n_imp) / n_imp
-        )
-    )
+    print("{:.3f} bath states per impurity spin-orbital.".format((np.shape(h_sph)[0] - n_imp) / n_imp))
     print("{:d} bath states in total.".format(np.shape(h_sph)[0] - n_imp))
 if rank == 0:
     h2imp.write_to_file(hOperator, r2s.output_filename)

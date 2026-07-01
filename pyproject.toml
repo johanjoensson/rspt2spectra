@@ -20,6 +20,11 @@ dependencies = [
 ]
 dynamic = ["version"]
 
+
+[tool.black]
+line-length = 120
+target-version = ["py311"]
+
 [project.urls]
 Homepage = "https://github.com/johanjoensson/rspt2spectra"
 Issues = "https://github.com/johanjoensson/rspt2spectra//issues"

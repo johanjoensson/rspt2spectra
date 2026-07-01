@@ -11,10 +11,17 @@ from rspt2spectra.offdiagonal import (
     unroll_C,
     merge_bath_states,
     merge_overlapping_bath_states,
+    get_hyb,
     get_hyb_2,
     moment_weights,
+    get_v_and_eb_varpro_basin_hopping,
+    _gaps_to_eb,
+    _eb_to_gaps,
+    _gap_bounds,
+    _gaps_grad,
+    _varpro_cost_and_grad,
+    _varpro_cost_and_full_grad,
 )
-
 
 eb = np.array([-1, 0, 1], dtype=float)
 vs = np.array([[[1, 2], [0, 1]], [[2, 1], [0, 1]], [[3, 3], [0, 1]]], dtype=float)
@@ -22,7 +29,9 @@ vs = np.array([[[1, 2], [0, 1]], [[2, 1], [0, 1]], [[3, 3], [0, 1]]], dtype=floa
 w = np.linspace(-1, 1, 201)
 w_scale = np.max(np.abs(w))  # normalisation used in W_mn; matches production code
 delta = 0.05
-hyb = 5 * np.ones((w.shape[0], vs.shape[1], vs.shape[1]), dtype=float) + 1j * np.ones((w.shape[0], vs.shape[1], vs.shape[1]), dtype=float)
+hyb = 5 * np.ones((w.shape[0], vs.shape[1], vs.shape[1]), dtype=float) + 1j * np.ones(
+    (w.shape[0], vs.shape[1], vs.shape[1]), dtype=float
+)
 
 
 def test_calc_diff():
@@ -66,9 +75,10 @@ def test_cost_function_no_regularization():
     moment_diff = calc_moment_diff(diff, W_mn)[0]
     diff = diff[0]
 
-    exact = 1 / np.prod(diff.shape) * np.sum(0.5 * np.abs(diff)**2) + 1 / np.prod(
-        moment_diff.shape[-2:]
-    ) * np.sum(0.5 * np.abs(moment_diff)**2) / moment_diff.shape[0]
+    exact = (
+        1 / np.prod(diff.shape) * np.sum(0.5 * np.abs(diff) ** 2)
+        + 1 / np.prod(moment_diff.shape[-2:]) * np.sum(0.5 * np.abs(moment_diff) ** 2) / moment_diff.shape[0]
+    )
     assert np.allclose(c, exact)
 
 
@@ -95,7 +105,9 @@ def test_jacobian_real():
     W_mn = moment_weights(w, 4)
 
     def func(x):
-        return vectorized_cost_function(x, n_b, z, hyb, 0.0, regularization="none", weight_array=weight_array, W_mn=W_mn)
+        return vectorized_cost_function(
+            x, n_b, z, hyb, 0.0, regularization="none", weight_array=weight_array, W_mn=W_mn
+        )
 
     def grad(x):
         return vectorized_jacobian(x, n_b, z, hyb, 0.0, regularization="none", weight_array=weight_array, W_mn=W_mn)
@@ -106,6 +118,7 @@ def test_jacobian_real():
 
 
 # --- C (constant shift) tests ---
+
 
 def test_inroll_C_unroll_C_real():
     n_imp = 3
@@ -145,15 +158,21 @@ def test_cost_function_with_C():
     p = np.concatenate([eb, inroll(vs), p_C])
 
     c_with_C = vectorized_cost_function(
-        p, n_b, z, hyb, 0.0, regularization="none",
-        weight_array=weight_array, W_mn=W_mn, n_C=n_C,
+        p,
+        n_b,
+        z,
+        hyb,
+        0.0,
+        regularization="none",
+        weight_array=weight_array,
+        W_mn=W_mn,
+        n_C=n_C,
     )
     C_reconstructed = unroll_C(p_C, n_imp)
     diff = calc_diff(eb[None], vs[None], z, hyb, C=C_reconstructed)[0]
     moment_diff = calc_moment_diff(diff[None], W_mn)[0]
-    expected = (
-        np.sum(0.5 * np.abs(diff) ** 2) / diff.size
-        + np.sum(0.5 * np.abs(moment_diff) ** 2) / (n_imp * n_imp * moment_diff.shape[0])
+    expected = np.sum(0.5 * np.abs(diff) ** 2) / diff.size + np.sum(0.5 * np.abs(moment_diff) ** 2) / (
+        n_imp * n_imp * moment_diff.shape[0]
     )
     assert np.allclose(c_with_C, expected)
 
@@ -171,14 +190,28 @@ def test_jacobian_with_C_real():
 
     def func(x):
         return vectorized_cost_function(
-            x, n_b, z, hyb, 0.0, regularization="none",
-            weight_array=weight_array, W_mn=W_mn, n_C=n_C,
+            x,
+            n_b,
+            z,
+            hyb,
+            0.0,
+            regularization="none",
+            weight_array=weight_array,
+            W_mn=W_mn,
+            n_C=n_C,
         )
 
     def grad(x):
         return vectorized_jacobian(
-            x, n_b, z, hyb, 0.0, regularization="none",
-            weight_array=weight_array, W_mn=W_mn, n_C=n_C,
+            x,
+            n_b,
+            z,
+            hyb,
+            0.0,
+            regularization="none",
+            weight_array=weight_array,
+            W_mn=W_mn,
+            n_C=n_C,
         )
 
     err = check_grad(func, grad, p, epsilon=1e-5)
@@ -200,14 +233,28 @@ def test_jacobian_with_C_complex():
 
     def func(x):
         return vectorized_cost_function(
-            x, n_b, z, hyb, 0.0, regularization="none",
-            weight_array=weight_array, W_mn=W_mn, n_C=n_C,
+            x,
+            n_b,
+            z,
+            hyb,
+            0.0,
+            regularization="none",
+            weight_array=weight_array,
+            W_mn=W_mn,
+            n_C=n_C,
         )
 
     def grad(x):
         return vectorized_jacobian(
-            x, n_b, z, hyb, 0.0, regularization="none",
-            weight_array=weight_array, W_mn=W_mn, n_C=n_C,
+            x,
+            n_b,
+            z,
+            hyb,
+            0.0,
+            regularization="none",
+            weight_array=weight_array,
+            W_mn=W_mn,
+            n_C=n_C,
         )
 
     err = check_grad(func, grad, p, epsilon=1e-5)
@@ -236,10 +283,13 @@ def test_merge_overlapping_psd_safe():
     # Bug: np.linalg.cholesky raised on rank-deficient A (one orbital zero).
     n_imp = 2
     # One orbital has zero coupling in both states → A is rank-deficient.
-    vs = np.array([
-        [[1.0, 0.0], [0.0, 0.0]],
-        [[0.5, 0.0], [0.0, 0.0]],
-    ], dtype=complex)
+    vs = np.array(
+        [
+            [[1.0, 0.0], [0.0, 0.0]],
+            [[0.5, 0.0], [0.0, 0.0]],
+        ],
+        dtype=complex,
+    )
     ebs = np.array([-0.1, 0.1])
     # delta = 2.0 > 0.2 = |e2-e1|, so both states land in one group.
     delta = 2.0
@@ -267,28 +317,18 @@ def test_regularization_on_hoppings_only():
     weight_array = np.ones_like(w)
     W_mn = moment_weights(w, 4)
 
-    c_none = vectorized_cost_function(
-        p, n_b, z, hyb, 0.0, regularization="none", weight_array=weight_array, W_mn=W_mn
-    )
-    c_l1 = vectorized_cost_function(
-        p, n_b, z, hyb, gamma, regularization="l1", weight_array=weight_array, W_mn=W_mn
-    )
-    c_l2 = vectorized_cost_function(
-        p, n_b, z, hyb, gamma, regularization="l2", weight_array=weight_array, W_mn=W_mn
-    )
+    c_none = vectorized_cost_function(p, n_b, z, hyb, 0.0, regularization="none", weight_array=weight_array, W_mn=W_mn)
+    c_l1 = vectorized_cost_function(p, n_b, z, hyb, gamma, regularization="l1", weight_array=weight_array, W_mn=W_mn)
+    c_l2 = vectorized_cost_function(p, n_b, z, hyb, gamma, regularization="l2", weight_array=weight_array, W_mn=W_mn)
 
     v_params = p[n_b:]
     n_v = len(v_params)
     assert np.isclose(c_l1, c_none + (gamma / n_v) * np.sum(np.abs(v_params)))
-    assert np.isclose(c_l2, c_none + (gamma / n_v) * np.sum(v_params ** 2))
+    assert np.isclose(c_l2, c_none + (gamma / n_v) * np.sum(v_params**2))
 
     # Gradient: bath-energy rows must be identical with and without regularization.
-    g_none = vectorized_jacobian(
-        p, n_b, z, hyb, 0.0, regularization="none", weight_array=weight_array, W_mn=W_mn
-    )
-    g_l1 = vectorized_jacobian(
-        p, n_b, z, hyb, gamma, regularization="l1", weight_array=weight_array, W_mn=W_mn
-    )
+    g_none = vectorized_jacobian(p, n_b, z, hyb, 0.0, regularization="none", weight_array=weight_array, W_mn=W_mn)
+    g_l1 = vectorized_jacobian(p, n_b, z, hyb, gamma, regularization="l1", weight_array=weight_array, W_mn=W_mn)
     assert np.allclose(g_l1[:n_b], g_none[:n_b]), "regularization must not affect eb gradient"
     assert not np.allclose(g_l1[n_b:], g_none[n_b:]), "regularization must change hopping gradient"
 
@@ -306,7 +346,9 @@ def test_jacobian_complex():
     W_mn = moment_weights(w, 4)
 
     def func(x):
-        return vectorized_cost_function(x, n_b, z, hyb, 0.0, regularization="none", weight_array=weight_array, W_mn=W_mn)
+        return vectorized_cost_function(
+            x, n_b, z, hyb, 0.0, regularization="none", weight_array=weight_array, W_mn=W_mn
+        )
 
     def grad(x):
         return vectorized_jacobian(x, n_b, z, hyb, 0.0, regularization="none", weight_array=weight_array, W_mn=W_mn)
@@ -314,3 +356,110 @@ def test_jacobian_complex():
     err = check_grad(func, grad, p, epsilon=1e-5)
 
     assert err / np.linalg.norm(grad(p)) < 1e-4
+
+
+def test_gap_reparametrization_roundtrip():
+    # eb -> gaps -> eb recovers the sorted energies when gaps already exceed delta.
+    d = 0.1
+    energies = np.array([1.7, -2.3, 0.5, -0.4])  # unsorted, all separated > delta
+    gaps = _eb_to_gaps(energies, d)
+    assert np.allclose(_gaps_to_eb(gaps), np.sort(energies))
+    # The first entry is the smallest energy; the rest are the (>= delta) gaps.
+    assert np.isclose(gaps[0], np.min(energies))
+    assert np.all(gaps[1:] >= d - 1e-12)
+
+
+def test_eb_to_gaps_clips_to_delta():
+    # Energies closer than delta must be pushed apart to satisfy the min separation.
+    d = 0.5
+    energies = np.array([0.0, 0.1, 0.15])  # gaps 0.1, 0.05 both < delta
+    gaps = _eb_to_gaps(energies, d)
+    assert np.all(gaps[1:] >= d - 1e-12)
+    eb_rec = _gaps_to_eb(gaps)
+    assert np.all(np.diff(eb_rec) >= d - 1e-12)
+
+
+def test_gap_bounds_structure():
+    b = _gap_bounds(-3.0, 4.0, 4, 0.2)
+    assert b[0] == (-3.0, 4.0)  # first energy spans the window
+    assert all(lo == 0.2 for lo, _ in b[1:])  # every gap lower bound is delta
+    # Degenerate window still yields valid (lo <= hi) bounds.
+    b2 = _gap_bounds(0.0, 0.05, 3, 0.2)
+    assert all(lo <= hi for lo, hi in b2)
+
+
+def test_gaps_grad_matches_chain_rule():
+    # grad_p[j] = sum_{k>=j} grad_e[k]  (reverse cumulative sum).
+    grad_e = np.array([0.06, 0.02, -0.03, 0.01])
+    expected = np.array([np.sum(grad_e[j:]) for j in range(len(grad_e))])
+    assert np.allclose(_gaps_grad(grad_e), expected)
+
+
+def test_fit_enforces_min_separation_no_merge():
+    # The gap parametrization must keep fitted bath energies separated by >= delta
+    # without any post-fit merge, and recover energies near the injected poles.
+    rng = np.random.default_rng(0)
+    wgrid = np.linspace(-5, 5, 301)
+    d = 0.1
+    z = wgrid + 1j * (d * (1 + 0.5 * np.abs(wgrid) ** 2))
+    true_eb = np.array([-2.3, -0.4, 1.1, 2.6])
+    true_v = np.array([0.6, 0.9, 0.5, 0.7]).reshape(-1, 1)
+    hyb_syn = get_hyb(z, true_eb, true_v)
+
+    n_eb = true_eb.shape[0]
+    ebs = np.sort(rng.uniform(-4, 4, size=(40, n_eb)), axis=1)
+    eb_restrictions = [(wgrid[0], wgrid[-1])] * n_eb
+
+    _, eb_final, _, _ = get_v_and_eb_varpro_basin_hopping(
+        wgrid,
+        d,
+        hyb_syn,
+        ebs,
+        eb_restrictions,
+        gamma=0.0,
+        regularization=None,
+        weight_function=lambda x: np.ones_like(x),
+        realvalue_v=True,
+    )
+
+    gaps = np.diff(np.sort(eb_final))
+    assert np.all(gaps >= d - 1e-9), f"states closer than delta: min gap {gaps.min()}"
+    # Every injected pole is matched by some fitted energy within delta.
+    for e in true_eb:
+        assert np.min(np.abs(eb_final - e)) < d, f"pole {e} not recovered"
+
+
+def _synthetic_varpro_problem(n_imp, seed):
+    rng = np.random.default_rng(seed)
+    wgrid = np.linspace(-5, 5, 351)
+    d = 0.1
+    z = wgrid + 1j * (d * (1 + 0.5 * np.abs(wgrid) ** 2))
+    true_eb = np.sort(rng.uniform(-3, 3, size=4))
+    Vt = rng.normal(size=(4, n_imp, n_imp))
+    hyb_syn = get_hyb_2(z, true_eb[None], Vt[None])[0]
+    weight_array = 1.0 / (1.0 + wgrid**2)  # non-trivial weight
+    W_mn = moment_weights(wgrid, 3)
+    return z, hyb_syn, weight_array, W_mn
+
+
+def test_varpro_full_gradient_matches_finite_difference():
+    # The exact total-derivative gradient must agree with a finite-difference
+    # gradient of the reduced cost, and must beat the Kaufman approximation.
+    for n_imp in (1, 2, 3):
+        for realvalue in (True, False):
+            z, hyb_syn, wa, W_mn = _synthetic_varpro_problem(n_imp, 10 * n_imp + int(realvalue))
+            rng = np.random.default_rng(7)
+            eb = np.sort(rng.uniform(-2.5, 2.5, size=4))  # positive residues -> smooth region
+
+            def cost(e):
+                return _varpro_cost_and_full_grad(e, z, hyb_syn, wa, W_mn, realvalue)[0]
+
+            c_full, g_full, _, _ = _varpro_cost_and_full_grad(eb, z, hyb_syn, wa, W_mn, realvalue)
+            c_kauf, _, _, _ = _varpro_cost_and_grad(eb, z, hyb_syn, wa, W_mn, realvalue)
+
+            h = 1e-6
+            g_num = np.array([(cost(eb + h * np.eye(4)[i]) - cost(eb - h * np.eye(4)[i])) / (2 * h) for i in range(4)])
+            # Cost is identical to the Kaufman routine (same forward model).
+            assert np.isclose(c_full, c_kauf, rtol=0, atol=1e-9)
+            rel = np.max(np.abs(g_full - g_num)) / (np.linalg.norm(g_num) + 1e-30)
+            assert rel < 1e-5, f"n_imp={n_imp} real={realvalue}: full-grad rel err {rel:.2e}"

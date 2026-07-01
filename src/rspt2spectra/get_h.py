@@ -6,9 +6,7 @@ from rspt2spectra import energies
 from rspt2spectra import h2imp
 
 
-def run(
-    hyb, hdft, e_wins, blocks, bath_states, rot_spherical, w, eim, wsparse=1, gamma=0.01
-):
+def run(hyb, hdft, e_wins, blocks, bath_states, rot_spherical, w, eim, wsparse=1, gamma=0.01):
     """
     Calculate h0. In block form h0 can be written
     [ hlda  V^+ ]
@@ -69,7 +67,5 @@ def run(
     h_sph = np.dot(np.transpose(np.conj(u)), np.dot(h, u))
     assert np.sum(np.abs(h_sph - np.conj(h_sph.T))) < 1e-10
 
-    h_op = h2imp.get_H_operator_from_dense_rspt_H_matrix(
-        h_sph, ang=(n_orb // 2 - 1) // 2
-    )
+    h_op = h2imp.get_H_operator_from_dense_rspt_H_matrix(h_sph, ang=(n_orb // 2 - 1) // 2)
     return h_op

@@ -9,7 +9,6 @@ This module contains some useful constants in physics.
 
 """
 
-
 # Convert Bohr to angstrom. Unit: Angstrom/Bohr radius.
 ANGSTROM = 0.529177
 # Convert Rydberg to electron-volts. Unit: eV/Ry.

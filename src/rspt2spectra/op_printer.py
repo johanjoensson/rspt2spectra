@@ -10,7 +10,7 @@ are written in a format readable by impurityModel
 
 
 def key_to_string(key):
-    ((state1, _), (state2, _)) = key
+    (state1, _), (state2, _) = key
     return f"{state1:3d} {state2:3d}"
 
 
