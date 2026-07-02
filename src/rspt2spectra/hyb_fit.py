@@ -13,6 +13,7 @@ from .offdiagonal import (
     get_v_and_eb_differential_evolution,
     get_v_and_eb_varpro_basin_hopping,
     generate_hopping_guess,
+    _max_bath_states,
 )
 import warnings
 
@@ -152,6 +153,7 @@ def fit_hyb(
         hyb[mask, :, :],
         w[mask],
         weight_fun,
+        delta,
     )
 
     # Do the fit
@@ -218,7 +220,26 @@ def get_state_per_inequivalent_block(
     hyb,
     w,
     weight_fun,
+    delta,
 ):
+    """Distribute a pool of bath states across the inequivalent blocks.
+
+    The user parameter ``bath_states_per_orbital`` (B) is treated as an average
+    "bath states per block": the total pool is ``B * n_blocks``, shared between
+    the blocks in proportion to their hybridization strength so blocks with
+    strong hybridization get more states.  Two guards make the split sensible:
+
+    * **Coverage.** Every block that hybridizes at all gets at least one bath
+      state per orbital, so a weak block is never silently dropped by the
+      weighting/rounding and an n-orbital block can span its n x n hybridization.
+    * **Window cap.** No block is asked to fit more states than can reasonably
+      sit inside the frequency window separated by ``delta`` (see
+      `_max_bath_states`); an over-large share is capped, not fitted out of the
+      window.
+
+    The result is a rough guide -- coverage and cap mean the counts need not sum
+    exactly to ``B * n_blocks``.  Blocks with no hybridization weight get zero.
+    """
     blocks = block_structure.blocks
     identical_blocks = block_structure.identical_blocks
     transposed_blocks = block_structure.transposed_blocks
@@ -226,36 +247,49 @@ def get_state_per_inequivalent_block(
     particle_hole_and_transpose_blocks = block_structure.particle_hole_transposed_blocks
     inequivalent_blocks = block_structure.inequivalent_blocks
 
-    orbitals_per_inequivalent_block = [0] * len(inequivalent_blocks)
-    weight_per_inequivalent_block = np.zeros((len(inequivalent_blocks)), dtype=float)
+    n_blocks = len(inequivalent_blocks)
+    weight_per_inequivalent_block = np.zeros((n_blocks,), dtype=float)
+    orbitals_per_block = np.zeros((n_blocks,), dtype=int)
     for inequivalent_block_i, block_i in enumerate(inequivalent_blocks):
         block = blocks[block_i]
+        orbitals_per_block[inequivalent_block_i] = len(block)
         block_multiplicity = (
             len(identical_blocks[block_i])
             + len(transposed_blocks[block_i])
             + len(particle_hole_blocks[block_i])
             + len(particle_hole_and_transpose_blocks[block_i])
         )
-        orbitals_per_inequivalent_block[inequivalent_block_i] = len(block) * block_multiplicity
         idx = np.ix_(range(hyb.shape[0]), block, block)
         block_hyb = hyb[idx]
         weight_per_inequivalent_block[inequivalent_block_i] = (
-            # np.trapezoid(
             sp.integrate.simpson(
                 -np.imag(np.sum(np.diagonal(block_hyb, axis1=1, axis2=2), axis=1)) * weight_fun(w),
                 w,
             )
             * block_multiplicity
         )
-    states_per_inequivalent_block = np.round(
-        weight_per_inequivalent_block
-        / np.sum(weight_per_inequivalent_block)
-        * np.sum(orbitals_per_inequivalent_block)
-        * bath_states_per_orbital
-        / orbitals_per_inequivalent_block
-    ).astype(int)
-    states_per_inequivalent_block[states_per_inequivalent_block < 0] = 0
-    return states_per_inequivalent_block
+
+    # Negative integrated weight (numerical noise on an essentially empty block)
+    # is not real hybridization; clamp it so it neither steals nor gets states.
+    weight_per_inequivalent_block = np.clip(weight_per_inequivalent_block, 0.0, None)
+    total_weight = np.sum(weight_per_inequivalent_block)
+
+    # Pool of B states per block, shared out by hybridization strength.
+    pool = bath_states_per_orbital * n_blocks
+    if total_weight > 0:
+        states = np.round(pool * weight_per_inequivalent_block / total_weight).astype(int)
+    else:
+        states = np.zeros(n_blocks, dtype=int)
+
+    # Coverage: every hybridizing block gets at least one bath state per orbital,
+    # so an n-orbital block can represent its full n x n hybridization.
+    hybridizing = weight_per_inequivalent_block > 0
+    states[hybridizing] = np.maximum(states[hybridizing], orbitals_per_block[hybridizing])
+
+    # Window cap: never request more states than reasonably fit in the window.
+    n_max = _max_bath_states(w[0], w[-1], delta)
+    np.clip(states, 0, n_max, out=states)
+    return states
 
 
 def fit_block(
@@ -280,6 +314,10 @@ def fit_block(
     seed_sequence = np.random.SeedSequence(base_seed)
     child_seeds = seed_sequence.spawn(size)
     rng = np.random.default_rng(seed=child_seeds[rank])
+
+    # Cap the requested count at what reasonably fits in the window (min
+    # separation delta), so seeds are built at a feasible size from the start.
+    bath_states_per_orbital = min(bath_states_per_orbital, _max_bath_states(w[0], w[-1], delta))
 
     hyb_trace = -np.imag(np.sum(np.diagonal(hyb, axis1=1, axis2=2), axis=1))
     hyb_trace[hyb_trace < 0] = 0

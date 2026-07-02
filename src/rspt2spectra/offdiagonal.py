@@ -18,6 +18,7 @@ from os import environ
 from scipy.optimize import (
     minimize,
     Bounds,
+    LinearConstraint,
     basinhopping,
     differential_evolution,
 )
@@ -1238,6 +1239,61 @@ def _gaps_grad(grad_e):
     return np.cumsum(grad_e[::-1])[::-1]
 
 
+def _max_bath_states(w_min, w_max, delta):
+    """Largest number of states that fit in `[w_min, w_max]` separated by `delta`.
+
+    The gap parametrization can place `n` ordered states separated by at least
+    `delta` iff ``(n-1)*delta <= w_max - w_min``, i.e. ``n <= (w_max-w_min)/delta
+    + 1``.  Callers cap their requested count at this value instead of failing,
+    so a too-large request is honoured as "as many as reasonably fit".
+    """
+    return max(1, int(np.floor((w_max - w_min) / delta + 1e-9)) + 1)
+
+
+def _gap_sum_upper(n_eb, total_len, w_max):
+    """Linear inequality keeping the largest bath energy at or below `w_max`.
+
+    The top energy is ``e_{n-1} = sum(p[:n_eb])`` (cumulative sum of the gap
+    vector), so the constraint is ``w_max - sum(p[:n_eb]) >= 0``.  Box bounds on
+    the gaps alone cannot cap this sum, hence the explicit constraint.  Returned
+    as an SLSQP-style dict; `total_len` covers polish vectors that also carry V/C.
+    """
+    grad = np.zeros(total_len)
+    grad[:n_eb] = -1.0
+    return {
+        "type": "ineq",
+        "fun": lambda p: w_max - np.sum(p[:n_eb]),
+        "jac": lambda p: grad,
+    }
+
+
+def _repair_gaps(p, w_min, w_max, delta):
+    """Project a gap seed onto the feasible region (in-window, min-separated).
+
+    Clipping raw energies to gaps >= delta can push the cumulative sum past
+    `w_max`; this pulls it back by first lowering the leading energy toward
+    `w_min`, then shrinking the surplus gap slack above `delta` proportionally.
+    Assumes feasibility (n states fit in the window, see `_max_bath_states`),
+    under which the repair always succeeds.
+    """
+    p = np.array(p, dtype=float)
+    p[0] = np.clip(p[0], w_min, w_max)
+    if p.shape[0] > 1:
+        p[1:] = np.maximum(p[1:], delta)
+    excess = p.sum() - w_max
+    if excess <= 0:
+        return p
+    cut0 = min(excess, p[0] - w_min)
+    p[0] -= cut0
+    excess -= cut0
+    if excess > 0 and p.shape[0] > 1:
+        slack = p[1:] - delta
+        total_slack = slack.sum()
+        if total_slack > 0:
+            p[1:] -= slack * (min(excess, total_slack) / total_slack)
+    return p
+
+
 def _gap_slsqp_polish(gap_x, z, hyb, gamma, regularization, weight_array, W_mn, realvalue_v, gap_bounds):
     """SLSQP refinement of a gap-parametrized bath fit over eb, V and C jointly.
 
@@ -1256,6 +1312,7 @@ def _gap_slsqp_polish(gap_x, z, hyb, gamma, regularization, weight_array, W_mn, 
     n_C = len(p_C0)
     p0 = np.concatenate([gap_x, inroll(V_opt), p_C0])
     bounds = gap_bounds + [(None, None)] * (len(p0) - n_eb)
+    w_max = gap_bounds[0][1]
 
     def _cost(p):
         p_abs = np.concatenate([_gaps_to_eb(p[:n_eb]), p[n_eb:]])
@@ -1275,6 +1332,7 @@ def _gap_slsqp_polish(gap_x, z, hyb, gamma, regularization, weight_array, W_mn, 
         tol=1e-8,
         options={"maxiter": 1000},
         bounds=bounds,
+        constraints=[_gap_sum_upper(n_eb, len(p0), w_max)],
     )
 
     p = res.x
@@ -1529,8 +1587,14 @@ def get_v_and_eb_varpro_basin_hopping(
     # states sorted and separated by at least the broadening, so no post-fit merge
     # is needed and reorder-equivalent configurations collapse to one.
     w_min, w_max = eb_restrictions[0]
+    # Cap (don't fail) at the number of states that fit in the window separated by
+    # delta; a larger request is honoured as "as many as reasonably fit".
+    n_max = _max_bath_states(w_min, w_max, delta)
+    if n_eb > n_max:
+        n_eb = n_max
+        ebs = ebs[:, :n_eb]
     gap_bounds = _gap_bounds(w_min, w_max, n_eb, delta)
-    gap_seeds = np.array([_eb_to_gaps(eb, delta) for eb in ebs])
+    gap_seeds = np.array([_repair_gaps(_eb_to_gaps(eb, delta), w_min, w_max, delta) for eb in ebs])
 
     initial_costs = np.array(
         [_varpro_cost_and_grad(_gaps_to_eb(p), z, hyb, weight_array, W_mn, realvalue_v)[0] for p in gap_seeds]
@@ -1539,17 +1603,20 @@ def get_v_and_eb_varpro_basin_hopping(
     stddev_cost = np.std(initial_costs)
     T = max(stddev_cost, 1e-3 * abs(mean_cost))
 
-    x0 = np.clip(
-        gap_seeds[np.argmin(initial_costs)],
-        [b[0] for b in gap_bounds],
-        [b[1] for b in gap_bounds],
-    )
+    x0 = gap_seeds[np.argmin(initial_costs)]
 
     def _fg(p):
         eb = _gaps_to_eb(p)
         c, g, _, _ = grad_fun(eb, z, hyb, weight_array, W_mn, realvalue_v)
         return float(c), _gaps_grad(g)
 
+    # L-BFGS-B (box bounds only) explores: it gives markedly better minima here
+    # than a constrained SLSQP, and has no incentive to push a pole out of the
+    # window since out-of-window poles get ~zero residue (no gradient pull). Box
+    # bounds do not strictly cap the largest energy (a cumulative sum can
+    # overshoot w_max), so the final SLSQP polish -- which carries the explicit
+    # sum(gaps) <= w_max constraint -- projects any stray pole back into the
+    # window and re-optimizes, guaranteeing the returned energies are in-window.
     res = basinhopping(
         _fg,
         x0,
@@ -1738,20 +1805,29 @@ def get_v_and_eb_differential_evolution(
     # Gap parametrization [first energy, gaps]; gaps >= delta enforce ordering and
     # minimum separation, removing the need to merge overlapping states afterwards.
     w_min, w_max = eb_restrictions[0]
+    # Cap (don't fail) at the number of states that fit in the window separated by
+    # delta; a larger request is honoured as "as many as reasonably fit".
+    n_max = _max_bath_states(w_min, w_max, delta)
+    if n_eb > n_max:
+        n_eb = n_max
+        ebs = ebs[:, :n_eb]
     gap_bounds = _gap_bounds(w_min, w_max, n_eb, delta)
-    gap_seeds = np.array([_eb_to_gaps(eb, delta) for eb in ebs])
+    gap_seeds = np.array([_repair_gaps(_eb_to_gaps(eb, delta), w_min, w_max, delta) for eb in ebs])
 
     def varpro_cost(p):
         eb = _gaps_to_eb(p)
         c, _, _, _ = _varpro_cost_and_grad(eb, z, hyb, weight_array, W_mn, realvalue_v)
         return float(c)
 
+    # Linear constraint sum(gaps) <= w_max keeps the largest energy in the window;
+    # box bounds on individual gaps cannot enforce this on their cumulative sum.
     res = differential_evolution(
         varpro_cost,
         Bounds(
             lb=[b[0] for b in gap_bounds],
             ub=[b[1] for b in gap_bounds],
         ),
+        constraints=(LinearConstraint(np.ones((1, n_eb)), -np.inf, w_max),),
         init=gap_seeds,
         atol=1e-6,
         maxiter=10000,

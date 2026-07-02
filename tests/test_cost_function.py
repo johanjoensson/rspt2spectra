@@ -1,5 +1,7 @@
 import numpy as np
+from types import SimpleNamespace
 from scipy.optimize import check_grad
+from rspt2spectra.hyb_fit import get_state_per_inequivalent_block
 from rspt2spectra.offdiagonal import (
     vectorized_cost_function,
     vectorized_jacobian,
@@ -15,13 +17,17 @@ from rspt2spectra.offdiagonal import (
     get_hyb_2,
     moment_weights,
     get_v_and_eb_varpro_basin_hopping,
+    get_v_and_eb_differential_evolution,
     _gaps_to_eb,
     _eb_to_gaps,
     _gap_bounds,
     _gaps_grad,
+    _max_bath_states,
+    _repair_gaps,
     _varpro_cost_and_grad,
     _varpro_cost_and_full_grad,
 )
+import pytest
 
 eb = np.array([-1, 0, 1], dtype=float)
 vs = np.array([[[1, 2], [0, 1]], [[2, 1], [0, 1]], [[3, 3], [0, 1]]], dtype=float)
@@ -427,6 +433,148 @@ def test_fit_enforces_min_separation_no_merge():
     # Every injected pole is matched by some fitted energy within delta.
     for e in true_eb:
         assert np.min(np.abs(eb_final - e)) < d, f"pole {e} not recovered"
+
+
+def _fake_block_structure(block_orbitals):
+    # One inequivalent block per entry in block_orbitals (each a list of orbital
+    # indices); multiplicity 1 (only "identical to itself").
+    n = len(block_orbitals)
+    return SimpleNamespace(
+        blocks=block_orbitals,
+        inequivalent_blocks=list(range(n)),
+        identical_blocks=[[i] for i in range(n)],
+        transposed_blocks=[[] for _ in range(n)],
+        particle_hole_blocks=[[] for _ in range(n)],
+        particle_hole_transposed_blocks=[[] for _ in range(n)],
+    )
+
+
+def _diag_hyb(w, imag_per_orbital):
+    # Diagonal hybridization with a flat -Im on each orbital, so the integrated
+    # weight of a block is (sum of its orbital values) * window width.
+    n_orb = len(imag_per_orbital)
+    hyb = np.zeros((len(w), n_orb, n_orb), dtype=complex)
+    for k, val in enumerate(imag_per_orbital):
+        hyb[:, k, k] = -1j * val
+    return hyb
+
+
+def test_state_distribution_prioritizes_strong_hybridization():
+    # Pool = B * n_blocks, split by hybridization weight. Block 0 (1 orbital,
+    # -Im=6) vs block 1 (3 orbitals, -Im=1 each): weights 6 vs 3.
+    w = np.linspace(-5.0, 5.0, 201)
+    bs = _fake_block_structure([[0], [1, 2, 3]])
+    hyb = _diag_hyb(w, [6.0, 1.0, 1.0, 1.0])
+    states = get_state_per_inequivalent_block(bs, 4, hyb, w, lambda x: np.ones_like(x), delta=0.5)
+    # pool = 4*2 = 8; shares 6/9 and 3/9 -> round(5.33)=5, round(2.67)=3.
+    assert list(states) == [5, 3]
+
+
+def test_state_distribution_coverage_and_cap():
+    w = np.linspace(-1.0, 1.0, 201)
+    bs = _fake_block_structure([[0], [1, 2, 3]])
+    # Block 0 dominant, block 1 (3 orbitals) tiny but nonzero -> block 1 must
+    # still get at least one state per orbital (>= 3).
+    hyb = _diag_hyb(w, [100.0, 0.001, 0.001, 0.001])
+    delta = 0.2
+    n_max = _max_bath_states(w[0], w[-1], delta)  # 11
+    states = get_state_per_inequivalent_block(bs, 8, hyb, w, lambda x: np.ones_like(x), delta=delta)
+    assert states[1] >= 3  # coverage: one bath state per orbital
+    assert np.all(states <= n_max)  # window cap
+    # A zero-weight block gets zero states (nothing to fit).
+    hyb0 = _diag_hyb(w, [1.0, 0.0, 0.0, 0.0])
+    states0 = get_state_per_inequivalent_block(bs, 8, hyb0, w, lambda x: np.ones_like(x), delta=delta)
+    assert states0[1] == 0
+
+    # The per-orbital floor is capped by the window: a narrow window cannot host
+    # one state per orbital, and the count is capped, not fitted out of range.
+    w_narrow = np.linspace(0.0, 0.3, 50)
+    n_max_narrow = _max_bath_states(w_narrow[0], w_narrow[-1], delta)  # 2
+    hyb_n = _diag_hyb(w_narrow, [0.001, 0.001, 0.001, 0.001])  # 4-orbital block wants 4
+    states_n = get_state_per_inequivalent_block(
+        _fake_block_structure([[0, 1, 2, 3]]), 8, hyb_n, w_narrow, lambda x: np.ones_like(x), delta=delta
+    )
+    assert states_n[0] == n_max_narrow  # floor of 4 capped down to what fits (2)
+
+
+def test_max_bath_states_counts_what_fits():
+    # n states fit when (n-1)*delta <= width, i.e. n <= width/delta + 1.
+    assert _max_bath_states(-1.0, 1.0, 0.2) == 11  # 2.0/0.2 + 1
+    assert _max_bath_states(-1.0, 1.0, 0.3) == 7  # floor(6.66) + 1
+    assert _max_bath_states(0.0, 0.05, 0.2) == 1  # window narrower than delta -> at least 1
+
+
+def test_fit_caps_states_to_window_without_failing():
+    # Requesting far more states than fit must not raise; the fit returns at most
+    # the feasible number, all in-window and separated by >= delta.
+    rng = np.random.default_rng(3)
+    w_min, w_max, d = -1.0, 1.0, 0.2
+    n_max = _max_bath_states(w_min, w_max, d)  # 11
+    wgrid = np.linspace(w_min, w_max, 200)
+    z = wgrid + 1j * (d * (1 + 0.5 * np.abs(wgrid) ** 2))
+    true_eb = np.array([-0.4, 0.3, 0.7])
+    true_v = rng.normal(size=(3, 1, 1))
+    hyb_syn = get_hyb_2(z, true_eb[None], true_v[None])[0]
+
+    n_req = n_max + 6  # ask for more than can fit
+    ebs = np.sort(rng.uniform(w_min, w_max, size=(8, n_req)), axis=1)
+    _, eb_final, _, _ = get_v_and_eb_varpro_basin_hopping(
+        wgrid, d, hyb_syn, ebs, [(w_min, w_max)] * n_req,
+        gamma=0.0, regularization=None,
+        weight_function=lambda x: 1.0 / (1.0 + x**2), realvalue_v=True,
+    )
+    assert eb_final.shape[0] <= n_max
+    # Edge-packed fit: top state sits at w_max up to the SLSQP constraint tolerance.
+    assert eb_final.max() <= w_max + 1e-6 and eb_final.min() >= w_min - 1e-6
+    assert np.all(np.diff(np.sort(eb_final)) >= d - 1e-6)
+
+
+def test_repair_gaps_projects_into_window():
+    # Clipping raw gaps up to delta can push the cumulative sum past w_max; the
+    # repair must pull it back while preserving ordering and min separation.
+    w_min, w_max, d = -1.0, 1.0, 0.2
+    eb = np.array([0.6, 0.65, 0.68, 0.72, 0.9])  # bunched near the top edge
+    p = _eb_to_gaps(eb, d)
+    assert p.sum() > w_max  # raw seed overshoots the window
+    pr = _repair_gaps(p, w_min, w_max, d)
+    eb_r = _gaps_to_eb(pr)
+    assert eb_r[-1] <= w_max + 1e-9
+    assert eb_r[0] >= w_min - 1e-9
+    assert np.all(np.diff(eb_r) >= d - 1e-9)
+    # Already-feasible seeds are returned unchanged.
+    p_ok = _eb_to_gaps(np.array([-0.5, 0.0, 0.5]), d)
+    assert np.allclose(_repair_gaps(p_ok, w_min, w_max, d), p_ok)
+
+
+@pytest.mark.parametrize("optimizer", [
+    get_v_and_eb_varpro_basin_hopping,
+    get_v_and_eb_differential_evolution,
+])
+def test_fit_keeps_states_inside_window(optimizer):
+    # With more requested states than true poles clustered near the top edge, the
+    # fit must not place any bath energy outside [w_min, w_max].
+    rng = np.random.default_rng(1)
+    w_min, w_max, d = -1.0, 1.0, 0.2
+    wgrid = np.linspace(w_min, w_max, 250)
+    z = wgrid + 1j * (d * (1 + 0.5 * np.abs(wgrid) ** 2))
+    true_eb = np.array([0.5, 0.7, 0.85])  # near the upper edge
+    true_v = rng.normal(size=(3, 1, 1))
+    hyb_syn = get_hyb_2(z, true_eb[None], true_v[None])[0]
+
+    n_eb = 6  # more states than poles
+    ebs = np.sort(rng.uniform(w_min, w_max, size=(8, n_eb)), axis=1)
+    eb_restrictions = [(w_min, w_max)] * n_eb
+
+    _, eb_final, _, _ = optimizer(
+        wgrid, d, hyb_syn, ebs, eb_restrictions,
+        gamma=0.0, regularization=None,
+        weight_function=lambda x: 1.0 / (1.0 + x**2),
+        realvalue_v=True,
+    )
+
+    assert eb_final.max() <= w_max + 1e-9, f"state above window: {eb_final.max()}"
+    assert eb_final.min() >= w_min - 1e-9, f"state below window: {eb_final.min()}"
+    assert np.all(np.diff(np.sort(eb_final)) >= d - 1e-9)
 
 
 def _synthetic_varpro_problem(n_imp, seed):
