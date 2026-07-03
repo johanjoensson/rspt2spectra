@@ -519,9 +519,15 @@ def test_fit_caps_states_to_window_without_failing():
     n_req = n_max + 6  # ask for more than can fit
     ebs = np.sort(rng.uniform(w_min, w_max, size=(8, n_req)), axis=1)
     _, eb_final, _, _ = get_v_and_eb_varpro_basin_hopping(
-        wgrid, d, hyb_syn, ebs, [(w_min, w_max)] * n_req,
-        gamma=0.0, regularization=None,
-        weight_function=lambda x: 1.0 / (1.0 + x**2), realvalue_v=True,
+        wgrid,
+        d,
+        hyb_syn,
+        ebs,
+        [(w_min, w_max)] * n_req,
+        gamma=0.0,
+        regularization=None,
+        weight_function=lambda x: 1.0 / (1.0 + x**2),
+        realvalue_v=True,
     )
     assert eb_final.shape[0] <= n_max
     # Edge-packed fit: top state sits at w_max up to the SLSQP constraint tolerance.
@@ -546,10 +552,13 @@ def test_repair_gaps_projects_into_window():
     assert np.allclose(_repair_gaps(p_ok, w_min, w_max, d), p_ok)
 
 
-@pytest.mark.parametrize("optimizer", [
-    get_v_and_eb_varpro_basin_hopping,
-    get_v_and_eb_differential_evolution,
-])
+@pytest.mark.parametrize(
+    "optimizer",
+    [
+        get_v_and_eb_varpro_basin_hopping,
+        get_v_and_eb_differential_evolution,
+    ],
+)
 def test_fit_keeps_states_inside_window(optimizer):
     # With more requested states than true poles clustered near the top edge, the
     # fit must not place any bath energy outside [w_min, w_max].
@@ -566,8 +575,13 @@ def test_fit_keeps_states_inside_window(optimizer):
     eb_restrictions = [(w_min, w_max)] * n_eb
 
     _, eb_final, _, _ = optimizer(
-        wgrid, d, hyb_syn, ebs, eb_restrictions,
-        gamma=0.0, regularization=None,
+        wgrid,
+        d,
+        hyb_syn,
+        ebs,
+        eb_restrictions,
+        gamma=0.0,
+        regularization=None,
         weight_function=lambda x: 1.0 / (1.0 + x**2),
         realvalue_v=True,
     )
