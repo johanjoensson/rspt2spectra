@@ -25,6 +25,9 @@ dynamic = ["version"]
 line-length = 120
 target-version = ["py311"]
 
+[project.scripts]
+build_h0 = "rspt2spectra.scripts.build_h0:main"
+
 [project.urls]
 Homepage = "https://github.com/johanjoensson/rspt2spectra"
 Issues = "https://github.com/johanjoensson/rspt2spectra//issues"

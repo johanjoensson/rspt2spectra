@@ -1,9 +1,16 @@
 # rspt to spectra
 
-This acts as an interface from the RSPt software to the [impurityModel](https://github.com/johanjoensson/impurityModel) software.
+This package reads RSPt output and turns real-frequency hybridization functions into
+non-interacting Anderson impurity Hamiltonians (h0), including bath orbitals. It owns the
+full pipeline: RSPt files → Δ(ω) analysis → block partition (`block_structure`) → bath
+fit (`hyb_fit`, `natural_orbitals`) → bath geometry — star, chains, or linked double
+chain (`edchain`) → h0 assembly (`h0`). The resulting h0 can be consumed by any many-body
+impurity solver, e.g. the [impurityModel](https://github.com/johanjoensson/impurityModel)
+software (see `h2imp` for writing files in its operator format); this package does not
+depend on any solver.
 
-This software contains a few Python modules that can be useful for parsing and analyzing RSPt output, and constructing an Anderson impurity Hamiltonian, including bath orbitals.
-A few scripts are stored in the `scripts` folder.
+A few scripts are stored in the `scripts` folder; the `build_h0` console script builds an
+h0 operator file directly from RSPt output.
 
 Separately, in the module plotSpectra, a few functions for reading and plotting output from the Quanty software is provided.
 

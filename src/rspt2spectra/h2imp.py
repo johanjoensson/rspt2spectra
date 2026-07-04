@@ -17,6 +17,31 @@ from collections import OrderedDict
 from rspt2spectra import op_printer
 
 
+def matrixToIOp(mat):
+    r"""
+    Return a dict containing the non-zero elements of the matrix mat,
+    in the operator format used by the impurityModel repository:
+    ``{((i, "c"), (j, "a")): mat[i, j]}``.
+
+    Parameters
+    ----------
+    mat : numpy.ndarray
+        Matrix representation of the operator
+
+    Returns
+    -------
+    res : dict
+        Operator dictionary {(i, j) : val}
+    """
+    rows, columns = mat.shape
+    res = {}
+    for i in range(rows):
+        for j in range(columns):
+            if abs(mat[i, j]) > 0:
+                res[((i, "c"), (j, "a"))] = mat[i, j]
+    return res
+
+
 def write_to_file(d, filename="h0_Op", save_as_dict=False):
     """
     Write variable to disk.

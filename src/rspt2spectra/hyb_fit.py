@@ -1,5 +1,8 @@
 import itertools
-import matplotlib.pyplot as plt
+try:
+    import matplotlib.pyplot as plt
+except ImportError:  # pragma: no cover - matplotlib is only needed for the plotting helpers
+    plt = None
 from mpi4py import MPI
 import numpy as np
 import scipy as sp

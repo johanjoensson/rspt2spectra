@@ -11,7 +11,11 @@ off-diagonal hybridization functions.
 """
 
 import itertools
-import matplotlib.pyplot as plt
+
+try:
+    import matplotlib.pyplot as plt
+except ImportError:  # pragma: no cover - matplotlib is only needed for the plotting helpers
+    plt = None
 import numpy as np
 import scipy as sp
 from os import environ
@@ -27,7 +31,6 @@ from time import perf_counter
 
 from rspt2spectra.energies import cog
 from rspt2spectra.weight_functions import weight_functions
-import matplotlib.pyplot as plt
 
 
 def plot_diagonal_and_offdiagonal(w, hyb_diagonal, hyb, xlim):
