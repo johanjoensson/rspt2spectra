@@ -1,54 +1,87 @@
 [project]
 name = "rspt2spectra"
-description = "RSPt interface for fitting hybridization funcitons and reading operators. Forked from https://github.com/JohanSchott/rspt2spectra"
+description = "Turn RSPt real-frequency hybridization functions into non-interacting impurity Hamiltonians (h0). Forked from https://github.com/JohanSchott/rspt2spectra"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.11"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Physics",
 ]
 license = "MIT"
 license-files = ["LICEN[CS]E*"]
 dependencies = [
- "numpy>2.0.0",
- "scipy>1.13",
- "numpydoc",
- "sphinx",
- "pytest",
- "matplotlib",
- "mpi4py"
+    "numpy>2.0.0",
+    "scipy>1.13",
 ]
 dynamic = ["version"]
 
-
-[tool.black]
-line-length = 120
-target-version = ["py311"]
+[project.optional-dependencies]
+mpi = ["mpi4py"]
+plot = ["matplotlib"]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "ruff",
+]
+docs = [
+    "sphinx",
+    "furo",
+    "numpydoc",
+]
 
 [project.scripts]
 build_h0 = "rspt2spectra.scripts.build_h0:main"
 
 [project.urls]
 Homepage = "https://github.com/johanjoensson/rspt2spectra"
-Issues = "https://github.com/johanjoensson/rspt2spectra//issues"
-
+Documentation = "https://johanjoensson.github.io/rspt2spectra/"
+Issues = "https://github.com/johanjoensson/rspt2spectra/issues"
 
 [build-system]
-requires = ["setuptools >= 77.0.3", "setuptools-scm"]
+requires = ["setuptools >= 77.0.3", "setuptools-scm >= 8"]
 build-backend = "setuptools.build_meta"
 
-[tool.cython-lint]
-# Match Black's line length so long lines aren't flagged against the 88 default.
-max-line-length = 120
-# E501: long lines are still reported by max-line-length above for genuinely long
-#       code, but we don't enforce wrapping (e.g. the `# cython:` directive line
-#       and long cdef signatures can't be wrapped). E741: ambiguous names like `O`
-#       are already ignored for Python (see [tool.ruff] lint.ignore).
-ignore = ["E501", "E741"]
+[tool.setuptools_scm]
+# Version is derived from git tags (e.g. v1.0.0); fall back sensibly between tags.
+version_scheme = "guess-next-dev"
+local_scheme = "node-and-date"
 
 [tool.ruff]
 line-length = 120
 
-lint.select = ["E", "F", "B", "C4", "PL", "A", "SIM", "RUF", "PGH", "I"]
+[tool.ruff.lint]
+select = ["E", "F", "B", "C4", "PL", "A", "SIM", "RUF", "PGH", "I", "D"]
+ignore = [
+    "B905",
+    "PLR2004",
+    "PLR0911",
+    "PLR0912",
+    "PLR0913",
+    "PLR0915",
+    "SIM105",
+    "RUF005",
+    "PGH003",
+    "C408",
+    "SIM118",
+    "E741",
+    "PLR5501",
+]
 
-lint.ignore = ["B905", "PLR2004", "PLR0911", "PLR0912", "PLR0913", "PLR0915", "SIM105","RUF005", "PGH003", "C408", "SIM118", "E741", "PLR5501"]
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.per-file-ignores]
+# Tests document themselves through their names and asserts.
+"tests/*" = ["D"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["rspt2spectra"]
+branch = true
+
+[tool.coverage.report]
+exclude_also = ["pragma: no cover", "if __name__ == .__main__.:"]

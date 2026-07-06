@@ -4,6 +4,7 @@
 
 # Generated documentation files
 docs/_build/*
+docs/generated/
 
 # ipynb history
 scripts/.ipynb_checkpoints/
@@ -16,3 +17,19 @@ scripts/.ipynb_checkpoints/
 .*.sw?
 *~
 __pycache__/
+
+# Packaging / build artifacts
+*.egg-info/
+build/
+dist/
+
+# Tool caches
+.ruff_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.lcov
+
+# Local agent tooling
+.agents/
