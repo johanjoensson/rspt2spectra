@@ -1,54 +1,31 @@
-.. rspt2spectra documentation master file, created by
-   sphinx-quickstart on Fri Feb  8 15:40:44 2019.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
+rspt2spectra
+============
 
-Welcome to rspt2spectra's documentation!
-========================================
+``rspt2spectra`` reads output from the FP-LMTO DFT(+DMFT) code
+`RSPt <http://fplmto-rspt.org/>`_ and turns real-frequency hybridization
+functions into finite non-interacting Anderson impurity Hamiltonians (h0),
+including bath orbitals.
+
+The package owns the full pipeline::
+
+   RSPt files -> Delta(omega) analysis -> block partition -> bath fit
+              -> bath geometry (star / chains / linked double chain) -> h0
+
+The resulting h0 can be consumed by any many-body impurity solver, e.g. the
+`impurityModel <https://github.com/johanjoensson/impurityModel>`_ software
+(see :mod:`rspt2spectra.h2imp` for writing files in its operator format);
+this package does not depend on any solver.
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
+   :caption: Contents
 
-.. automodule:: constants
-   :members:
-
-.. automodule:: d4h
-   :members:
-
-.. automodule:: dc
-   :members:
-
-.. automodule:: energies
-   :members:
-
-.. automodule:: h2Quanty
-   :members:
-
-.. automodule:: h2imp
-   :members:
-
-.. automodule:: hybridization
-   :members:
-
-.. automodule:: orbitals
-   :members:
-
-.. automodule:: plotSpectra
-   :members:
-
-.. automodule:: slater
-   :members:
-
-.. automodule:: soc
-   :members:
-
-.. automodule:: unitarytransform
-   :members:
-
+   installation
+   usage
+   api
 
 Indices and tables
-==================
+------------------
 
 * :ref:`genindex`
 * :ref:`modindex`
