@@ -1,18 +1,20 @@
+"""Matrix utilities: rotations, pretty-printing, and block diagonalization."""
+
 from typing import Any, Callable, Iterable, List, Optional, Tuple
 
 import numpy as np
 
 
 def rotate_matrix(M, T):
-    r"""
-    Rotate the matrix, M, using the matrix T.
-    Returns :math:`M' = T^{\dagger} M T`
+    r"""Rotate the matrix M as :math:`M' = T^{\dagger} M T`.
+
     Parameters
-    ==========
+    ----------
     M : NDArray - Matrix to rotate
     T : NDArray or dict - Rotation matrix to use, or dict of rotation matrices for blocks.
+
     Returns
-    =======
+    -------
     M' : NDArray - The rotated matrix
     """
     if isinstance(T, dict):
@@ -210,30 +212,30 @@ def partition(l: Iterable[Any], predicate: Callable[[Any], bool] = bool) -> Tupl
 
 
 def rotate_Greens_function(G, T):
-    r"""
-    Rotate the Greens function, G, using the matrix T.
-    Returns :math:`G'(\omega) = T^{\dagger} G(\omega) T`
+    r"""Rotate the Greens function G as :math:`G'(\omega) = T^{\dagger} G(\omega) T`.
+
     Parameters
-    ==========
+    ----------
     G : NDArray - Greens function to rotate
     T : NDArray - Rotation matrix to use
+
     Returns
-    =======
+    -------
     G' : NDArray - The rotated Greens function
     """
     return np.conj(T.T)[np.newaxis, :, :] @ G @ T[np.newaxis, :, :]
 
 
 def rotate_4index_U(U4, T):
-    r"""
-    Rotate the four index tensor, U4, using the matrix T.
-    Returns :math:`U4' = T^{\dagger}T^{\dagger} U4 TT`
+    r"""Rotate the four-index tensor U4 as :math:`U4' = T^{\dagger}T^{\dagger} U4 TT`.
+
     Parameters
-    ==========
+    ----------
     U4 : NDArray - Tensor function to rotate
     T : NDArray - Rotation matrix to use
+
     Returns
-    =======
+    -------
     U4' : NDArray - The rotated tensor function
     """
     return np.einsum("ij,kl, jlmo, mn, op", np.conj(T.T), np.conj(T.T), U4, T, T)

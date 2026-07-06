@@ -1,33 +1,35 @@
-import numpy as np
 from types import SimpleNamespace
+
+import numpy as np
+import pytest
 from scipy.optimize import check_grad
+
 from rspt2spectra.hyb_fit import get_state_per_inequivalent_block
 from rspt2spectra.offdiagonal import (
-    vectorized_cost_function,
-    vectorized_jacobian,
-    calc_diff,
-    calc_moment_diff,
-    inroll,
-    unroll,
-    inroll_C,
-    unroll_C,
-    merge_bath_states,
-    merge_overlapping_bath_states,
-    get_hyb,
-    get_hyb_2,
-    moment_weights,
-    get_v_and_eb_varpro_basin_hopping,
-    get_v_and_eb_differential_evolution,
-    _gaps_to_eb,
     _eb_to_gaps,
     _gap_bounds,
     _gaps_grad,
+    _gaps_to_eb,
     _max_bath_states,
     _repair_gaps,
-    _varpro_cost_and_grad,
     _varpro_cost_and_full_grad,
+    _varpro_cost_and_grad,
+    calc_diff,
+    calc_moment_diff,
+    get_hyb,
+    get_hyb_2,
+    get_v_and_eb_differential_evolution,
+    get_v_and_eb_varpro_basin_hopping,
+    inroll,
+    inroll_C,
+    merge_bath_states,
+    merge_overlapping_bath_states,
+    moment_weights,
+    unroll,
+    unroll_C,
+    vectorized_cost_function,
+    vectorized_jacobian,
 )
-import pytest
 
 eb = np.array([-1, 0, 1], dtype=float)
 vs = np.array([[[1, 2], [0, 1]], [[2, 1], [0, 1]], [[3, 3], [0, 1]]], dtype=float)
@@ -424,7 +426,7 @@ def test_fit_enforces_min_separation_no_merge():
         eb_restrictions,
         gamma=0.0,
         regularization=None,
-        weight_function=lambda x: np.ones_like(x),
+        weight_function=np.ones_like,
         realvalue_v=True,
     )
 
@@ -465,7 +467,7 @@ def test_state_distribution_prioritizes_strong_hybridization():
     w = np.linspace(-5.0, 5.0, 201)
     bs = _fake_block_structure([[0], [1, 2, 3]])
     hyb = _diag_hyb(w, [6.0, 1.0, 1.0, 1.0])
-    states = get_state_per_inequivalent_block(bs, 4, hyb, w, lambda x: np.ones_like(x), delta=0.5)
+    states = get_state_per_inequivalent_block(bs, 4, hyb, w, np.ones_like, delta=0.5)
     # pool = 4*2 = 8; shares 6/9 and 3/9 -> round(5.33)=5, round(2.67)=3.
     assert list(states) == [5, 3]
 
@@ -478,12 +480,12 @@ def test_state_distribution_coverage_and_cap():
     hyb = _diag_hyb(w, [100.0, 0.001, 0.001, 0.001])
     delta = 0.2
     n_max = _max_bath_states(w[0], w[-1], delta)  # 11
-    states = get_state_per_inequivalent_block(bs, 8, hyb, w, lambda x: np.ones_like(x), delta=delta)
+    states = get_state_per_inequivalent_block(bs, 8, hyb, w, np.ones_like, delta=delta)
     assert states[1] >= 3  # coverage: one bath state per orbital
     assert np.all(states <= n_max)  # window cap
     # A zero-weight block gets zero states (nothing to fit).
     hyb0 = _diag_hyb(w, [1.0, 0.0, 0.0, 0.0])
-    states0 = get_state_per_inequivalent_block(bs, 8, hyb0, w, lambda x: np.ones_like(x), delta=delta)
+    states0 = get_state_per_inequivalent_block(bs, 8, hyb0, w, np.ones_like, delta=delta)
     assert states0[1] == 0
 
     # The per-orbital floor is capped by the window: a narrow window cannot host
@@ -492,7 +494,7 @@ def test_state_distribution_coverage_and_cap():
     n_max_narrow = _max_bath_states(w_narrow[0], w_narrow[-1], delta)  # 2
     hyb_n = _diag_hyb(w_narrow, [0.001, 0.001, 0.001, 0.001])  # 4-orbital block wants 4
     states_n = get_state_per_inequivalent_block(
-        _fake_block_structure([[0, 1, 2, 3]]), 8, hyb_n, w_narrow, lambda x: np.ones_like(x), delta=delta
+        _fake_block_structure([[0, 1, 2, 3]]), 8, hyb_n, w_narrow, np.ones_like, delta=delta
     )
     assert states_n[0] == n_max_narrow  # floor of 4 capped down to what fits (2)
 
@@ -613,7 +615,7 @@ def test_varpro_full_gradient_matches_finite_difference():
             rng = np.random.default_rng(7)
             eb = np.sort(rng.uniform(-2.5, 2.5, size=4))  # positive residues -> smooth region
 
-            def cost(e):
+            def cost(e, z=z, hyb_syn=hyb_syn, wa=wa, W_mn=W_mn, realvalue=realvalue):
                 return _varpro_cost_and_full_grad(e, z, hyb_syn, wa, W_mn, realvalue)[0]
 
             c_full, g_full, _, _ = _varpro_cost_and_full_grad(eb, z, hyb_syn, wa, W_mn, realvalue)

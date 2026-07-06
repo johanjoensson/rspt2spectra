@@ -1,18 +1,27 @@
+"""Console script ``build_h0``; see ``build_h0 --help``.
+
+Reads RSPt output in the current directory, fits the hybridization function,
+and writes the non-interacting impurity Hamiltonian (h0) as an operator file.
+"""
+
 from argparse import ArgumentParser
 from collections.abc import Iterable
 from typing import Callable
 
 import numpy as np
-from mpi4py import MPI
-from pyRSPthon.read import extract_dat
+
+try:
+    from mpi4py import MPI
+except ImportError:  # pragma: no cover - MPI is optional; serial runs work without it
+    MPI = None
 
 from rspt2spectra.block_structure import BlockStructure, build_block_structure, build_matrix, get_blocks
+from rspt2spectra.dat import extract_dat
 from rspt2spectra.edchain import (
     build_full_bath,
     build_H_bath_v,
     build_imp_bath_blocks,
 )
-from rspt2spectra.energies import get_mu
 from rspt2spectra.h2imp import matrixToIOp, write_to_file
 from rspt2spectra.hyb_fit import fit_hyb
 from rspt2spectra.natural_orbitals import fit_hyb_natural_orbitals
@@ -119,14 +128,13 @@ def run(
     transforms bath geometry (e.g. star to chain), builds the full bath/hopping matrices,
     and writes the resulting Hamiltonian parameters (h0) to a pickle file.
     """
-    comm = MPI.COMM_WORLD
+    comm = MPI.COMM_WORLD if MPI is not None else None
 
     if comm is not None and comm.rank != 0:
         verbose = False
 
     hyb_dat = extract_dat("hyb", cluster, prefix)
     hs = parse_matrices(out_file="out", search_phrase="Local hamiltonian", prefix=prefix)
-    parse_matrices(out_file="out", search_phrase="Projection matrix", prefix=prefix)
     qs = parse_matrices(
         out_file="out",
         search_phrase="Transformation to the local cf basis:",
@@ -135,7 +143,6 @@ def run(
     if cluster not in hs:
         raise RuntimeError(f"Could not extract local hamiltonian for cluster {cluster} from file {prefix}/out.")
     H_dft = hs[cluster]
-    get_mu()
     hyb = hyb_dat.orbitals
     w = hyb_dat.w
 
@@ -165,8 +172,13 @@ def run(
             n_bins=1000,
             grid_type=grid_type,
         )
+        # The natural-orbitals discretization fits no constant offset.
+        cs_star = [
+            np.zeros((len(block_structure.blocks[b]), len(block_structure.blocks[b])), dtype=complex)
+            for b in block_structure.inequivalent_blocks
+        ]
     else:
-        ebs_star, vs_star = fit_hyb(
+        ebs_star, vs_star, cs_star = fit_hyb(
             w,
             eim,
             phase_hyb,
@@ -200,7 +212,14 @@ def run(
     original_ebs_star = ebs_star
     original_vs_star = vs_star
     H_shift, ebs_star, vs_star = filter_and_shift(ebs_star, vs_star, w_min, w_max, block_structure)
+    # The fitted constant hybridization offset is static content already
+    # present in the local Hamiltonian; subtract it from the impurity block
+    # like an additional double-counting term (the same convention as
+    # h0.assemble_h0, which takes the fitted offsets as its `shifts`).
+    C_fit = build_matrix(cs_star, block_structure)
+    H_shift = H_shift + C_fit
     if verbose:
+        matrix_print(C_fit, "Fitted constant hybridization offset (double counting):")
         matrix_print(H_shift, r"Shift of $\Delta(\omega=0)$")
 
     original_H_baths, original_vs_star = build_H_bath_v(

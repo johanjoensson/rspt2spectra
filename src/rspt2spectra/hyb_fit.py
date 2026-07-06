@@ -1,24 +1,28 @@
-import itertools
+"""
+Fit a discrete bath to a real-frequency hybridization function.
+
+`fit_hyb` distributes a pool of bath states over the inequivalent blocks of
+the hybridization function and fits each block with `fit_block`: bath-energy
+guesses are seeded from the peaks of the hybridization spectrum, then
+optimized with the VARPRO basin-hopping search in
+:mod:`rspt2spectra.offdiagonal`. When an MPI communicator is passed, each
+rank fits from its own seeds and the lowest-cost fit is kept.
+"""
+
+import functools
+
 try:
-    import matplotlib.pyplot as plt
-except ImportError:  # pragma: no cover - matplotlib is only needed for the plotting helpers
-    plt = None
-from mpi4py import MPI
+    from mpi4py import MPI
+except ImportError:  # pragma: no cover - MPI is optional; serial fits work without it
+    MPI = None
 import numpy as np
 import scipy as sp
 from scipy.signal import find_peaks, peak_widths
+
 from .offdiagonal import (
-    get_hyb,
-    get_hyb_2,
-    get_v_and_eb,
-    get_v_and_eb_multiple_optimizations,
-    get_v_and_eb_basin_hopping,
-    get_v_and_eb_differential_evolution,
-    get_v_and_eb_varpro_basin_hopping,
-    generate_hopping_guess,
     _max_bath_states,
+    get_v_and_eb_varpro_basin_hopping,
 )
-import warnings
 
 _LINE_WIDTH = 72
 
@@ -42,6 +46,7 @@ def _fmt_floats(values, fmt="{: .3f}"):
 
 
 def _print_block_structure(block_structure):
+    """Print a compact table of the block partition and equivalences."""
     rows = [
         ("Blocks", block_structure.blocks),
         ("Inequivalent", block_structure.inequivalent_blocks),
@@ -57,6 +62,7 @@ def _print_block_structure(block_structure):
 
 
 def _print_peaks(positions, left, right, scores):
+    """Print the detected hybridization peaks and their seeding scores."""
     if len(positions) == 0:
         print("Peaks: none found (falling back to uniform guesses)")
         return
@@ -67,8 +73,14 @@ def _print_peaks(positions, left, right, scores):
 
 
 def v_opt(a, b, _):
-    # a and b are (bath_energies, v, C, cost) tuples; pick the lower-cost one.
+    """MPI reduction: pick the lower-cost of two (eb, v, C, cost) fits."""
     return a if abs(a[-1]) <= abs(b[-1]) else b
+
+
+@functools.cache
+def _get_v_opt_op():
+    """Create the lowest-cost-fit MPI reduction op once and reuse it."""
+    return MPI.Op.Create(v_opt, commute=True)
 
 
 def fit_hyb(
@@ -81,26 +93,52 @@ def fit_hyb(
     x_lim=None,
     verbose=True,
     comm=None,
-    weight_fun=lambda w: np.ones_like(w),
+    weight_fun=np.ones_like,
     ebs_guess=None,
     vs_guess=None,
     regularization=None,
 ):
-    """
-    Calculate the bath energies and hopping parameters for fitting the
-    hybridization function.
+    """Fit bath energies and hoppings to the hybridization function.
 
-    Parameters:
-    w           -- Real frequency mesh
-    delta       -- All quantities will be evaluated i*delta above the real
-                   frequency line.
-    hyb         -- Hybridization function
-    bath_states_per_orbital --Number of bath states to fit for each orbital
-    w_lim       -- (w_min, w_max) Only fit for frequencies w_min <= w <= w_max.
-                   If not set, fit for all w.
-    Returns:
-    eb          -- Bath energies
-    v           -- Hopping parameters
+    Parameters
+    ----------
+    w : (M,) np.ndarray
+        Real frequency mesh.
+    delta : float
+        All quantities are evaluated ``i*delta`` above the real axis (the
+        broadening grows with ``|w|`` inside the optimizers to focus the fit
+        near the Fermi energy).
+    hyb : (M, n_orb, n_orb) np.ndarray
+        Hybridization function, in the (block-diagonalized) fitting basis.
+    bath_states_per_orbital : int
+        Average number of bath states per block; distributed over the blocks
+        by `get_state_per_inequivalent_block`.
+    block_structure : BlockStructure
+        Block partition of the hybridization function.
+    gamma : float
+        Regularization strength for the hopping parameters.
+    x_lim : tuple of float, optional
+        ``(w_min, w_max)``; fit only frequencies inside this window.
+    verbose : bool, default True
+        Print fit progress and results.
+    comm : MPI communicator, optional
+        When given, each rank fits from different seeds and the lowest-cost
+        fit is kept on all ranks.
+    weight_fun : callable, default ``np.ones_like``
+        Energy-dependent fit weight, ``weight_fun(w) -> (M,) array``.
+    ebs_guess, vs_guess : list of np.ndarray, optional
+        Initial guesses per inequivalent block (e.g. from a previous fit).
+    regularization : {"L1", "L2", "none", None}
+        Regularization type for the hopping parameters.
+
+    Returns
+    -------
+    ebs_star : list of (n_b,) np.ndarray
+        Fitted bath energies per inequivalent block.
+    vs_star : list of (n_b, n_block, n_block) np.ndarray
+        Fitted hopping matrices per inequivalent block.
+    Cs_star : list of (n_block, n_block) np.ndarray
+        Fitted constant (Hermitian) hybridization offset per block.
     """
     n_blocks = len(block_structure.inequivalent_blocks)
     if bath_states_per_orbital == 0:
@@ -125,16 +163,12 @@ def fit_hyb(
                 for ib in block_structure.inequivalent_blocks
             ],
         )
-    if x_lim is not None:
-        mask = np.logical_and(x_lim[0] <= w, w < x_lim[1])
-    else:
-        mask = np.ones(len(w), bool)
+    mask = np.logical_and(x_lim[0] <= w, w < x_lim[1]) if x_lim is not None else np.ones(len(w), bool)
 
     if verbose:
         print(_rule("Hybridization fit"))
         _print_block_structure(block_structure)
 
-    # ebs_star = [np.empty((0,), dtype=float) for _ in range(n_blocks)]
     ebs_star = [np.empty((0,), dtype=float) for _ in block_structure.inequivalent_blocks]
     vs_star = [
         np.empty(
@@ -182,11 +216,7 @@ def fit_hyb(
         # Block structure has changed!
         # Remove all hopping guesses, but keep the bath energies
         if v_guess is not None and bath_guess is not None and v_guess.shape[1] != block_hyb.shape[1]:
-            n_orb_old = v_guess.shape[1]
-            n_orb = block_hyb.shape[1]
-
             v_guess = None
-            # bath_guess = np.array([eb for eb in bath_guess])
 
         block_eb_star, block_vs_star, block_C_star = fit_block(
             block_hyb[mask, :, :],
@@ -310,6 +340,19 @@ def fit_block(
     regularization=None,
     use_bounds=True,
 ):
+    """Fit one hybridization block with VARPRO basin-hopping.
+
+    Bath-energy seeds are drawn around the peaks of the block's spectral
+    trace (weighted by ``weight_fun``); each MPI rank uses its own RNG seed
+    and the lowest-cost fit across ranks is returned everywhere.
+
+    Returns
+    -------
+    bath_energies : (n_b,) np.ndarray
+    v : (n_b, n_orb, n_orb) np.ndarray
+    C : (n_orb, n_orb) np.ndarray
+        The fitted constant hybridization offset.
+    """
     rank = comm.rank if comm is not None else 0
     size = comm.size if comm is not None else 1
     # Set up a sequence of RNG seeds, so that each MPI rank gets its own unique seed, and therefore also initial guess.
@@ -324,22 +367,10 @@ def fit_block(
 
     hyb_trace = -np.imag(np.sum(np.diagonal(hyb, axis1=1, axis2=2), axis=1))
     hyb_trace[hyb_trace < 0] = 0
-    n_orb = hyb.shape[1]
-    peaks, info = find_peaks(
+    peaks, _ = find_peaks(
         hyb_trace,
     )
-    _, w_h, l_lims, r_lims = peak_widths(hyb_trace, peaks, rel_height=0.9)
-    if False:
-        plt.plot(w, hyb_trace, color="tab:blue")
-        plt.plot(w, weight_fun(w), "--", color="tab:gray")
-        plt.plot(w, hyb_trace * weight_fun(w), "--", color="tab:blue")
-        plt.hlines(
-            w_h,
-            np.interp(l_lims, range(len(w)), w),
-            np.interp(r_lims, range(len(w)), w),
-            colors="tab:orange",
-        )
-        plt.show()
+    _, _, l_lims, r_lims = peak_widths(hyb_trace, peaks, rel_height=0.9)
 
     scores = weight_fun(w[peaks]) * hyb_trace[peaks]
     score_sum = np.sum(scores)
@@ -373,32 +404,19 @@ def fit_block(
     eb_guess = np.sort(eb_guess, axis=1)
 
     eb_bounds = [(w[0], w[-1])] * bath_states_per_orbital
-    if n_orb == 1 and False:
-        v, bath_energies, C, min_cost = get_v_and_eb_differential_evolution(
-            w,
-            delta,
-            hyb,
-            eb_guess,
-            eb_bounds,
-            gamma=gamma,
-            regularization=regularization,
-            weight_function=weight_fun,
-            realvalue_v=realvalue_v,
-        )
-    else:
-        v, bath_energies, C, min_cost = get_v_and_eb_varpro_basin_hopping(
-            w,
-            delta,
-            hyb,
-            eb_guess,
-            eb_bounds,
-            gamma=gamma,
-            regularization=regularization,
-            weight_function=weight_fun,
-            realvalue_v=realvalue_v,
-        )
+    v, bath_energies, C, min_cost = get_v_and_eb_varpro_basin_hopping(
+        w,
+        delta,
+        hyb,
+        eb_guess,
+        eb_bounds,
+        gamma=gamma,
+        regularization=regularization,
+        weight_function=weight_fun,
+        realvalue_v=realvalue_v,
+    )
     if comm is not None:
-        bath_energies, v, C, _ = comm.allreduce((bath_energies, v, C, min_cost), op=MPI.Op.Create(v_opt, commute=True))
+        bath_energies, v, C, _ = comm.allreduce((bath_energies, v, C, min_cost), op=_get_v_opt_op())
 
     if verbose:
         print(f"Final cost:    {abs(min_cost):.3e}")

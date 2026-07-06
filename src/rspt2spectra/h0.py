@@ -1,6 +1,4 @@
-"""
-High-level driver: real-frequency hybridization function -> non-interacting
-impurity Hamiltonian h0.
+"""High-level driver: real-frequency hybridization function -> impurity h0.
 
 The pipeline is split in three steps so callers can cache or persist the
 (expensive) bath fit between them:
@@ -17,13 +15,15 @@ Everything operates on plain numpy arrays; the energy unit follows the
 inputs (e.g. Ry when the data comes from RSPt).
 """
 
-import sys
+import logging
 
 import numpy as np
 
 from rspt2spectra.block_structure import build_block_structure, print_block_structure
 from rspt2spectra.edchain import build_full_bath, build_H_bath_v, build_imp_bath_blocks
 from rspt2spectra.utils import block_diagonalize_hyb, matrix_print, rotate_matrix
+
+logger = logging.getLogger(__name__)
 
 
 def prepare_hyb_fit(hyb, H_local, tol=1e-6, verbose=True):
@@ -129,8 +129,7 @@ def flatten_star_levels(ebs, vs, coupling_tol=1e-6, verbose=False):
                 n_dropped += 1
     if n_dropped > 0 and verbose:
         print(
-            f"Dropped {n_dropped} bath orbitals that do not couple to the "
-            "impurity (rank deficient bath level hopping)."
+            f"Dropped {n_dropped} bath orbitals that do not couple to the impurity (rank deficient bath level hopping)."
         )
     return (
         np.array(flat_e, dtype=float),
@@ -295,10 +294,10 @@ def assemble_h0(
                     "Green's function!\n"
                     f"Max abs deviation: {np.max(np.abs(G0 - G0_star)):.3e}"
                 )
+                # stdout may be redirected to a file; the logger keeps the
+                # warning visible on the terminal (stderr) as well.
                 print(warning, flush=True)
-                # stdout may be redirected to a file; make sure the warning is
-                # also visible on the terminal.
-                print(warning, file=sys.stderr, flush=True)
+                logger.warning(warning)
 
     if extra_verbose:
         print("Local hamiltonian, with baths, in solver basis")

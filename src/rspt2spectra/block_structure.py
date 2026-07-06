@@ -1,3 +1,14 @@
+"""
+Detect and describe the block structure of matrix-valued functions.
+
+A hybridization function (or local Hamiltonian) couples orbitals in blocks.
+`build_block_structure` partitions the orbitals into connected blocks and
+identifies equivalences between blocks (identical, transposed, particle-hole,
+or both), collected in the `BlockStructure` namedtuple, so that only the
+inequivalent blocks need to be fitted. `build_matrix` reassembles a full
+matrix from its inequivalent blocks.
+"""
+
 from collections import namedtuple
 
 import numpy as np
@@ -296,7 +307,7 @@ def get_blocks(G: np.ndarray = None, mat=None, tol=1e-6):
 
 
 def _identical_blocks_mat(blocks, mat, tol):
-    """Helper function to find identical blocks based on matrix values.
+    """Find identical blocks based on matrix values.
 
     Parameters
     ----------
@@ -332,7 +343,7 @@ def _identical_blocks_mat(blocks, mat, tol):
 
 
 def _identical_blocks(blocks, G, mat, tol):
-    """Helper function to find identical blocks based on G and mat values.
+    """Find identical blocks based on G and mat values.
 
     Parameters
     ----------
@@ -399,7 +410,7 @@ def get_identical_blocks(blocks, G=None, mat=None, tol=1e-6):
 
 
 def _transposed_blocks_matrix(blocks, mat, tol):
-    """Helper function to find blocks that are transposes of each other based on mat.
+    """Find blocks that are transposes of each other based on mat.
 
     Parameters
     ----------
@@ -435,7 +446,7 @@ def _transposed_blocks_matrix(blocks, mat, tol):
 
 
 def _transposed_blocks(blocks, G, mat, tol):
-    """Helper function to find blocks that are transposes of each other based on G and mat.
+    """Find blocks that are transposes of each other based on G and mat.
 
     Parameters
     ----------
@@ -504,7 +515,7 @@ def get_transposed_blocks(blocks, G=None, mat=None, tol=1e-6):
 
 
 def _particle_hole_blocks_matrix(blocks, mat, tol):
-    """Helper function to find particle-hole equivalent blocks based on mat.
+    """Find particle-hole equivalent blocks based on mat.
 
     Parameters
     ----------
@@ -542,7 +553,7 @@ def _particle_hole_blocks_matrix(blocks, mat, tol):
 
 
 def _particle_hole_blocks(blocks, G, mat, tol):
-    """Helper function to find particle-hole equivalent blocks based on G and mat.
+    """Find particle-hole equivalent blocks based on G and mat.
 
     Parameters
     ----------
@@ -614,7 +625,7 @@ def get_particle_hole_blocks(blocks, G=None, mat=None, tol=1e-6):
 
 
 def _particle_hole_transpose_blocks_matrix(blocks, mat, tol):
-    """Helper function to find particle-hole and transposed equivalent blocks based on mat.
+    """Find particle-hole and transposed equivalent blocks based on mat.
 
     Parameters
     ----------
@@ -652,7 +663,7 @@ def _particle_hole_transpose_blocks_matrix(blocks, mat, tol):
 
 
 def _particle_hole_transpose_blocks(blocks, G, mat, tol):
-    """Helper function to find particle-hole and transposed equivalent blocks based on G and mat.
+    """Find particle-hole and transposed equivalent blocks based on G and mat.
 
     Parameters
     ----------

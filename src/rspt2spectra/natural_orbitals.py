@@ -1,3 +1,12 @@
+"""
+Discretize a hybridization function with the natural-orbitals construction.
+
+Instead of a non-linear fit, the hybridization function is discretized on a
+dense energy grid into a huge star, whose occupied/unoccupied sectors are
+compressed to the requested number of bath states through the bath natural
+orbitals. Entry point: `fit_hyb_natural_orbitals`.
+"""
+
 import numpy as np
 import scipy.integrate
 import scipy.linalg
@@ -198,7 +207,7 @@ def truncate_natural_orbitals(H_imp, w, hyb, n_keep, n_bins=1000, grid_type="lin
 def fit_hyb_natural_orbitals(
     w, hyb, H_imp_blocks, bath_states_per_orbital, block_structure, n_bins=1000, grid_type="linear"
 ):
-    """Wrapper to behave like fit_hyb but using Natural Orbitals.
+    """Behave like fit_hyb, but use the natural-orbitals discretization.
 
     Parameters
     ----------

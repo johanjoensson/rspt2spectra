@@ -1,3 +1,14 @@
+"""
+Build bath geometries from a star-form bath fit.
+
+A fitted bath in star form (bath energies with direct impurity couplings) is
+transformed into the requested geometry: star, single chain, decoupled
+occupied/unoccupied double chain, or a linked double chain (Lanczos
+tridiagonalization anchored on the impurity). `build_H_bath_v` handles one
+block, `build_full_bath` assembles the full bath Hamiltonian and coupling
+matrix from the per-block results.
+"""
+
 import numpy as np
 import scipy as sp
 
@@ -70,7 +81,6 @@ def build_H_bath_v(H_dft, ebs_star, vs_star, bath_geometry, block_structure, ver
     vs : list of np.ndarray
         The hopping terms from the impurity to the bath for each block.
     """
-
     H_baths = []
     vs = []
     if bath_geometry == "chain":
