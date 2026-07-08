@@ -212,12 +212,15 @@ def run(
     original_ebs_star = ebs_star
     original_vs_star = vs_star
     H_shift, ebs_star, vs_star = filter_and_shift(ebs_star, vs_star, w_min, w_max, block_structure)
-    # The fitted constant hybridization offset is static content already
-    # present in the local Hamiltonian; subtract it from the impurity block
-    # like an additional double-counting term (the same convention as
-    # h0.assemble_h0, which takes the fitted offsets as its `shifts`).
+    # H_shift from filter_and_shift is minus the constant hybridization
+    # contribution of the dropped poles (+v^dag v / e_b = -Delta_b(0)), and is
+    # subtracted from the impurity block below: constant hybridization content
+    # must be *added* to the impurity level (Delta_fit = Delta_pole + C and
+    # RSPt's g0^-1 = z - H_imp - Delta imply E_imp = H_imp + C; RSPt's local
+    # Hamiltonian does not contain Delta's static part). The fitted offset
+    # C_fit enters Delta with a plus sign, so fold it in negated.
     C_fit = build_matrix(cs_star, block_structure)
-    H_shift = H_shift + C_fit
+    H_shift = H_shift - C_fit
     if verbose:
         matrix_print(C_fit, "Fitted constant hybridization offset (double counting):")
         matrix_print(H_shift, r"Shift of $\Delta(\omega=0)$")

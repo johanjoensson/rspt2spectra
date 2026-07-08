@@ -115,7 +115,8 @@ def test_shift_moves_impurity_block():
         eim=EIM,
         verbose=False,
     )
-    # A constant shift C subtracts from the impurity block (and from the
-    # chain anchor); for the star geometry only the impurity block changes.
-    assert np.allclose(H[:2, :2] - H0[:2, :2], -0.1 * np.eye(2))
+    # A constant shift C adds to the impurity block (and to the chain anchor):
+    # Delta_fit = Delta_pole + C, so matching g0^-1 = z - H_imp - Delta needs
+    # E_imp = H_imp + C. For the star geometry only the impurity block changes.
+    assert np.allclose(H[:2, :2] - H0[:2, :2], 0.1 * np.eye(2))
     assert np.allclose(H[2:, 2:], H0[2:, 2:])

@@ -20,9 +20,10 @@ def _read_h00(path):
 
 
 def test_fitted_constant_offset_shifts_impurity_level(tmp_path, monkeypatch):
-    # A constant offset in the hybridization function is static content that
-    # is already part of the local Hamiltonian; build_h0 must subtract the
-    # fitted offset from the impurity block like a double-counting term.
+    # A constant offset in the hybridization function is hybridization content
+    # the discrete poles cannot carry; build_h0 must add it to the impurity
+    # level (Delta_fit = Delta_pole + C and g0^-1 = z - H_imp - Delta imply
+    # E_imp = H_imp + C).
     w = np.linspace(-6, 3, 800)
     eim = 0.05
     c = 0.35
@@ -53,4 +54,4 @@ def test_fitted_constant_offset_shifts_impurity_level(tmp_path, monkeypatch):
 
     h00 = _read_h00(tmp_path)
     assert abs(h00.imag) < 1e-10
-    assert abs(h00.real - (h_dft - c)) < 0.02
+    assert abs(h00.real - (h_dft + c)) < 0.02

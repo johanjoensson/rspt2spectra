@@ -156,10 +156,16 @@ def assemble_h0(
     """Assemble the full one-particle Hamiltonian from a star bath fit.
 
     In block form the result is
-    ``[[H_imp - shift, V^dagger], [V, H_bath]]``,
+    ``[[H_imp + shift, V^dagger], [V, H_bath]]``,
     where the impurity block is expressed in the caller's input basis and the
     bath block in the requested geometry (built in the fitting basis and
     coupled back through Q).
+
+    The fit models the hybridization as ``Delta_fit(z) = Delta_pole(z) + C``;
+    the discrete poles carry no constant part, so matching RSPt's Weiss field
+    ``g0^-1 = z - H_imp - Delta(z)`` with the model ``G0^-1 = z - E_imp -
+    Delta_pole(z)`` requires the constant to move into the impurity level:
+    ``E_imp = H_imp + C``.
 
     Parameters
     ----------
@@ -224,7 +230,7 @@ def assemble_h0(
     # local hamiltonian block, so leaving it out would produce two separate
     # chains that only link to the impurity, not to each other.
     H_baths, vs = build_H_bath_v(
-        H_local_Q - H_shift,
+        H_local_Q + H_shift,
         ebs_star,
         vs_star,
         bath_geometry,
@@ -238,7 +244,7 @@ def assemble_h0(
         comm.Bcast(v)
 
     H = np.zeros((n_orb + H_bath.shape[0], n_orb + H_bath.shape[0]), dtype=complex)
-    H[:n_orb, :n_orb] = H_imp - rotate_matrix(H_shift, np.conj(Q.T))
+    H[:n_orb, :n_orb] = H_imp + rotate_matrix(H_shift, np.conj(Q.T))
     H[n_orb:, n_orb:] = H_bath
     H[n_orb:, :n_orb] = v @ np.conj(Q.T)
     H[:n_orb, n_orb:] = np.conj(H[n_orb:, :n_orb].T)
@@ -256,7 +262,7 @@ def assemble_h0(
         H_star = H
     else:
         H_baths_star, vs_star_geom = build_H_bath_v(
-            H_local_Q - H_shift,
+            H_local_Q + H_shift,
             ebs_star,
             vs_star,
             "star",
@@ -266,7 +272,7 @@ def assemble_h0(
         )
         H_bath_star, v_star = build_full_bath(H_baths_star, vs_star_geom, block_structure)
         H_star = np.zeros((n_orb + H_bath_star.shape[0], n_orb + H_bath_star.shape[0]), dtype=complex)
-        H_star[:n_orb, :n_orb] = H_imp - rotate_matrix(H_shift, np.conj(Q.T))
+        H_star[:n_orb, :n_orb] = H_imp + rotate_matrix(H_shift, np.conj(Q.T))
         H_star[n_orb:, n_orb:] = H_bath_star
         H_star[n_orb:, :n_orb] = v_star @ np.conj(Q.T)
         H_star[:n_orb, n_orb:] = np.conj(H_star[n_orb:, :n_orb].T)
