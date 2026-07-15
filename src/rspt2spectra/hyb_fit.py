@@ -13,7 +13,7 @@ import functools
 
 try:
     from mpi4py import MPI
-except ImportError:  # pragma: no cover - MPI is optional; serial fits work without it
+except (ImportError, RuntimeError):  # pragma: no cover - MPI is optional; serial fits work without it
     MPI = None
 import numpy as np
 import scipy as sp

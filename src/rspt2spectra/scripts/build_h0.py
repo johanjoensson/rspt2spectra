@@ -12,10 +12,18 @@ import numpy as np
 
 try:
     from mpi4py import MPI
-except ImportError:  # pragma: no cover - MPI is optional; serial runs work without it
+except (
+    ImportError,
+    RuntimeError,
+):  # pragma: no cover - MPI is optional; serial runs work without it
     MPI = None
 
-from rspt2spectra.block_structure import BlockStructure, build_block_structure, build_matrix, get_blocks
+from rspt2spectra.block_structure import (
+    BlockStructure,
+    build_block_structure,
+    build_matrix,
+    get_blocks,
+)
 from rspt2spectra.dat import extract_dat
 from rspt2spectra.edchain import (
     build_full_bath,
@@ -23,9 +31,10 @@ from rspt2spectra.edchain import (
     build_imp_bath_blocks,
 )
 from rspt2spectra.h2imp import matrixToIOp, write_to_file
+from rspt2spectra.h0 import assemble_h0
 from rspt2spectra.hyb_fit import fit_hyb
 from rspt2spectra.natural_orbitals import fit_hyb_natural_orbitals
-from rspt2spectra.readfile import parse_matrices
+from rspt2spectra.readfile import parse_matrices, parse_cluster_basis
 from rspt2spectra.utils import block_diagonalize_hyb, matrix_print
 from rspt2spectra.weight_functions import weight_functions
 
@@ -55,6 +64,82 @@ def partition_index(l: Iterable, pred: Callable = bool) -> tuple[list[int], list
         else:
             no.append(idx)
     return yes, no
+
+
+def generate_rspt_T_matrix(l, basis_tag, spinpol):
+    """
+    Generate the exact transformation matrix T mapping the RSPt local basis to spherical harmonics.
+    This exactly reproduces the projection vectors in RSPt's lda_mlmsatomicqn.
+    T has shape (N_sph, N_corr), such that v_sph = T @ v_corr.
+    """
+    cisqrt2 = 1j / np.sqrt(2)
+    csqrt2 = 1 / np.sqrt(2)
+
+    if l == 3:
+        mmsize = 7
+        cols = []
+        csqrt5o4 = np.sqrt(5) / 4
+        csqrt3o4 = np.sqrt(3) / 4
+        cisqrt5o4 = 1j * np.sqrt(5) / 4
+        cisqrt3o4 = 1j * np.sqrt(3) / 4
+
+        if basis_tag & 4:  # A2u
+            cols.append([0, cisqrt2, 0, 0, 0, -cisqrt2, 0])
+        if basis_tag & 2:  # T1u
+            cols.append([csqrt5o4, 0, -csqrt3o4, 0, csqrt3o4, 0, -csqrt5o4])
+            cols.append([-cisqrt5o4, 0, -cisqrt3o4, 0, -cisqrt3o4, 0, -cisqrt5o4])
+            cols.append([0, 0, 0, 1, 0, 0, 0])
+        if basis_tag & 1:  # T2u
+            cols.append([-csqrt3o4, 0, -csqrt5o4, 0, csqrt5o4, 0, csqrt3o4])
+            cols.append([-cisqrt3o4, 0, cisqrt5o4, 0, cisqrt5o4, 0, -cisqrt3o4])
+            cols.append([0, csqrt2, 0, 0, 0, csqrt2, 0])
+
+        T_spatial = np.array(cols).T  # Shape: (7, N_spatial)
+
+    elif l == 2:
+        mmsize = 5
+        # Columns in order: Eg, T2g
+        cols = []
+        if basis_tag & 2:  # Eg
+            # dz2: [0, 0, 1, 0, 0]
+            cols.append([0, 0, 1, 0, 0])
+            # dx2-y2: [csqrt2, 0, 0, 0, csqrt2]
+            cols.append([csqrt2, 0, 0, 0, csqrt2])
+        if basis_tag & 1:  # T2g
+            # dyz: [0, cisqrt2, 0, cisqrt2, 0]
+            cols.append([0, cisqrt2, 0, cisqrt2, 0])
+            # dxz: [0, csqrt2, 0, -csqrt2, 0]
+            cols.append([0, csqrt2, 0, -csqrt2, 0])
+            # dxy: [cisqrt2, 0, 0, 0, -cisqrt2]
+            cols.append([cisqrt2, 0, 0, 0, -cisqrt2])
+
+        T_spatial = np.array(cols).T  # Shape: (5, N_spatial)
+
+    elif l == 1:
+        mmsize = 3
+        cols = []
+        if basis_tag & 1:
+            # py: [cisqrt2, 0, cisqrt2]
+            cols.append([cisqrt2, 0, cisqrt2])
+            # px: [csqrt2, 0, -csqrt2]
+            cols.append([csqrt2, 0, -csqrt2])
+            # pz: [0, 1, 0]
+            cols.append([0, 1, 0])
+
+        T_spatial = np.array(cols).T
+    else:
+        raise NotImplementedError(f"Basis generation for l={l} is not yet implemented.")
+
+    if not spinpol:
+        return T_spatial
+
+    # If spin-polarized, RSPt packs spin-up then spin-down
+    N_sph = mmsize * 2
+    N_corr = T_spatial.shape[1] * 2
+    T = np.zeros((N_sph, N_corr), dtype=complex)
+    T[:mmsize, : T_spatial.shape[1]] = T_spatial
+    T[mmsize:, T_spatial.shape[1] :] = T_spatial
+    return T
 
 
 def filter_and_shift(
@@ -90,13 +175,22 @@ def filter_and_shift(
     """
     filtered_ebs_star, filtered_vs_star = ([], [])
     shifts = [
-        np.zeros((len(block_structure.blocks[i_block]), len(block_structure.blocks[i_block])), dtype=complex)
+        np.zeros(
+            (
+                len(block_structure.blocks[i_block]),
+                len(block_structure.blocks[i_block]),
+            ),
+            dtype=complex,
+        )
         for i_block in block_structure.inequivalent_blocks
     ]
     for eb_block, v_block, shift in zip(ebs, vs, shifts):
         f = np.logical_or(eb_block < w_min, eb_block > w_max)
         shift += np.sum(  # noqa: PLW2901 - in-place update of the arrays in shifts
-            np.conj(np.transpose(v_block[f], (0, 2, 1))) @ v_block[f] / eb_block[f, None, None], axis=0
+            np.conj(np.transpose(v_block[f], (0, 2, 1)))
+            @ v_block[f]
+            / eb_block[f, None, None],
+            axis=0,
         )
         filtered_ebs_star.append(eb_block[np.logical_not(f)].copy())
         filtered_vs_star.append(v_block[np.logical_not(f)].copy())
@@ -129,38 +223,149 @@ def run(
     and writes the resulting Hamiltonian parameters (h0) to a pickle file.
     """
     comm = MPI.COMM_WORLD if MPI is not None else None
+    rank = comm.rank if comm is not None else 0
 
-    if comm is not None and comm.rank != 0:
-        verbose = False
+    verbose = verbose and rank == 0
 
     hyb_dat = extract_dat("hyb", cluster, prefix)
-    hs = parse_matrices(out_file="out", search_phrase="Local hamiltonian", prefix=prefix)
+    hs = parse_matrices(
+        out_file="out", search_phrase="Local hamiltonian", prefix=prefix
+    )
     qs = parse_matrices(
         out_file="out",
         search_phrase="Transformation to the local cf basis:",
         prefix=prefix,
     )
+    sharm_qs = parse_matrices(
+        out_file="out",
+        search_phrase="sharm2corr of the cluster",
+        prefix=prefix,
+    )
     if cluster not in hs:
-        raise RuntimeError(f"Could not extract local hamiltonian for cluster {cluster} from file {prefix}/out.")
+        raise RuntimeError(
+            f"Could not extract local hamiltonian for cluster {cluster} from file {prefix}/out."
+        )
     H_dft = hs[cluster]
     hyb = hyb_dat.orbitals
     w = hyb_dat.w
 
+    has_cf_flag, basis_tag, l_val = parse_cluster_basis(
+        cluster, inp_file="green.inp", prefix=prefix
+    )
+    needs_rotation = has_cf_flag or (basis_tag != 0)
+
     # If transformations to the CF basis were found, use them
-    T = np.eye(H_dft.shape[0], dtype=complex)
+    T = None
     if cluster in qs:
         T = qs[cluster]
-    hyb_cf = np.conjugate(T.T)[None] @ hyb @ T[None]
-    H_dft = np.conjugate(T.T) @ H_dft @ T
+    elif cluster in sharm_qs:
+        T = sharm_qs[cluster]
 
-    phase_hyb, Q = block_diagonalize_hyb(hyb_cf)
+    if needs_rotation and T is None:
+        if has_cf_flag:
+            raise RuntimeError(
+                f"Cluster {cluster} has Cf flag set in green.inp, but the rotation matrix "
+                f"was not found in {prefix}/out. Please run RSPt with verbose=True to print it."
+            )
+        elif basis_tag > 0:
+            # Generate dynamically based on RSPt exact projection matrices
+            try:
+                N = H_dft.shape[0]
+                if l_val == -1:
+                    raise RuntimeError(
+                        f"Could not determine l quantum number for cluster {cluster} from green.inp"
+                    )
+
+                # We determine spinpol by checking if N matches 2 * subset size or 1 * subset size
+                # But it's simpler: if N is even, it's very likely spin polarized for ED models.
+                # Let's count subset size
+                subset_size = 0
+                if l_val == 3:
+                    if basis_tag & 4:
+                        subset_size += 1
+                    if basis_tag & 2:
+                        subset_size += 3
+                    if basis_tag & 1:
+                        subset_size += 3
+                elif l_val == 2:
+                    if basis_tag & 2:
+                        subset_size += 2
+                    if basis_tag & 1:
+                        subset_size += 3
+                elif l_val == 1:
+                    if basis_tag & 1:
+                        subset_size += 3
+                else:
+                    raise NotImplementedError(
+                        f"Dynamic rotation for l={l_val} not supported."
+                    )
+
+                if N == subset_size * 2:
+                    spinpol = True
+                elif N == subset_size:
+                    spinpol = False
+                else:
+                    raise RuntimeError(
+                        f"Hamiltonian size {N} does not match expected size for basis tag {basis_tag} (expected {subset_size} or {subset_size*2})"
+                    )
+
+                T = generate_rspt_T_matrix(l_val, basis_tag, spinpol)
+            except Exception as e:
+                raise RuntimeError(
+                    f"Cluster {cluster} uses basis tag {basis_tag}, but dynamic generation failed: {e}. "
+                    f"Please run RSPt with verbose=True to print the rotation matrix in the output."
+                )
+        else:
+            raise RuntimeError(
+                f"Cluster {cluster} requires rotation but basis tag is not handled dynamically. "
+                f"Please run RSPt with verbose=True to print the rotation matrix in the output."
+            )
+
+    if T is None:
+        T = np.eye(H_dft.shape[0], dtype=complex)
+
+    if needs_rotation:
+        if verbose:
+            print(f"Cluster {cluster} uses a non-spherical basis (or Cf flag).")
+            if T is not None and cluster not in qs and cluster not in sharm_qs:
+                print(
+                    f"Dynamically generated RSPt rotation matrix for l={l_val}, basis_tag={basis_tag}."
+                )
+            print(
+                "Applying transformation T to rotate to the Spherical Harmonics basis (T @ H @ T.T.conj())."
+            )
+            matrix_print(T, "Transformation matrix T:")
+            print()
+        # Data is in CF basis, rotate to Spherical Harmonics
+        hyb_sph = T[None] @ hyb @ np.conjugate(T.T)[None]
+        H_dft_sph = T @ H_dft @ np.conjugate(T.T)
+    else:
+        if verbose:
+            print(f"Cluster {cluster} is in the Spherical Harmonics basis.")
+            print("No initial basis rotation required.")
+            print()
+        # Data is already in Spherical Harmonics
+        hyb_sph = hyb
+        H_dft_sph = H_dft
+
+    phase_hyb, Q = block_diagonalize_hyb(hyb_sph)
+
+    if verbose:
+        print("Block diagonalizing the hybridization function.")
+        matrix_print(
+            Q,
+            "Unitary transformation Q (from Spherical to block-diagonal fitting basis):",
+        )
+        print()
 
     block_structure = build_block_structure(phase_hyb, tol=1e-15)
 
+    H_imp = H_dft_sph
+    H_local_Q = np.conjugate(Q.T) @ H_imp @ Q
+
     if natural_orbitals:
-        H_dft_block = np.conj(Q.T) @ H_dft @ Q
         H_imp_blocks = [
-            H_dft_block[np.ix_(block_structure.blocks[b], block_structure.blocks[b])]
+            H_local_Q[np.ix_(block_structure.blocks[b], block_structure.blocks[b])]
             for b in block_structure.inequivalent_blocks
         ]
         ebs_star, vs_star = fit_hyb_natural_orbitals(
@@ -174,7 +379,10 @@ def run(
         )
         # The natural-orbitals discretization fits no constant offset.
         cs_star = [
-            np.zeros((len(block_structure.blocks[b]), len(block_structure.blocks[b])), dtype=complex)
+            np.zeros(
+                (len(block_structure.blocks[b]), len(block_structure.blocks[b])),
+                dtype=complex,
+            )
             for b in block_structure.inequivalent_blocks
         ]
     else:
@@ -204,158 +412,80 @@ def run(
                 matrix_print(vb_i, f"Energy {eb_i: 9.6f} :")
             print()
         print("=" * 80)
-
-    w_min = w[0]
-    w_max = w[-1]
-    if not fit_unocc:
-        w_max = 0
-    original_ebs_star = ebs_star
-    original_vs_star = vs_star
-    H_shift, ebs_star, vs_star = filter_and_shift(ebs_star, vs_star, w_min, w_max, block_structure)
-    # H_shift from filter_and_shift is minus the constant hybridization
-    # contribution of the dropped poles (+v^dag v / e_b = -Delta_b(0)), and is
-    # subtracted from the impurity block below: constant hybridization content
-    # must be *added* to the impurity level (Delta_fit = Delta_pole + C and
-    # RSPt's g0^-1 = z - H_imp - Delta imply E_imp = H_imp + C; RSPt's local
-    # Hamiltonian does not contain Delta's static part). The fitted offset
-    # C_fit enters Delta with a plus sign, so fold it in negated.
-    C_fit = build_matrix(cs_star, block_structure)
-    H_shift = H_shift - C_fit
-    if verbose:
-        matrix_print(C_fit, "Fitted constant hybridization offset (double counting):")
-        matrix_print(H_shift, r"Shift of $\Delta(\omega=0)$")
-
-    original_H_baths, original_vs_star = build_H_bath_v(
-        np.conj(Q.T) @ H_dft @ Q - H_shift,
-        original_ebs_star,
-        original_vs_star,
-        bath_geometry.lower(),
-        block_structure,
-        verbose,
-        False,
-    )
-    original_H_bath, original_v = build_full_bath(original_H_baths, original_vs_star, block_structure)
-    if comm is not None:
-        comm.Allreduce(MPI.IN_PLACE, original_H_bath, op=MPI.SUM)
-        original_H_bath /= comm.size
-        comm.Allreduce(MPI.IN_PLACE, original_v, op=MPI.SUM)
-        original_v /= comm.size
-    H_baths, vs = build_H_bath_v(
-        np.conj(Q.T) @ H_dft @ Q - H_shift,
+    H, _, _, _, _, _, _ = assemble_h0(
         ebs_star,
         vs_star,
-        bath_geometry.lower(),
+        cs_star,
+        H_imp,
+        H_local_Q,
+        Q,
         block_structure,
-        verbose,
-        False,
+        bath_geometry=bath_geometry,
+        w=w,
+        eim=eim,
+        label=cluster,
+        verbose=verbose,
     )
-    H_bath, v = build_full_bath(H_baths, vs, block_structure)
-    if comm is not None:
-        comm.Allreduce(MPI.IN_PLACE, H_bath, op=MPI.SUM)
-        H_bath /= comm.size
-        comm.Allreduce(MPI.IN_PLACE, v, op=MPI.SUM)
-        v /= comm.size
-
-    if plot:
-        from itertools import product  # noqa: PLC0415 - plotting is optional
-
-        import matplotlib.pyplot as plt  # noqa: PLC0415 - plotting is optional
-
-        wn = w + 1j * eim
-        I = np.eye(original_H_bath.shape[0])
-        original_hyb = (
-            Q[None]
-            @ np.conj(original_v.T)[None, ...]
-            @ np.linalg.solve(I[None, ...] * wn[:, None, None] - original_H_bath[None, ...], original_v[None, ...])
-            @ np.conj(Q.T)[None]
-        )
-        I = np.eye(H_bath.shape[0])
-        hyb = (
-            Q[None]
-            @ np.conj(v.T)[None, ...]
-            @ np.linalg.solve(I[None, ...] * wn[:, None, None] - H_bath[None, ...], v[None, ...])
-            @ np.conj(Q.T)[None]
-        )
-        phase_hyb = Q[None] @ phase_hyb @ np.conj(Q.T)[None]
-        blocks = get_blocks(hyb, tol=0)
-        # blocks = [list(range(10))]
-        for block in blocks:
-            fig, ax = plt.subplots(nrows=len(block), ncols=len(block), squeeze=False, sharex="all", sharey="all")
-            for (i, orb_i), (j, orb_j) in product(enumerate(block), repeat=2):
-                ax[i, j].fill_between(
-                    wn.real,
-                    phase_hyb[:, orb_i, orb_j].real,
-                    0,
-                    alpha=0.3,
-                    color="tab:blue",
-                )
-                ax[i, j].plot(
-                    wn.real,
-                    original_hyb[:, orb_i, orb_j].real,
-                    color="tab:orange",
-                    linestyle="--",
-                    alpha=0.5,
-                    label="Full fit",
-                )
-                ax[i, j].axhline(
-                    H_shift[orb_i, orb_j].real,
-                    color="black",
-                    linestyle="--",
-                    alpha=0.5,
-                    label=r"$\Delta(\omega=0)$ shift",
-                )
-                ax[i, j].plot(wn.real, hyb[:, orb_i, orb_j].real, color="tab:blue", label="Resulting fit")
-            ax[0, 0].set_ylim(bottom=np.min(phase_hyb.real), top=np.max(phase_hyb.real))
-            fig.suptitle(r"Re$\left\{\Delta_{fit}(\omega)\right\}$")
-            fig, ax = plt.subplots(nrows=len(block), ncols=len(block), squeeze=False, sharex="all", sharey="all")
-            for (i, orb_i), (j, orb_j) in product(enumerate(block), repeat=2):
-                ax[i, j].fill_between(
-                    wn.real,
-                    phase_hyb[:, orb_i, orb_j].imag,
-                    0,
-                    alpha=0.3,
-                    color="tab:blue",
-                )
-                ax[i, j].plot(
-                    wn.real,
-                    original_hyb[:, orb_i, orb_j].imag,
-                    color="tab:orange",
-                    linestyle="--",
-                    alpha=0.8,
-                    label="Full fit",
-                )
-                ax[i, j].axhline(
-                    H_shift[orb_i, orb_j].imag,
-                    color="black",
-                    linestyle="--",
-                    alpha=0.5,
-                    label=r"$\Delta(\omega=0)$ shift",
-                )
-                ax[i, j].plot(wn.real, hyb[:, orb_i, orb_j].imag, color="tab:blue", label="Resulting fit")
-            ax[0, 0].set_ylim(bottom=np.min(phase_hyb.imag), top=np.max(phase_hyb.imag))
-            fig.suptitle(r"Im$\left\{\Delta_{fit}(\omega)\right\}$")
-        plt.show()
-
-    occupied_indices, positive_indices = partition_index(np.diag(H_bath), pred=lambda x: x < 0)
-    sorted_bath_indices = np.array(occupied_indices + positive_indices, dtype=int)
-    H_bath = H_bath[np.ix_(sorted_bath_indices, sorted_bath_indices)]
-    v = v[sorted_bath_indices, :]
-    n_orb = H_dft.shape[0]
-    H = np.zeros((n_orb + H_bath.shape[0], n_orb + H_bath.shape[0]), dtype=complex)
-
-    # Transform from block diagonal -> CF -> correlated basis
-    H[:n_orb, :n_orb] = T @ (H_dft - Q @ H_shift @ np.conj(Q.T)) @ np.conj(T.T)
-    H[n_orb:, n_orb:] = H_bath
-    H[n_orb:, :n_orb] = v @ np.conj(Q.T) @ np.conj(T.T)
-    H[:n_orb, n_orb:] = np.conj(H[n_orb:, :n_orb].T)
-
-    _impurity_indices, _valence_bath_indices, _conduction_bath_indices = build_imp_bath_blocks(H, n_orb)
-
-    if verbose:
-        print(f"eigvals(H) :\n{np.linalg.eigvalsh(H)}")
 
     h_op = matrixToIOp(H)
     write_to_file(h_op, f"{cluster}_h0_op", save_as_dict=True)
+
+    if plot:
+        if comm is not None and comm.rank != 0:
+            pass  # Only plot on root rank
+        else:
+            try:
+                import matplotlib.pyplot as plt
+                from rspt2spectra.offdiagonal import get_hyb_2
+
+                z = w + 1j * eim
+                for b, (ebss, vss, css) in enumerate(zip(ebs_star, vs_star, cs_star)):
+                    if len(ebss) == 0:
+                        continue
+
+                    fit_hyb_block = get_hyb_2(
+                        z, ebss[np.newaxis, :], vss[np.newaxis, ...], css
+                    )[0]
+                    block_idx = block_structure.blocks[
+                        block_structure.inequivalent_blocks[b]
+                    ]
+                    orig_hyb_block = phase_hyb[
+                        np.ix_(np.arange(len(w)), block_idx, block_idx)
+                    ]
+
+                    n_orb = fit_hyb_block.shape[-1]
+                    fig, axes = plt.subplots(n_orb, 2, figsize=(10, 3 * n_orb))
+                    if n_orb == 1:
+                        axes = np.array([axes])
+
+                    fig.suptitle(f"Hybridization Fit - Block {b+1}")
+
+                    for i in range(n_orb):
+                        axes[i, 0].plot(
+                            w, orig_hyb_block[:, i, i].imag, label="Original", color="k"
+                        )
+                        axes[i, 0].plot(
+                            w, fit_hyb_block[:, i, i].imag, "--", label="Fit", color="r"
+                        )
+                        axes[i, 0].set_ylabel(f"Im[V^2/z] (orb {i})")
+                        axes[i, 0].set_xlabel("w (eV)")
+                        axes[i, 0].legend()
+
+                        axes[i, 1].plot(
+                            w, orig_hyb_block[:, i, i].real, label="Original", color="k"
+                        )
+                        axes[i, 1].plot(
+                            w, fit_hyb_block[:, i, i].real, "--", label="Fit", color="r"
+                        )
+                        axes[i, 1].set_ylabel(f"Re[V^2/z] (orb {i})")
+                        axes[i, 1].set_xlabel("w (eV)")
+                        axes[i, 1].legend()
+
+                    plt.tight_layout()
+                plt.show()
+
+            except ImportError:
+                print("Warning: matplotlib is not installed. Plotting skipped.")
 
 
 def main() -> None:
@@ -382,7 +512,9 @@ def main() -> None:
     parser.add_argument("--weight-factor", type=float, default=2.0)
     parser.add_argument("--fit-center", type=float, default=0)
     parser.add_argument(
-        "--natural-orbitals", action="store_true", help="Use Natural Orbitals approach instead of non-linear fitting"
+        "--natural-orbitals",
+        action="store_true",
+        help="Use Natural Orbitals approach instead of non-linear fitting",
     )
     parser.add_argument(
         "--grid-type",
