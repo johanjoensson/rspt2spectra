@@ -66,11 +66,13 @@ def test_combined_partition_merges_local_coupling():
 def test_star_geometry_reproduces_analytic_g0():
     Q, _, H_local_Q, block_structure = prepared()
     ebs, vs, shifts = exact_fit(Q, block_structure)
-    H, H_star, imp, val, cond, _v_solver, _H_bath = assemble_h0(
+    H, H_star, imp, val, cond, _v_solver, _H_bath, H_imp = assemble_h0(
         ebs, vs, shifts, H_LOC, H_local_Q, Q, block_structure, bath_geometry="star", w=W, eim=EIM, verbose=False
     )
     assert H is H_star
     assert imp == [0, 1]
+    # The returned effective impurity block is exactly the impurity sub-block of H.
+    assert np.allclose(H_imp, H[:2, :2])
     # 3 poles below zero energy... 2 valence poles, 2 conduction poles
     assert len(val) == 2 and len(cond) == 2
     z = W[::10] + 1j * EIM
@@ -84,7 +86,7 @@ def test_star_geometry_reproduces_analytic_g0():
 def test_chain_geometries_preserve_impurity_g0(geometry):
     Q, _, H_local_Q, block_structure = prepared()
     ebs, vs, shifts = exact_fit(Q, block_structure)
-    H, H_star, _imp, _val, _cond, _v_solver, _H_bath = assemble_h0(
+    H, H_star, _imp, _val, _cond, _v_solver, _H_bath, _H_imp = assemble_h0(
         ebs, vs, shifts, H_LOC, H_local_Q, Q, block_structure, bath_geometry=geometry, w=W, eim=EIM, verbose=False
     )
     assert H.shape == H_star.shape

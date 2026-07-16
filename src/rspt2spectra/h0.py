@@ -216,6 +216,11 @@ def assemble_h0(
         Impurity-bath coupling in the caller's input basis.
     H_bath : np.ndarray
         The bath block of ``H``.
+    H_imp : np.ndarray
+        The effective impurity block ``H[:n_orb, :n_orb]`` -- the DFT block with the fitted
+        constant hybridization offset folded in (``E_imp = H_imp + C``). Returned explicitly so
+        callers can hand the ``(H_imp, V, H_bath)`` blocks straight to a solver without
+        re-slicing ``H``.
     """
     n_orb = H_imp.shape[0]
     H_shift = np.zeros_like(H_imp)
@@ -328,4 +333,5 @@ def assemble_h0(
         conduction_bath_indices,
         v @ np.conj(Q.T),
         H_bath,
+        H[:n_orb, :n_orb],
     )

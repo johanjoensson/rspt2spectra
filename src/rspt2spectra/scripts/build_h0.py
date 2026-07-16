@@ -412,7 +412,7 @@ def run(
                 matrix_print(vb_i, f"Energy {eb_i: 9.6f} :")
             print()
         print("=" * 80)
-    H, _, _, _, _, _, _ = assemble_h0(
+    H, *_ = assemble_h0(
         ebs_star,
         vs_star,
         cs_star,
