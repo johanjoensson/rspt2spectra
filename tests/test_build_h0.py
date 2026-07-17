@@ -8,7 +8,9 @@ def _write_rspt_dir(path, w, hyb, h_dft):
     for part, fname in ((hyb.real, "real-hyb-cl.dat"), (hyb.imag, "imag-hyb-cl.dat")):
         body = "\n".join(f"{wi: .10e}  {p: .10e}" for wi, p in zip(w, part))
         (path / fname).write_text(header + body + "\n")
-    (path / "out").write_text(f"Cluster cl Local hamiltonian\n real part\n {h_dft:.6f}\n imag part\n  0.000000\n")
+    (path / "out").write_text(
+        f"Cluster cl Local hamiltonian\n real part\n {h_dft:.6f}\n imag part\n  0.000000\n"
+    )
     (path / "green.inp").write_text("cluster\n 1 Idcl\n 1 2 1 1 0\n")
 
 

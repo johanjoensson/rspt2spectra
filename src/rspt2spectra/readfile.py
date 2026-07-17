@@ -49,9 +49,10 @@ def parse_matrices(out_file="out", search_phrase="Local hamiltonian", prefix="."
 
     return dict(zip(labels, matrices))
 
+
 def parse_cluster_basis(cluster_label, inp_file="green.inp", prefix="."):
     """Parse green.inp file to determine if Cf flag or a non-spherical basis was used for the given cluster.
-    
+
     Parameters
     ----------
     cluster_label : str
@@ -60,7 +61,7 @@ def parse_cluster_basis(cluster_label, inp_file="green.inp", prefix="."):
         Name of the RSPt input file.
     prefix : str, default "."
         Directory holding the input file.
-        
+
     Returns
     -------
     bool
@@ -71,24 +72,24 @@ def parse_cluster_basis(cluster_label, inp_file="green.inp", prefix="."):
             lines = f.readlines()
     except FileNotFoundError:
         return False
-    
+
     for i in range(len(lines)):
         line = lines[i].strip()
         line_lower = line.lower()
-        
+
         # Look for the cluster initialization block
         if line_lower.startswith("cluster"):
             if i + 1 >= len(lines):
                 continue
-                
-            ntot_line = lines[i+1].strip()
+
+            ntot_line = lines[i + 1].strip()
             # Handle comments
             code_part = ntot_line.split("!")[0].split("#")[0].strip()
-            
+
             words = code_part.split()
             if not words:
                 continue
-                
+
             try:
                 ntot = int(words[0])
             except ValueError:
@@ -99,13 +100,13 @@ def parse_cluster_basis(cluster_label, inp_file="green.inp", prefix="."):
                 if word.startswith("Id"):
                     parsed_id = word[2:]
                     break
-                    
+
             cfflag_local = False
             for word in words[1:]:
                 if word.lower() == "cf":
                     cfflag_local = True
                     break
-                    
+
             if not parsed_id and i + 2 < len(lines):
                 first_site_line = lines[i + 2].split("!")[0].split("#")[0]
                 first_site_parts = first_site_line.split()
@@ -116,7 +117,7 @@ def parse_cluster_basis(cluster_label, inp_file="green.inp", prefix="."):
                             parsed_id += f"{val:03d}"
                         else:
                             parsed_id += f"{val:02d}"
-            
+
             if parsed_id.lower() == cluster_label.lower():
                 cfflag = cfflag_local
                 basis_tag = 0

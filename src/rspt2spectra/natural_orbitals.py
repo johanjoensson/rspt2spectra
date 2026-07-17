@@ -49,9 +49,13 @@ def get_huge_star(w, hyb, n_bins=1000, grid_type="linear"):
             pos_edges = np.geomspace(w_core, w_max, n_pos)
             bin_edges = np.concatenate((neg_edges, [0.0], pos_edges))
         elif w_min >= -w_core:
-            bin_edges = np.geomspace(max(w_min, w_core), max(w_max, w_core * 2), n_bins + 1)
+            bin_edges = np.geomspace(
+                max(w_min, w_core), max(w_max, w_core * 2), n_bins + 1
+            )
         else:
-            bin_edges = -np.geomspace(abs(w_min), max(abs(w_max), w_core * 2), n_bins + 1)
+            bin_edges = -np.geomspace(
+                abs(w_min), max(abs(w_max), w_core * 2), n_bins + 1
+            )
         bin_edges[0] = w[0]
         bin_edges[-1] = w[-1]
     else:
@@ -205,7 +209,13 @@ def truncate_natural_orbitals(H_imp, w, hyb, n_keep, n_bins=1000, grid_type="lin
 
 
 def fit_hyb_natural_orbitals(
-    w, hyb, H_imp_blocks, bath_states_per_orbital, block_structure, n_bins=1000, grid_type="linear"
+    w,
+    hyb,
+    H_imp_blocks,
+    bath_states_per_orbital,
+    block_structure,
+    n_bins=1000,
+    grid_type="linear",
 ):
     """Behave like fit_hyb, but use the natural-orbitals discretization.
 
@@ -243,7 +253,9 @@ def fit_hyb_natural_orbitals(
 
         n_keep = bath_states_per_orbital * len(orbs)
 
-        E_opt, V_opt = truncate_natural_orbitals(H_imp_block, w, hyb_block, n_keep, n_bins, grid_type)
+        E_opt, V_opt = truncate_natural_orbitals(
+            H_imp_block, w, hyb_block, n_keep, n_bins, grid_type
+        )
 
         ebs_star.append(E_opt)
         vs_star.append(V_opt)

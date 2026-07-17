@@ -131,7 +131,13 @@ def test_build_greens_function_transposed():
         inequivalent_blocks=[0],
     )
     # Shape: (n_freq=3, n_orb_block=2, n_orb_block=2) — asymmetric so transpose is visible.
-    b1 = np.array([[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]], [[9.0, 10.0], [11.0, 12.0]]])
+    b1 = np.array(
+        [
+            [[1.0, 2.0], [3.0, 4.0]],
+            [[5.0, 6.0], [7.0, 8.0]],
+            [[9.0, 10.0], [11.0, 12.0]],
+        ]
+    )
     G = build_greens_function([b1], bs)
     assert np.allclose(G[:, 0:2, 0:2], b1)
     assert np.allclose(G[:, 2:4, 2:4], b1.swapaxes(-2, -1))
@@ -147,7 +153,13 @@ def test_build_greens_function_particle_hole():
         particle_hole_transposed_blocks=[[], []],
         inequivalent_blocks=[0],
     )
-    b1 = np.array([[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]], [[9.0, 10.0], [11.0, 12.0]]])
+    b1 = np.array(
+        [
+            [[1.0, 2.0], [3.0, 4.0]],
+            [[5.0, 6.0], [7.0, 8.0]],
+            [[9.0, 10.0], [11.0, 12.0]],
+        ]
+    )
     G = build_greens_function([b1], bs)
     assert np.allclose(G[:, 0:2, 0:2], b1)
     assert np.allclose(G[:, 2:4, 2:4], b1[::-1, :, :])
@@ -163,7 +175,13 @@ def test_build_greens_function_particle_hole_transposed():
         particle_hole_transposed_blocks=[[1], [0]],
         inequivalent_blocks=[0],
     )
-    b1 = np.array([[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]], [[9.0, 10.0], [11.0, 12.0]]])
+    b1 = np.array(
+        [
+            [[1.0, 2.0], [3.0, 4.0]],
+            [[5.0, 6.0], [7.0, 8.0]],
+            [[9.0, 10.0], [11.0, 12.0]],
+        ]
+    )
     G = build_greens_function([b1], bs)
     assert np.allclose(G[:, 0:2, 0:2], b1)
     assert np.allclose(G[:, 2:4, 2:4], b1[::-1].swapaxes(-2, -1))

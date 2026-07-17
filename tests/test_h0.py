@@ -34,7 +34,9 @@ def analytic_hyb(z):
 
 
 def analytic_g0(z):
-    return np.linalg.inv(z[:, None, None] * np.eye(2)[None] - H_LOC[None] - analytic_hyb(z))
+    return np.linalg.inv(
+        z[:, None, None] * np.eye(2)[None] - H_LOC[None] - analytic_hyb(z)
+    )
 
 
 def prepared():
@@ -67,7 +69,17 @@ def test_star_geometry_reproduces_analytic_g0():
     Q, _, H_local_Q, block_structure = prepared()
     ebs, vs, shifts = exact_fit(Q, block_structure)
     H, H_star, imp, val, cond, _v_solver, _H_bath, H_imp = assemble_h0(
-        ebs, vs, shifts, H_LOC, H_local_Q, Q, block_structure, bath_geometry="star", w=W, eim=EIM, verbose=False
+        ebs,
+        vs,
+        shifts,
+        H_LOC,
+        H_local_Q,
+        Q,
+        block_structure,
+        bath_geometry="star",
+        w=W,
+        eim=EIM,
+        verbose=False,
     )
     assert H is H_star
     assert imp == [0, 1]
@@ -87,12 +99,24 @@ def test_chain_geometries_preserve_impurity_g0(geometry):
     Q, _, H_local_Q, block_structure = prepared()
     ebs, vs, shifts = exact_fit(Q, block_structure)
     H, H_star, _imp, _val, _cond, _v_solver, _H_bath, _H_imp = assemble_h0(
-        ebs, vs, shifts, H_LOC, H_local_Q, Q, block_structure, bath_geometry=geometry, w=W, eim=EIM, verbose=False
+        ebs,
+        vs,
+        shifts,
+        H_LOC,
+        H_local_Q,
+        Q,
+        block_structure,
+        bath_geometry=geometry,
+        w=W,
+        eim=EIM,
+        verbose=False,
     )
     assert H.shape == H_star.shape
     z = W[::10] + 1j * EIM
     G0 = np.linalg.inv(z[:, None, None] * np.eye(H.shape[0])[None] - H[None])[:, :2, :2]
-    G0_star = np.linalg.inv(z[:, None, None] * np.eye(H_star.shape[0])[None] - H_star[None])[:, :2, :2]
+    G0_star = np.linalg.inv(
+        z[:, None, None] * np.eye(H_star.shape[0])[None] - H_star[None]
+    )[:, :2, :2]
     assert np.allclose(G0, G0_star, atol=1e-10)
     assert np.allclose(G0, analytic_g0(z), atol=1e-10)
 
@@ -102,7 +126,17 @@ def test_shift_moves_impurity_block():
     ebs, vs, _ = exact_fit(Q, block_structure)
     shift = [0.1 * np.eye(2, dtype=complex)]
     H, *_ = assemble_h0(
-        ebs, vs, shift, H_LOC, H_local_Q, Q, block_structure, bath_geometry="star", w=W, eim=EIM, verbose=False
+        ebs,
+        vs,
+        shift,
+        H_LOC,
+        H_local_Q,
+        Q,
+        block_structure,
+        bath_geometry="star",
+        w=W,
+        eim=EIM,
+        verbose=False,
     )
     H0, *_ = assemble_h0(
         ebs,

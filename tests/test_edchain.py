@@ -78,11 +78,19 @@ def test_build_imp_bath_blocks():
     H[0, 4] = H[4, 0] = 0.1
     H[1, 5] = H[5, 1] = 0.1
 
-    impurity_indices, occupied_indices, unoccupied_indices = edchain.build_imp_bath_blocks(H, n_orb=2)
+    impurity_indices, occupied_indices, unoccupied_indices = (
+        edchain.build_imp_bath_blocks(H, n_orb=2)
+    )
 
     assert impurity_indices == [0, 1]
-    assert occupied_indices == [4, 5]  # bath orbitals with negative on-site energy (-1, -2)
-    assert unoccupied_indices == [2, 3]  # bath orbitals with positive on-site energy (3, 4)
+    assert occupied_indices == [
+        4,
+        5,
+    ]  # bath orbitals with negative on-site energy (-1, -2)
+    assert unoccupied_indices == [
+        2,
+        3,
+    ]  # bath orbitals with positive on-site energy (3, 4)
 
 
 def test_linked_double_chain():
@@ -90,7 +98,9 @@ def test_linked_double_chain():
     H_imp = np.array([[0.0]]) + 0j
     vs = np.random.rand(4, 1) + 0j
     ebs = np.array([-2.0, -1.0, 1.0, 2.0])
-    v, hb = edchain.linked_double_chain(H_imp, vs, ebs, verbose=False, extremely_verbose=False)
+    v, hb = edchain.linked_double_chain(
+        H_imp, vs, ebs, verbose=False, extremely_verbose=False
+    )
     assert v.shape[1] == 1
     assert hb.shape == (4, 4)
 
@@ -100,7 +110,9 @@ def test_double_chains():
     H_imp = np.array([[0.0]]) + 0j
     vs = np.random.rand(4, 1) + 0j
     ebs = np.array([-2.0, -1.0, 1.0, 2.0])
-    v, hb = edchain.double_chains(H_imp, vs, ebs, verbose=False, extremely_verbose=False)
+    v, hb = edchain.double_chains(
+        H_imp, vs, ebs, verbose=False, extremely_verbose=False
+    )
     assert v.shape[1] == 1
     assert hb.shape == (4, 4)
 
@@ -173,7 +185,13 @@ def test_build_H_bath_v():
 
     for geom in ["chain", "single_chain", "haver", "star"]:
         H_baths, vs = edchain.build_H_bath_v(
-            H_dft, ebs_star, vs_star, geom, block_structure, verbose=True, extra_verbose=False
+            H_dft,
+            ebs_star,
+            vs_star,
+            geom,
+            block_structure,
+            verbose=True,
+            extra_verbose=False,
         )
         assert len(H_baths) == 1
         assert len(vs) == 1
@@ -185,7 +203,13 @@ def test_build_H_bath_v():
     vs_short = [np.random.rand(1, 1, 1)]
     for geom in ["chain", "single_chain", "haver"]:
         H_baths, vs = edchain.build_H_bath_v(
-            H_dft, ebs_short, vs_short, geom, block_structure, verbose=False, extra_verbose=False
+            H_dft,
+            ebs_short,
+            vs_short,
+            geom,
+            block_structure,
+            verbose=False,
+            extra_verbose=False,
         )
         assert len(H_baths) == 1
         assert len(vs) == 1
@@ -204,7 +228,9 @@ def test_build_full_bath():
         inequivalent_blocks=[0, 2],  # 0 and 2 are the templates
     )
 
-    H_bath_full, vs_full = edchain.build_full_bath(H_bath_inequiv, v_inequiv, block_structure)
+    H_bath_full, vs_full = edchain.build_full_bath(
+        H_bath_inequiv, v_inequiv, block_structure
+    )
 
     # 5 orbitals * 2 bath states per orbital = 10 total bath states
     assert H_bath_full.shape == (10, 10)

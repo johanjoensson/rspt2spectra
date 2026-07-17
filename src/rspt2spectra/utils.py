@@ -18,7 +18,9 @@ def rotate_matrix(M, T):
     M' : NDArray - The rotated matrix
     """
     if isinstance(T, dict):
-        from scipy.linalg import block_diag  # noqa: PLC0415 - avoid scipy cost for the common path
+        from scipy.linalg import (
+            block_diag,
+        )  # noqa: PLC0415 - avoid scipy cost for the common path
 
         sorted_keys = sorted(T.keys())
         T_matrix = block_diag(*(T[k] for k in sorted_keys))
@@ -26,7 +28,9 @@ def rotate_matrix(M, T):
     return np.conj(T.T) @ M @ T
 
 
-def _float_field_width(values: np.ndarray, n_prec: int, force_sign: bool = False) -> int:
+def _float_field_width(
+    values: np.ndarray, n_prec: int, force_sign: bool = False
+) -> int:
     """Field width for printing ``values`` with ``n_prec`` decimals, columns aligned.
 
     The width reserves room for the integer digits of the largest-magnitude entry, the
@@ -76,7 +80,10 @@ def vector_to_string(
         return " ".join(f"{np.real(el):>{real_width}.{n_prec}f}" for el in v)
     if imag_width is None:
         imag_width = _float_field_width(v.imag, n_prec, force_sign=True)
-    return " ".join(f"{np.real(el):>{real_width}.{n_prec}f} {np.imag(el):>+{imag_width}.{n_prec}f}j" for el in v)
+    return " ".join(
+        f"{np.real(el):>{real_width}.{n_prec}f} {np.imag(el):>+{imag_width}.{n_prec}f}j"
+        for el in v
+    )
 
 
 def matrix_to_string(m: np.ndarray, n_prec: int = 15, offset: int = 0) -> str:
@@ -101,14 +108,22 @@ def matrix_to_string(m: np.ndarray, n_prec: int = 15, offset: int = 0) -> str:
     """
     realvalue = not np.any(np.abs(m.imag) > float(f"1e-{n_prec}"))
     real_width = _float_field_width(m.real, n_prec)
-    imag_width = None if realvalue else _float_field_width(m.imag, n_prec, force_sign=True)
+    imag_width = (
+        None if realvalue else _float_field_width(m.imag, n_prec, force_sign=True)
+    )
     pad = " " * offset
     return "\n".join(
-        pad + vector_to_string(row, realvalue, n_prec, real_width=real_width, imag_width=imag_width) for row in m
+        pad
+        + vector_to_string(
+            row, realvalue, n_prec, real_width=real_width, imag_width=imag_width
+        )
+        for row in m
     )
 
 
-def matrix_print(m: np.ndarray, label: Optional[str] = None, n_prec: int = 15, **kwargs) -> None:
+def matrix_print(
+    m: np.ndarray, label: Optional[str] = None, n_prec: int = 15, **kwargs
+) -> None:
     """Pretty print the matrix m.
 
     Parameters
@@ -127,10 +142,19 @@ def matrix_print(m: np.ndarray, label: Optional[str] = None, n_prec: int = 15, *
     if len(m.shape) == 1:
         print(vector_to_string(m, n_prec=n_prec), **kwargs)
         return
-    print(matrix_to_string(m, n_prec, 4 + (len(label) - len(label.lstrip())) if label is not None else 0), **kwargs)
+    print(
+        matrix_to_string(
+            m,
+            n_prec,
+            4 + (len(label) - len(label.lstrip())) if label is not None else 0,
+        ),
+        **kwargs,
+    )
 
 
-def matrix_connectivity_print(m: np.ndarray, block_size: int = 1, label: Optional[str] = None) -> None:
+def matrix_connectivity_print(
+    m: np.ndarray, block_size: int = 1, label: Optional[str] = None
+) -> None:
     """Print the connections in a matrix.
 
     "O" signifies a (block-) diagonal term, "X" represents a (block-) offdiagonal term.
@@ -176,14 +200,21 @@ def matrix_connectivity_print(m: np.ndarray, block_size: int = 1, label: Optiona
     print(
         ("\n" + " " * offset).join(
             [
-                " ".join([get_char(el, i // block_size, j // block_size) for j, el in enumerate(row)])
+                " ".join(
+                    [
+                        get_char(el, i // block_size, j // block_size)
+                        for j, el in enumerate(row)
+                    ]
+                )
                 for i, row in enumerate(m)
             ]
         )
     )
 
 
-def partition(l: Iterable[Any], predicate: Callable[[Any], bool] = bool) -> Tuple[List[Any], List[Any]]:
+def partition(
+    l: Iterable[Any], predicate: Callable[[Any], bool] = bool
+) -> Tuple[List[Any], List[Any]]:
     """Partition elements of an iterable into two lists based on a predicate.
 
     Parameters
@@ -259,7 +290,9 @@ def block_diagonalize_hyb(hyb, tol=1e-6):
     Q_full : ndarray of shape (n_orb, n_orb)
         The transformation matrix.
     """
-    from rspt2spectra.block_structure import get_blocks  # noqa: PLC0415 - avoid an import cycle
+    from rspt2spectra.block_structure import (
+        get_blocks,
+    )  # noqa: PLC0415 - avoid an import cycle
 
     hyb_herm = 1 / 2 * (hyb + np.conj(np.transpose(hyb, (0, 2, 1))))
     blocks = get_blocks(hyb_herm, tol=tol)
@@ -273,13 +306,17 @@ def block_diagonalize_hyb(hyb, tol=1e-6):
             continue
         block_hyb = hyb_herm[block_idx]
         upper_triangular_hyb = np.triu(hyb_herm, k=1)
-        ind_max_offdiag = np.unravel_index(np.argmax(np.abs(upper_triangular_hyb)), upper_triangular_hyb.shape)
+        ind_max_offdiag = np.unravel_index(
+            np.argmax(np.abs(upper_triangular_hyb)), upper_triangular_hyb.shape
+        )
         eigvals, Q = np.linalg.eigh(block_hyb[ind_max_offdiag[0], :, :])
         sorted_indices = np.argsort(eigvals)
         Q = Q[:, sorted_indices]
         for column in range(Q.shape[1]):
             j = np.argmax(np.abs(Q[:, column]))
-            Q_full[block, treated_orbitals + column] = Q[:, column] * abs(Q[j, column]) / Q[j, column]
+            Q_full[block, treated_orbitals + column] = (
+                Q[:, column] * abs(Q[j, column]) / Q[j, column]
+            )
         treated_orbitals += Q.shape[1]
     phase_hyb = np.conj(Q_full.T)[np.newaxis, :, :] @ hyb @ Q_full[np.newaxis, :, :]
     return phase_hyb, Q_full

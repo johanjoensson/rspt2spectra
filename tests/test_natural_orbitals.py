@@ -8,7 +8,9 @@ def test_get_huge_star_linear():
     w = np.linspace(-10, 10, 1000)
     hyb = 1j * np.ones((1000, 1, 1), dtype=complex) / (w.reshape(1000, 1, 1) + 1j * 0.1)
 
-    E_huge, V_huge = natural_orbitals.get_huge_star(w, hyb, n_bins=100, grid_type="linear")
+    E_huge, V_huge = natural_orbitals.get_huge_star(
+        w, hyb, n_bins=100, grid_type="linear"
+    )
 
     assert E_huge.shape[0] <= 100
     assert E_huge.shape[0] > 0
@@ -22,7 +24,9 @@ def test_get_huge_star_logarithmic():
     w = np.linspace(-10, 10, 1000)
     hyb = 1j * np.ones((1000, 1, 1), dtype=complex) / (w.reshape(1000, 1, 1) + 1j * 0.1)
 
-    E_huge, V_huge = natural_orbitals.get_huge_star(w, hyb, n_bins=100, grid_type="logarithmic")
+    E_huge, V_huge = natural_orbitals.get_huge_star(
+        w, hyb, n_bins=100, grid_type="logarithmic"
+    )
 
     assert E_huge.shape[0] <= 100
     assert E_huge.shape[0] > 0
@@ -49,7 +53,9 @@ def test_truncate_natural_orbitals():
     hyb = 1j * np.ones((1000, 1, 1), dtype=complex) / (w.reshape(1000, 1, 1) + 1j * 0.1)
     H_imp = np.array([[0.0]])
 
-    e_opt, v_opt = natural_orbitals.truncate_natural_orbitals(H_imp, w, hyb, n_keep=4, n_bins=100, grid_type="linear")
+    e_opt, v_opt = natural_orbitals.truncate_natural_orbitals(
+        H_imp, w, hyb, n_keep=4, n_bins=100, grid_type="linear"
+    )
 
     assert v_opt.shape == (4, 1, 1)
     assert e_opt.shape == (4,)
@@ -76,7 +82,13 @@ def test_fit_hyb_natural_orbitals():
     )
 
     e_baths, h_baths = natural_orbitals.fit_hyb_natural_orbitals(
-        w, hyb, H_imp_blocks, bath_states_per_orbital, block_structure, n_bins=50, grid_type="linear"
+        w,
+        hyb,
+        H_imp_blocks,
+        bath_states_per_orbital,
+        block_structure,
+        n_bins=50,
+        grid_type="linear",
     )
 
     assert len(h_baths) == 2
