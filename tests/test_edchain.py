@@ -183,7 +183,14 @@ def test_build_H_bath_v():
         inequivalent_blocks=[0],
     )
 
-    for geom in ["chain", "single_chain", "haver", "star"]:
+    for geom in [
+        "chain",
+        "single_chain",
+        "linked_chain",
+        "peeled_linked_chain",
+        "haver",
+        "star",
+    ]:
         H_baths, vs = edchain.build_H_bath_v(
             H_dft,
             ebs_star,
@@ -240,3 +247,64 @@ def test_build_full_bath():
     assert np.allclose(H_bath_full[0:2, 0:2], H_bath_inequiv[0])
     assert np.allclose(H_bath_full[2:4, 2:4], H_bath_inequiv[0])
     assert np.allclose(H_bath_full[4:6, 4:6], H_bath_inequiv[1])
+
+
+def test_peel_resonant_modes():
+    es = np.array([-2.0, -1.0, 1.0, 2.0])
+    vs = np.array([[1.0], [0.1], [0.1], [1.0]]) + 0j
+    # Weights: 1.0, 0.01, 0.01, 1.0 -> total 2.02.
+    mask = edchain.peel_resonant_modes(vs, es, peel_weight=0.05)
+    assert mask.tolist() == [True, False, False, True]
+    # A threshold above every relative weight peels nothing.
+    assert not edchain.peel_resonant_modes(vs, es, peel_weight=0.6).any()
+    # Zero total weight peels nothing (no division blow-up).
+    assert not edchain.peel_resonant_modes(
+        np.zeros_like(vs), es, peel_weight=0.05
+    ).any()
+
+
+def test_peeled_linked_chain():
+    np.random.seed(42)
+    H_imp = np.array([[0.0]]) + 0j
+    # Two dominant "resonance" modes on top of a weak smooth background.
+    es = np.linspace(-2.0, 2.0, 12)
+    vs = np.full((12, 1), 0.05) + 0j
+    vs[3, 0] = 1.0
+    vs[8, 0] = 0.8
+    v, hb = edchain.peeled_linked_chain(
+        H_imp, vs, es, peel_weight=0.05, verbose=False, extremely_verbose=False
+    )
+    assert v.shape == (12, 1)
+    assert hb.shape == (12, 12)
+    # The peeled modes sit at the end as decoupled diagonal spokes with their
+    # original energies and couplings.
+    assert np.allclose(np.diag(hb)[-2:], [es[3], es[8]])
+    assert np.allclose(hb[-2:, :-2], 0.0)
+    assert np.allclose(v[-2:, 0], [1.0, 0.8])
+    # The transformation is unitary on the bath: the full Hamiltonian must have
+    # the same spectrum and the same impurity Green's function as the star form.
+    H_full = np.block([[H_imp, np.conj(v.T)], [v, hb]])
+    H_star = edchain.build_star_geometry_hamiltonian(H_imp, vs, es)
+    assert np.allclose(np.linalg.eigvalsh(H_full), np.linalg.eigvalsh(H_star))
+    z = np.linspace(-3.0, 3.0, 61) + 0.01j
+    # In star form the hybridization is an explicit sum over the fitted poles.
+    g_star = 1.0 / (
+        z
+        - H_imp[0, 0]
+        - np.sum(np.abs(vs[:, 0]) ** 2 / (z[:, None] - es[None, :]), axis=1)
+    )
+    g_full = np.array([np.linalg.inv(zi * np.eye(13) - H_full)[0, 0] for zi in z])
+    assert np.allclose(g_full, g_star, atol=1e-10)
+
+
+def test_peeled_linked_chain_small_remainder_falls_back_to_star():
+    H_imp = np.array([[0.0]]) + 0j
+    es = np.array([-1.0, -0.5, 0.5, 1.0])
+    vs = np.array([[1.0], [0.9], [0.8], [0.02]]) + 0j
+    # Three of four modes peel; the 1-mode remainder cannot form a linked chain,
+    # so everything stays in star form.
+    v, hb = edchain.peeled_linked_chain(
+        H_imp, vs, es, peel_weight=0.05, verbose=False, extremely_verbose=False
+    )
+    assert np.allclose(hb, np.diag(es))
+    assert np.allclose(v, vs)

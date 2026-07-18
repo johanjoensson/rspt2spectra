@@ -20,7 +20,7 @@ def rotate_matrix(M, T):
     if isinstance(T, dict):
         from scipy.linalg import (
             block_diag,
-        )  # noqa: PLC0415 - avoid scipy cost for the common path
+        )
 
         sorted_keys = sorted(T.keys())
         T_matrix = block_diag(*(T[k] for k in sorted_keys))
@@ -292,7 +292,7 @@ def block_diagonalize_hyb(hyb, tol=1e-6):
     """
     from rspt2spectra.block_structure import (
         get_blocks,
-    )  # noqa: PLC0415 - avoid an import cycle
+    )
 
     hyb_herm = 1 / 2 * (hyb + np.conj(np.transpose(hyb, (0, 2, 1))))
     blocks = get_blocks(hyb_herm, tol=tol)

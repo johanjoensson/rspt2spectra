@@ -22,19 +22,13 @@ from rspt2spectra.block_structure import (
     BlockStructure,
     build_block_structure,
     build_matrix,
-    get_blocks,
 )
 from rspt2spectra.dat import extract_dat
-from rspt2spectra.edchain import (
-    build_full_bath,
-    build_H_bath_v,
-    build_imp_bath_blocks,
-)
-from rspt2spectra.h2imp import matrixToIOp, write_to_file
 from rspt2spectra.h0 import assemble_h0
+from rspt2spectra.h2imp import matrixToIOp, write_to_file
 from rspt2spectra.hyb_fit import fit_hyb
 from rspt2spectra.natural_orbitals import fit_hyb_natural_orbitals
-from rspt2spectra.readfile import parse_matrices, parse_cluster_basis
+from rspt2spectra.readfile import parse_cluster_basis, parse_matrices
 from rspt2spectra.utils import block_diagonalize_hyb, matrix_print
 from rspt2spectra.weight_functions import weight_functions
 
@@ -214,6 +208,7 @@ def run(
     fit_center: float,
     natural_orbitals: bool,
     grid_type: str,
+    peel_weight: float = 0.05,
     *kwargs,
 ) -> None:
     """Execute the full non-interacting Hamiltonian (h0) building workflow.
@@ -300,9 +295,9 @@ def run(
                         f"Dynamic rotation for l={l_val} not supported."
                     )
 
-                if N == subset_size * 2:
+                if subset_size * 2 == N:
                     spinpol = True
-                elif N == subset_size:
+                elif subset_size == N:
                     spinpol = False
                 else:
                     raise RuntimeError(
@@ -425,67 +420,34 @@ def run(
         eim=eim,
         label=cluster,
         verbose=verbose,
+        peel_weight=peel_weight,
     )
 
     h_op = matrixToIOp(H)
     write_to_file(h_op, f"{cluster}_h0_op", save_as_dict=True)
 
-    if plot:
-        if comm is not None and comm.rank != 0:
-            pass  # Only plot on root rank
-        else:
-            try:
-                import matplotlib.pyplot as plt
-                from rspt2spectra.offdiagonal import get_hyb_2
+    if plot and rank == 0:
+        try:
+            # matplotlib is an optional dependency; import it only when plotting.
+            import matplotlib.pyplot as plt  # noqa: PLC0415
 
-                z = w + 1j * eim
-                for b, (ebss, vss, css) in enumerate(zip(ebs_star, vs_star, cs_star)):
-                    if len(ebss) == 0:
-                        continue
+            from rspt2spectra.plot import plot_hyb_fit  # noqa: PLC0415
 
-                    fit_hyb_block = get_hyb_2(
-                        z, ebss[np.newaxis, :], vss[np.newaxis, ...], css
-                    )[0]
-                    block_idx = block_structure.blocks[
-                        block_structure.inequivalent_blocks[b]
-                    ]
-                    orig_hyb_block = phase_hyb[
-                        np.ix_(np.arange(len(w)), block_idx, block_idx)
-                    ]
-
-                    n_orb = fit_hyb_block.shape[-1]
-                    fig, axes = plt.subplots(n_orb, 2, figsize=(10, 3 * n_orb))
-                    if n_orb == 1:
-                        axes = np.array([axes])
-
-                    fig.suptitle(f"Hybridization Fit - Block {b+1}")
-
-                    for i in range(n_orb):
-                        axes[i, 0].plot(
-                            w, orig_hyb_block[:, i, i].imag, label="Original", color="k"
-                        )
-                        axes[i, 0].plot(
-                            w, fit_hyb_block[:, i, i].imag, "--", label="Fit", color="r"
-                        )
-                        axes[i, 0].set_ylabel(f"Im[V^2/z] (orb {i})")
-                        axes[i, 0].set_xlabel("w (eV)")
-                        axes[i, 0].legend()
-
-                        axes[i, 1].plot(
-                            w, orig_hyb_block[:, i, i].real, label="Original", color="k"
-                        )
-                        axes[i, 1].plot(
-                            w, fit_hyb_block[:, i, i].real, "--", label="Fit", color="r"
-                        )
-                        axes[i, 1].set_ylabel(f"Re[V^2/z] (orb {i})")
-                        axes[i, 1].set_xlabel("w (eV)")
-                        axes[i, 1].legend()
-
-                    plt.tight_layout()
-                plt.show()
-
-            except ImportError:
-                print("Warning: matplotlib is not installed. Plotting skipped.")
+            plot_hyb_fit(
+                w,
+                eim,
+                phase_hyb,
+                ebs_star,
+                vs_star,
+                cs_star,
+                H_local_Q,
+                block_structure,
+                bath_geometry,
+                peel_weight=peel_weight,
+            )
+            plt.show()
+        except ImportError:
+            print("Warning: matplotlib is not installed. Plotting skipped.")
 
 
 def main() -> None:
@@ -500,6 +462,16 @@ def main() -> None:
     parser.add_argument("cluster", type=str)
     parser.add_argument("bath_states_per_orbital", type=int)
     parser.add_argument("-bg", "--bath-geometry", type=str, default="Star")
+    parser.add_argument(
+        "--peel-weight",
+        type=float,
+        default=0.05,
+        help=(
+            "For --bath-geometry peeled_linked_chain: keep star modes carrying at "
+            "least this fraction of the block's total hybridization weight as "
+            "direct impurity couplings; only the remainder is chained."
+        ),
+    )
     parser.add_argument("--eim", type=float, default=0.010)
     parser.add_argument("--gamma", type=float, default=0.100)
     parser.add_argument("--fit-unocc", action="store_true", dest="fit_unocc")

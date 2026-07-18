@@ -63,7 +63,14 @@ def _print_bath_geometry(name, H_baths, vs, block_structure):
 
 
 def build_H_bath_v(
-    H_dft, ebs_star, vs_star, bath_geometry, block_structure, verbose, extra_verbose
+    H_dft,
+    ebs_star,
+    vs_star,
+    bath_geometry,
+    block_structure,
+    verbose,
+    extra_verbose,
+    peel_weight=0.05,
 ):
     """Transform bath parameters from star to chain or Haverkort linked chain geometry.
 
@@ -76,13 +83,19 @@ def build_H_bath_v(
     vs_star : list of np.ndarray
         Hopping parameters for each block in star geometry.
     bath_geometry : str
-        The geometry of the bath: "chain", "linked_chain" (Haverkort linked chain geometry), or others (fallback to star).
+        The geometry of the bath: "chain", "linked_chain" (Haverkort linked
+        chain geometry), "peeled_linked_chain" (linked chain with the
+        strongest-coupled star modes kept as direct spokes, see
+        :func:`peeled_linked_chain`), or others (fallback to star).
     block_structure : BlockStructure
         The block structure.
     verbose : bool
         Whether to print verbose output.
     extra_verbose : bool
         Whether to print extremely verbose output.
+    peel_weight : float, default 0.05
+        Weight-fraction threshold for "peeled_linked_chain" (see
+        :func:`peel_resonant_modes`); ignored by the other geometries.
 
     Returns
     -------
@@ -140,6 +153,30 @@ def build_H_bath_v(
             vs.append(vh)
         if verbose:
             _print_bath_geometry("Linked chain", H_baths, vs, block_structure)
+    elif bath_geometry == "peeled_linked_chain":
+        for i_b, (v, ebs) in enumerate(zip(vs_star, ebs_star)):
+            block_ix = block_structure.inequivalent_blocks[i_b]
+            block_orbs = block_structure.blocks[block_ix]
+            b_ix = np.ix_(block_orbs, block_orbs)
+            # Same minimum as "linked_chain": fewer than 3 bath states might as
+            # well stay in star form.
+            if len(ebs) <= 2:
+                H_baths.append(np.diag(np.repeat(ebs, len(block_orbs))))
+                vs.append(v.reshape(v.shape[0] * len(block_orbs), len(block_orbs)))
+                continue
+
+            vp, Hp = peeled_linked_chain(
+                H_dft[b_ix],
+                v,
+                ebs,
+                peel_weight=peel_weight,
+                verbose=verbose,
+                extremely_verbose=extra_verbose,
+            )
+            H_baths.append(Hp)
+            vs.append(vp)
+        if verbose:
+            _print_bath_geometry("Peeled linked chain", H_baths, vs, block_structure)
     # Star geometry is the fallback
     else:
         for v, ebs in zip(vs_star, ebs_star):
@@ -839,3 +876,125 @@ def linked_double_chain(H_imp, vs, es, verbose=True, extremely_verbose=False):
         )
 
     return H_linked_chains[n_imp:, :n_imp], H_linked_chains[n_imp:, n_imp:]
+
+
+def peel_resonant_modes(vs, es, peel_weight):
+    """Select the star modes that carry a dominant share of the hybridization weight.
+
+    A sharp peak in the hybridization function is a small group of star modes with
+    large individual weights ``|v_k|^2``. Keeping those modes as direct impurity
+    couplings ("spokes") instead of folding them into a chain keeps the sharp
+    spectral features localized on a few bath states next to the impurity, while
+    the chain only has to represent the smooth background (which a short chain
+    resolves well).
+
+    Parameters
+    ----------
+    vs : np.ndarray
+        Hopping parameters, shape ``(N, ...)`` with the bath-energy axis first.
+    es : np.ndarray
+        Bath energies, shape ``(N,)``.
+    peel_weight : float
+        Peel mode ``k`` when ``|v_k|^2 >= peel_weight * sum_j |v_j|^2``.
+
+    Returns
+    -------
+    mask : np.ndarray of bool
+        True for modes to keep as direct spokes.
+    """
+    w2 = np.sum(np.abs(vs.reshape(es.shape[0], -1)) ** 2, axis=1)
+    total = np.sum(w2)
+    if total == 0:
+        return np.zeros(es.shape[0], dtype=bool)
+    return w2 >= peel_weight * total
+
+
+def peeled_linked_chain(
+    H_imp, vs, es, peel_weight=0.05, verbose=True, extremely_verbose=False
+):
+    """Transform the bath from star to a linked double chain with peeled resonances.
+
+    The star modes selected by :func:`peel_resonant_modes` stay in star form
+    (direct impurity couplings); only the remaining, spectrally smooth modes are
+    tridiagonalized with :func:`linked_double_chain`. The Lanczos chain orders
+    bath states by Krylov moment, not by energy, so a sharp hybridization peak
+    otherwise delocalizes deep into the chain (the deep chain acts as the delay
+    line that gives a narrow resonance its width). Peeling puts those peaks on
+    near-impurity spokes, which lets a many-body solver restrict deep-chain
+    occupations aggressively without distorting the peaks.
+
+    Parameters
+    ----------
+    H_imp : np.ndarray or float or complex
+        Impurity Hamiltonian block.
+    vs : np.ndarray
+        Hopping parameters.
+    es : np.ndarray
+        Bath energies.
+    peel_weight : float, default 0.05
+        Weight-fraction threshold passed to :func:`peel_resonant_modes`.
+    verbose : bool, default True
+        Whether to print verbose output.
+    extremely_verbose : bool, default False
+        Whether to print extremely verbose output.
+
+    Returns
+    -------
+    v : np.ndarray
+        Hopping terms from the impurity to the bath (chain first, spokes last).
+    H_bath : np.ndarray
+        The bath Hamiltonian: the linked double chain block-diagonally joined
+        with the diagonal peeled-spoke block.
+    """
+    if isinstance(H_imp, int):
+        H_imp = np.array([[H_imp]], dtype=float)
+    elif isinstance(H_imp, (float, complex)):
+        H_imp = np.array([[H_imp]])
+    if len(vs.shape) == 1:
+        vs = vs.reshape((vs.shape[0], 1))
+
+    n_imp = H_imp.shape[0]
+    if es.shape[0] == 0:
+        return np.empty((0, n_imp), dtype=H_imp.dtype), np.empty(
+            (0, 0), dtype=H_imp.dtype
+        )
+
+    mask = peel_resonant_modes(vs, es, peel_weight)
+    # The linked double chain needs at least 3 bath states to be meaningful;
+    # a smaller remainder stays in star form alongside the spokes.
+    if np.count_nonzero(~mask) <= 2:
+        mask[:] = True
+
+    v_spokes = vs[mask].reshape(-1, vs.shape[-1])
+    multiplicity = v_spokes.shape[0] // max(np.count_nonzero(mask), 1)
+    H_spokes = np.diag(np.repeat(es[mask], multiplicity))
+    if verbose:
+        w2 = np.sum(np.abs(vs.reshape(es.shape[0], -1)) ** 2, axis=1)
+        total = np.sum(w2)
+        print(
+            f"Peeled {np.count_nonzero(mask)} of {es.shape[0]} bath modes as direct "
+            f"spokes (weight threshold {peel_weight:.3g} of the block total):"
+        )
+        for e_k, w_k in zip(es[mask], w2[mask]):
+            print(f"  e = {e_k: 9.6f}, |v|^2 = {w_k:.6f} ({100 * w_k / total:.1f}%)")
+
+    if mask.all():
+        return v_spokes, H_spokes
+
+    v_chain, H_chain = linked_double_chain(
+        H_imp,
+        vs[~mask],
+        es[~mask],
+        verbose=verbose,
+        extremely_verbose=extremely_verbose,
+    )
+    v = np.vstack((v_chain, v_spokes))
+    H_bath = sp.linalg.block_diag(H_chain, H_spokes)
+    if verbose:
+        H_full = np.block([[H_imp, np.conj(v.T)], [v, H_bath.astype(H_imp.dtype)]])
+        matrix_connectivity_print(
+            H_full,
+            n_imp,
+            "Block structure of the peeled linked double-chain Hamiltonian:",
+        )
+    return v, H_bath

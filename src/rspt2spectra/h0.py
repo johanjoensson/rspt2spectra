@@ -152,6 +152,7 @@ def assemble_h0(
     verbose=True,
     extra_verbose=False,
     comm=None,
+    peel_weight=0.05,
 ):
     """Assemble the full one-particle Hamiltonian from a star bath fit.
 
@@ -189,7 +190,7 @@ def assemble_h0(
     bath_geometry : str, default "star"
         One of the geometries supported by
         :func:`rspt2spectra.edchain.build_H_bath_v` (e.g. "star", "chain",
-        "haver").
+        "linked_chain", "peeled_linked_chain").
     w : np.ndarray, optional
         Real-frequency mesh; used (subsampled) for the star-vs-chain impurity
         Green's function consistency check. Required for non-star geometries.
@@ -201,6 +202,10 @@ def assemble_h0(
         Diagnostic printing.
     comm : MPI communicator, optional
         If given, the bath Hamiltonian and couplings are broadcast from rank 0.
+    peel_weight : float, default 0.05
+        Weight-fraction threshold for ``bath_geometry == "peeled_linked_chain"``
+        (see :func:`rspt2spectra.edchain.peel_resonant_modes`); ignored by the
+        other geometries.
 
     Returns
     -------
@@ -242,6 +247,7 @@ def assemble_h0(
         block_structure,
         verbose,
         extra_verbose,
+        peel_weight=peel_weight,
     )
     H_bath, v = build_full_bath(H_baths, vs, block_structure)
     if comm is not None:
