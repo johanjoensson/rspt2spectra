@@ -281,12 +281,8 @@ def assemble_h0(
             verbose,
             extra_verbose,
         )
-        H_bath_star, v_star = build_full_bath(
-            H_baths_star, vs_star_geom, block_structure
-        )
-        H_star = np.zeros(
-            (n_orb + H_bath_star.shape[0], n_orb + H_bath_star.shape[0]), dtype=complex
-        )
+        H_bath_star, v_star = build_full_bath(H_baths_star, vs_star_geom, block_structure)
+        H_star = np.zeros((n_orb + H_bath_star.shape[0], n_orb + H_bath_star.shape[0]), dtype=complex)
         H_star[:n_orb, :n_orb] = H_imp + rotate_matrix(H_shift, np.conj(Q.T))
         H_star[n_orb:, n_orb:] = H_bath_star
         H_star[n_orb:, :n_orb] = v_star @ np.conj(Q.T)
@@ -305,13 +301,10 @@ def assemble_h0(
         # physics; compare the impurity-projected Green's functions.
         if w is not None:
             z_check = w[::10] + 1j * eim
-            G0 = np.linalg.inv(
-                z_check[:, None, None] * np.identity(H.shape[0])[None] - H[None]
-            )[:, :n_orb, :n_orb]
-            G0_star = np.linalg.inv(
-                z_check[:, None, None] * np.identity(H_star.shape[0])[None]
-                - H_star[None]
-            )[:, :n_orb, :n_orb]
+            G0 = np.linalg.inv(z_check[:, None, None] * np.identity(H.shape[0])[None] - H[None])[:, :n_orb, :n_orb]
+            G0_star = np.linalg.inv(z_check[:, None, None] * np.identity(H_star.shape[0])[None] - H_star[None])[
+                :, :n_orb, :n_orb
+            ]
             if not np.allclose(G0, G0_star, atol=1e-8):
                 warning = (
                     "WARNING: The bath geometry transformation changed the impurity "
@@ -335,12 +328,8 @@ def assemble_h0(
         with open(f"Ham-{label}.inp", "w") as f:
             for i in range(H_star.shape[0]):
                 for j in range(H_star.shape[1]):
-                    f.write(
-                        f" 0 0 0 {i + 1} {j + 1} {np.real(H_star[i, j])} {np.imag(H_star[i, j])}\n"
-                    )
-    impurity_indices, valence_bath_indices, conduction_bath_indices = (
-        build_imp_bath_blocks(H_star, n_orb)
-    )
+                    f.write(f" 0 0 0 {i + 1} {j + 1} {np.real(H_star[i, j])} {np.imag(H_star[i, j])}\n")
+    impurity_indices, valence_bath_indices, conduction_bath_indices = build_imp_bath_blocks(H_star, n_orb)
 
     return (
         H,

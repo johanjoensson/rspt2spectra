@@ -16,9 +16,7 @@ from rspt2spectra.block_structure import BlockStructure
 from rspt2spectra.utils import matrix_connectivity_print, matrix_print
 
 
-def build_imp_bath_blocks(
-    H: np.ndarray, n_orb: int
-) -> tuple[list[int], list[int], list[int]]:
+def build_imp_bath_blocks(H: np.ndarray, n_orb: int) -> tuple[list[int], list[int], list[int]]:
     """Build impurity and bath index lists based on the structure of Hamiltonian H.
 
     Parameters
@@ -39,9 +37,7 @@ def build_imp_bath_blocks(
     """
     impurity_indices = set(range(n_orb))
     occupied_indices = {orb for orb in range(n_orb, H.shape[0]) if H[orb, orb] < 0}
-    unoccupied_indices = {
-        orb for orb in range(n_orb, H.shape[0]) if orb not in occupied_indices
-    }
+    unoccupied_indices = {orb for orb in range(n_orb, H.shape[0]) if orb not in occupied_indices}
     return (
         sorted(impurity_indices),
         sorted(occupied_indices),
@@ -146,9 +142,7 @@ def build_H_bath_v(
                 vs.append(v.reshape(v.shape[0] * len(block_orbs), len(block_orbs)))
                 continue
 
-            vh, Hh = linked_double_chain(
-                H_dft[b_ix], v, ebs, verbose=verbose, extremely_verbose=extra_verbose
-            )
+            vh, Hh = linked_double_chain(H_dft[b_ix], v, ebs, verbose=verbose, extremely_verbose=extra_verbose)
             H_baths.append(Hh)
             vs.append(vh)
         if verbose:
@@ -369,18 +363,14 @@ def single_chain(
         matrix_print(H_star, "Star-geometry Hamiltonian (single chain):")
         print("", flush=True)
 
-    H_chain = transform_to_lanczos_tridagonal_matrix(
-        H_star, n_imp, verbose=extremely_verbose
-    )
+    H_chain = transform_to_lanczos_tridagonal_matrix(H_star, n_imp, verbose=extremely_verbose)
 
     V = H_chain[n_imp:, :n_imp]
     Hb = H_chain[n_imp:, n_imp:]
 
     if verbose:
         matrix_print(H_chain, "Single-chain Hamiltonian:")
-        matrix_connectivity_print(
-            H_chain, n_imp, "Block structure of the single-chain Hamiltonian:"
-        )
+        matrix_connectivity_print(H_chain, n_imp, "Block structure of the single-chain Hamiltonian:")
     return V, Hb
 
 
@@ -426,30 +416,22 @@ def double_chains(
     n_imp = H_imp.shape[1]
 
     n_occ = sum(ebs < 0)
-    H_occ = build_star_geometry_hamiltonian(
-        H_imp, np.flip(vs[:n_occ], axis=0), np.flip(ebs[:n_occ], axis=0)
-    )
+    H_occ = build_star_geometry_hamiltonian(H_imp, np.flip(vs[:n_occ], axis=0), np.flip(ebs[:n_occ], axis=0))
     if extremely_verbose:
         matrix_print(H_occ, "Star-geometry Hamiltonian (occupied part):")
         print("", flush=True)
-    H_occ = transform_to_lanczos_tridagonal_matrix(
-        H_occ, n_imp, verbose=extremely_verbose
-    )
+    H_occ = transform_to_lanczos_tridagonal_matrix(H_occ, n_imp, verbose=extremely_verbose)
 
     H_unocc = build_star_geometry_hamiltonian(H_imp, vs[n_occ:], ebs[n_occ:])
     if extremely_verbose:
         matrix_print(H_unocc, "Star-geometry Hamiltonian (unoccupied part):")
-    H_unocc = transform_to_lanczos_tridagonal_matrix(
-        H_unocc, n_imp, verbose=extremely_verbose
-    )
+    H_unocc = transform_to_lanczos_tridagonal_matrix(H_unocc, n_imp, verbose=extremely_verbose)
     V = np.vstack((H_occ[n_imp:, :n_imp], H_unocc[n_imp:, :n_imp]))
     Hb = sp.linalg.block_diag(H_occ[n_imp:, n_imp:], H_unocc[n_imp:, n_imp:])
     if verbose:
         H_tmp = np.block([[H_imp, V.T], [V, Hb]])
         matrix_print(H_tmp, "Double-chain Hamiltonian:")
-        matrix_connectivity_print(
-            H_tmp, n_imp, "Block structure of the double-chain Hamiltonian:"
-        )
+        matrix_connectivity_print(H_tmp, n_imp, "Block structure of the double-chain Hamiltonian:")
     return V, Hb
 
 
@@ -492,9 +474,7 @@ def build_star_geometry_hamiltonian(H_imp, vs, es):
         H_star[:n_imp, n_imp:] = np.conj(vs_2d.T)
         H_star[n_imp:, n_imp:] = np.diag(es)
     else:
-        H_star = np.empty(
-            (n_imp + n_bath * n_imp, n_imp + n_bath * n_imp), dtype=H_imp.dtype
-        )
+        H_star = np.empty((n_imp + n_bath * n_imp, n_imp + n_bath * n_imp), dtype=H_imp.dtype)
         H_star[:n_imp, :n_imp] = H_imp
         H_star[n_imp:, :n_imp] = vs.reshape((n_imp * n_bath, n_imp))
         H_star[:n_imp, n_imp:] = np.conj(vs.reshape((n_imp * n_bath, n_imp)).T)
@@ -630,9 +610,7 @@ def transform_to_lanczos_tridagonal_matrix(H, n_imp, verbose=False):
         alphas = np.empty((0, block_size, block_size), dtype=H.dtype)
         betas = np.empty((0, block_size, block_size), dtype=H.dtype)
     else:
-        alphas, betas = _dense_block_lanczos(
-            V0_q, Hb, max_iter=int(np.ceil(Hb.shape[0] / block_size))
-        )
+        alphas, betas = _dense_block_lanczos(V0_q, Hb, max_iter=int(np.ceil(Hb.shape[0] / block_size)))
 
     H_tridiagonal = build_block_tridiagonal_hermitian_matrix(alphas, betas)
 
@@ -681,9 +659,7 @@ def create_decoupled_hamiltonian(H, n_imp):
     # Put the pivot point at the eigenstate with energy closest to 0
     # In order to ensure we always get two decoupled blocks, the pivot will never
     # be placed at the last eigenstate (unless there is only one eigenstate block.)
-    pivot = n_imp * (
-        min(np.argmin(np.abs(eigvals)), max(len(eigvals) - 2 * n_imp, 0)) // n_imp
-    )
+    pivot = n_imp * (min(np.argmin(np.abs(eigvals)), max(len(eigvals) - 2 * n_imp, 0)) // n_imp)
 
     #          [ v_0, . . ., v_pivot-1, v_pivot, ..., v_m-1 ]
     # eigvecs  |                                         |
@@ -765,9 +741,7 @@ def linked_double_chain(H_imp, vs, es, verbose=True, extremely_verbose=False):
     n_imp = H_imp.shape[0]
     n_bath = es.shape[0]
     if n_bath == 0:
-        return np.empty((0, n_imp), dtype=H_imp.dtype), np.empty(
-            (0, 0), dtype=H_imp.dtype
-        )
+        return np.empty((0, n_imp), dtype=H_imp.dtype), np.empty((0, 0), dtype=H_imp.dtype)
     H_star = build_star_geometry_hamiltonian(H_imp, vs, es)
     if extremely_verbose:
         matrix_print(
@@ -784,15 +758,11 @@ def linked_double_chain(H_imp, vs, es, verbose=True, extremely_verbose=False):
             f"{np.arange(imp_index + n_imp, imp_index + 2 * n_imp)}"
         )
         matrix_print(Q_decoupled, "Orbital character of the states:")
-        matrix_print(
-            H_decoupled, "Decoupled occupied/unoccupied Hamiltonian:", flush=True
-        )
+        matrix_print(H_decoupled, "Decoupled occupied/unoccupied Hamiltonian:", flush=True)
     # Undo the mixing of impurity and bath states
     R_couple = np.eye(Q_decoupled.shape[0], dtype=Q_decoupled.dtype)
-    R_couple[imp_index : imp_index + 2 * n_imp, imp_index : imp_index + 2 * n_imp] = (
-        separate_orbital_character(
-            Q_decoupled[:n_imp, imp_index : imp_index + 2 * n_imp]
-        )
+    R_couple[imp_index : imp_index + 2 * n_imp, imp_index : imp_index + 2 * n_imp] = separate_orbital_character(
+        Q_decoupled[:n_imp, imp_index : imp_index + 2 * n_imp]
     )
 
     if extremely_verbose:
@@ -826,17 +796,11 @@ def linked_double_chain(H_imp, vs, es, verbose=True, extremely_verbose=False):
     R_couple_new[
         new_imp_index : new_imp_index + 2 * n_imp,
         new_imp_index : new_imp_index + 2 * n_imp,
-    ] = separate_orbital_character(
-        Q_decoupled[:n_imp, imp_index : imp_index + 2 * n_imp]
-    )
+    ] = separate_orbital_character(Q_decoupled[:n_imp, imp_index : imp_index + 2 * n_imp])
 
-    H_linked_chains = np.linalg.multi_dot(
-        (np.conj(R_couple_new.T), H_tridiagonal_decoupled, R_couple_new)
-    )
+    H_linked_chains = np.linalg.multi_dot((np.conj(R_couple_new.T), H_tridiagonal_decoupled, R_couple_new))
     if extremely_verbose:
-        matrix_print(
-            H_tridiagonal_decoupled, "Decoupled Hamiltonian (tridiagonal blocks):"
-        )
+        matrix_print(H_tridiagonal_decoupled, "Decoupled Hamiltonian (tridiagonal blocks):")
         matrix_print(H_linked_chains, "Coupled tridiagonal Hamiltonian:")
 
     indices = np.append(
@@ -909,9 +873,7 @@ def peel_resonant_modes(vs, es, peel_weight):
     return w2 >= peel_weight * total
 
 
-def peeled_linked_chain(
-    H_imp, vs, es, peel_weight=0.05, verbose=True, extremely_verbose=False
-):
+def peeled_linked_chain(H_imp, vs, es, peel_weight=0.05, verbose=True, extremely_verbose=False):
     """Transform the bath from star to a linked double chain with peeled resonances.
 
     The star modes selected by :func:`peel_resonant_modes` stay in star form
@@ -955,9 +917,7 @@ def peeled_linked_chain(
 
     n_imp = H_imp.shape[0]
     if es.shape[0] == 0:
-        return np.empty((0, n_imp), dtype=H_imp.dtype), np.empty(
-            (0, 0), dtype=H_imp.dtype
-        )
+        return np.empty((0, n_imp), dtype=H_imp.dtype), np.empty((0, 0), dtype=H_imp.dtype)
 
     mask = peel_resonant_modes(vs, es, peel_weight)
     # The linked double chain needs at least 3 bath states to be meaningful;

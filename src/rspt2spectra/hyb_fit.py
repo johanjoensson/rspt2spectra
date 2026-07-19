@@ -166,19 +166,13 @@ def fit_hyb(
                 for ib in block_structure.inequivalent_blocks
             ],
         )
-    mask = (
-        np.logical_and(x_lim[0] <= w, w < x_lim[1])
-        if x_lim is not None
-        else np.ones(len(w), bool)
-    )
+    mask = np.logical_and(x_lim[0] <= w, w < x_lim[1]) if x_lim is not None else np.ones(len(w), bool)
 
     if verbose:
         print(_rule("Hybridization fit"))
         _print_block_structure(block_structure)
 
-    ebs_star = [
-        np.empty((0,), dtype=float) for _ in block_structure.inequivalent_blocks
-    ]
+    ebs_star = [np.empty((0,), dtype=float) for _ in block_structure.inequivalent_blocks]
     vs_star = [
         np.empty(
             (0, len(block_structure.blocks[ib]), len(block_structure.blocks[ib])),
@@ -213,9 +207,7 @@ def fit_hyb(
             print(_rule(f"Orbitals {block}  ·  {n_states} bath states", "-"))
         idx = np.ix_(range(hyb.shape[0]), block, block)
         block_hyb = hyb[idx]
-        realvalue_v = np.all(
-            np.abs(block_hyb - np.conj(np.transpose(block_hyb, (0, 2, 1)))) < 1e-6
-        )
+        realvalue_v = np.all(np.abs(block_hyb - np.conj(np.transpose(block_hyb, (0, 2, 1)))) < 1e-6)
 
         bath_guess = None
         v_guess = None
@@ -226,11 +218,7 @@ def fit_hyb(
 
         # Block structure has changed!
         # Remove all hopping guesses, but keep the bath energies
-        if (
-            v_guess is not None
-            and bath_guess is not None
-            and v_guess.shape[1] != block_hyb.shape[1]
-        ):
+        if v_guess is not None and bath_guess is not None and v_guess.shape[1] != block_hyb.shape[1]:
             v_guess = None
 
         block_eb_star, block_vs_star, block_C_star = fit_block(
@@ -311,8 +299,7 @@ def get_state_per_inequivalent_block(
         block_hyb = hyb[idx]
         weight_per_inequivalent_block[inequivalent_block_i] = (
             sp.integrate.simpson(
-                -np.imag(np.sum(np.diagonal(block_hyb, axis1=1, axis2=2), axis=1))
-                * weight_fun(w),
+                -np.imag(np.sum(np.diagonal(block_hyb, axis1=1, axis2=2), axis=1)) * weight_fun(w),
                 w,
             )
             * block_multiplicity
@@ -326,18 +313,14 @@ def get_state_per_inequivalent_block(
     # Pool of B states per block, shared out by hybridization strength.
     pool = bath_states_per_orbital * n_blocks
     if total_weight > 0:
-        states = np.round(pool * weight_per_inequivalent_block / total_weight).astype(
-            int
-        )
+        states = np.round(pool * weight_per_inequivalent_block / total_weight).astype(int)
     else:
         states = np.zeros(n_blocks, dtype=int)
 
     # Coverage: every hybridizing block gets at least one bath state per orbital,
     # so an n-orbital block can represent its full n x n hybridization.
     hybridizing = weight_per_inequivalent_block > 0
-    states[hybridizing] = np.maximum(
-        states[hybridizing], orbitals_per_block[hybridizing]
-    )
+    states[hybridizing] = np.maximum(states[hybridizing], orbitals_per_block[hybridizing])
 
     # Window cap: never request more states than reasonably fit in the window.
     n_max = _max_bath_states(w[0], w[-1], delta)
@@ -383,9 +366,7 @@ def fit_block(
 
     # Cap the requested count at what reasonably fits in the window (min
     # separation delta), so seeds are built at a feasible size from the start.
-    bath_states_per_orbital = min(
-        bath_states_per_orbital, _max_bath_states(w[0], w[-1], delta)
-    )
+    bath_states_per_orbital = min(bath_states_per_orbital, _max_bath_states(w[0], w[-1], delta))
 
     hyb_trace = -np.imag(np.sum(np.diagonal(hyb, axis1=1, axis2=2), axis=1))
     hyb_trace[hyb_trace < 0] = 0
@@ -396,9 +377,7 @@ def fit_block(
 
     scores = weight_fun(w[peaks]) * hyb_trace[peaks]
     score_sum = np.sum(scores)
-    normalised_scores = (
-        scores / score_sum if score_sum > 0 else np.ones_like(scores) / len(scores)
-    )
+    normalised_scores = scores / score_sum if score_sum > 0 else np.ones_like(scores) / len(scores)
 
     if verbose:
         _print_peaks(
@@ -421,9 +400,7 @@ def fit_block(
             high=np.interp(r_lims[peak_index], range(len(w)), w),
         )
     else:
-        eb_guess = rng.uniform(
-            low=w[0], high=w[-1], size=(population_size, bath_states_per_orbital)
-        )
+        eb_guess = rng.uniform(low=w[0], high=w[-1], size=(population_size, bath_states_per_orbital))
     if bath_guess is not None:
         n = min(bath_guess.shape[0], bath_states_per_orbital)
         eb_guess[0, :n] = bath_guess[:n]
@@ -442,9 +419,7 @@ def fit_block(
         realvalue_v=realvalue_v,
     )
     if comm is not None:
-        bath_energies, v, C, _ = comm.allreduce(
-            (bath_energies, v, C, min_cost), op=_get_v_opt_op()
-        )
+        bath_energies, v, C, _ = comm.allreduce((bath_energies, v, C, min_cost), op=_get_v_opt_op())
 
     if verbose:
         print(f"Final cost:    {abs(min_cost):.3e}")

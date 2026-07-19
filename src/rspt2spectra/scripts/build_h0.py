@@ -63,6 +63,7 @@ def partition_index(l: Iterable, pred: Callable = bool) -> tuple[list[int], list
 def generate_rspt_T_matrix(l, basis_tag, spinpol):
     """
     Generate the exact transformation matrix T mapping the RSPt local basis to spherical harmonics.
+
     This exactly reproduces the projection vectors in RSPt's lda_mlmsatomicqn.
     T has shape (N_sph, N_corr), such that v_sph = T @ v_corr.
     """
@@ -181,9 +182,7 @@ def filter_and_shift(
     for eb_block, v_block, shift in zip(ebs, vs, shifts):
         f = np.logical_or(eb_block < w_min, eb_block > w_max)
         shift += np.sum(  # noqa: PLW2901 - in-place update of the arrays in shifts
-            np.conj(np.transpose(v_block[f], (0, 2, 1)))
-            @ v_block[f]
-            / eb_block[f, None, None],
+            np.conj(np.transpose(v_block[f], (0, 2, 1))) @ v_block[f] / eb_block[f, None, None],
             axis=0,
         )
         filtered_ebs_star.append(eb_block[np.logical_not(f)].copy())
@@ -223,9 +222,7 @@ def run(
     verbose = verbose and rank == 0
 
     hyb_dat = extract_dat("hyb", cluster, prefix)
-    hs = parse_matrices(
-        out_file="out", search_phrase="Local hamiltonian", prefix=prefix
-    )
+    hs = parse_matrices(out_file="out", search_phrase="Local hamiltonian", prefix=prefix)
     qs = parse_matrices(
         out_file="out",
         search_phrase="Transformation to the local cf basis:",
@@ -237,16 +234,12 @@ def run(
         prefix=prefix,
     )
     if cluster not in hs:
-        raise RuntimeError(
-            f"Could not extract local hamiltonian for cluster {cluster} from file {prefix}/out."
-        )
+        raise RuntimeError(f"Could not extract local hamiltonian for cluster {cluster} from file {prefix}/out.")
     H_dft = hs[cluster]
     hyb = hyb_dat.orbitals
     w = hyb_dat.w
 
-    has_cf_flag, basis_tag, l_val = parse_cluster_basis(
-        cluster, inp_file="green.inp", prefix=prefix
-    )
+    has_cf_flag, basis_tag, l_val = parse_cluster_basis(cluster, inp_file="green.inp", prefix=prefix)
     needs_rotation = has_cf_flag or (basis_tag != 0)
 
     # If transformations to the CF basis were found, use them
@@ -267,9 +260,7 @@ def run(
             try:
                 N = H_dft.shape[0]
                 if l_val == -1:
-                    raise RuntimeError(
-                        f"Could not determine l quantum number for cluster {cluster} from green.inp"
-                    )
+                    raise RuntimeError(f"Could not determine l quantum number for cluster {cluster} from green.inp")
 
                 # We determine spinpol by checking if N matches 2 * subset size or 1 * subset size
                 # But it's simpler: if N is even, it's very likely spin polarized for ED models.
@@ -291,9 +282,7 @@ def run(
                     if basis_tag & 1:
                         subset_size += 3
                 else:
-                    raise NotImplementedError(
-                        f"Dynamic rotation for l={l_val} not supported."
-                    )
+                    raise NotImplementedError(f"Dynamic rotation for l={l_val} not supported.")
 
                 if subset_size * 2 == N:
                     spinpol = True
@@ -301,7 +290,8 @@ def run(
                     spinpol = False
                 else:
                     raise RuntimeError(
-                        f"Hamiltonian size {N} does not match expected size for basis tag {basis_tag} (expected {subset_size} or {subset_size*2})"
+                        f"Hamiltonian size {N} does not match expected size for basis tag {basis_tag} "
+                        f"(expected {subset_size} or {subset_size * 2})"
                     )
 
                 T = generate_rspt_T_matrix(l_val, basis_tag, spinpol)
@@ -309,7 +299,7 @@ def run(
                 raise RuntimeError(
                     f"Cluster {cluster} uses basis tag {basis_tag}, but dynamic generation failed: {e}. "
                     f"Please run RSPt with verbose=True to print the rotation matrix in the output."
-                )
+                ) from e
         else:
             raise RuntimeError(
                 f"Cluster {cluster} requires rotation but basis tag is not handled dynamically. "
@@ -323,12 +313,8 @@ def run(
         if verbose:
             print(f"Cluster {cluster} uses a non-spherical basis (or Cf flag).")
             if T is not None and cluster not in qs and cluster not in sharm_qs:
-                print(
-                    f"Dynamically generated RSPt rotation matrix for l={l_val}, basis_tag={basis_tag}."
-                )
-            print(
-                "Applying transformation T to rotate to the Spherical Harmonics basis (T @ H @ T.T.conj())."
-            )
+                print(f"Dynamically generated RSPt rotation matrix for l={l_val}, basis_tag={basis_tag}.")
+            print("Applying transformation T to rotate to the Spherical Harmonics basis (T @ H @ T.T.conj()).")
             matrix_print(T, "Transformation matrix T:")
             print()
         # Data is in CF basis, rotate to Spherical Harmonics

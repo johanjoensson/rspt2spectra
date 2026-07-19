@@ -78,9 +78,7 @@ def test_build_imp_bath_blocks():
     H[0, 4] = H[4, 0] = 0.1
     H[1, 5] = H[5, 1] = 0.1
 
-    impurity_indices, occupied_indices, unoccupied_indices = (
-        edchain.build_imp_bath_blocks(H, n_orb=2)
-    )
+    impurity_indices, occupied_indices, unoccupied_indices = edchain.build_imp_bath_blocks(H, n_orb=2)
 
     assert impurity_indices == [0, 1]
     assert occupied_indices == [
@@ -98,9 +96,7 @@ def test_linked_double_chain():
     H_imp = np.array([[0.0]]) + 0j
     vs = np.random.rand(4, 1) + 0j
     ebs = np.array([-2.0, -1.0, 1.0, 2.0])
-    v, hb = edchain.linked_double_chain(
-        H_imp, vs, ebs, verbose=False, extremely_verbose=False
-    )
+    v, hb = edchain.linked_double_chain(H_imp, vs, ebs, verbose=False, extremely_verbose=False)
     assert v.shape[1] == 1
     assert hb.shape == (4, 4)
 
@@ -110,9 +106,7 @@ def test_double_chains():
     H_imp = np.array([[0.0]]) + 0j
     vs = np.random.rand(4, 1) + 0j
     ebs = np.array([-2.0, -1.0, 1.0, 2.0])
-    v, hb = edchain.double_chains(
-        H_imp, vs, ebs, verbose=False, extremely_verbose=False
-    )
+    v, hb = edchain.double_chains(H_imp, vs, ebs, verbose=False, extremely_verbose=False)
     assert v.shape[1] == 1
     assert hb.shape == (4, 4)
 
@@ -235,9 +229,7 @@ def test_build_full_bath():
         inequivalent_blocks=[0, 2],  # 0 and 2 are the templates
     )
 
-    H_bath_full, vs_full = edchain.build_full_bath(
-        H_bath_inequiv, v_inequiv, block_structure
-    )
+    H_bath_full, vs_full = edchain.build_full_bath(H_bath_inequiv, v_inequiv, block_structure)
 
     # 5 orbitals * 2 bath states per orbital = 10 total bath states
     assert H_bath_full.shape == (10, 10)
@@ -258,9 +250,7 @@ def test_peel_resonant_modes():
     # A threshold above every relative weight peels nothing.
     assert not edchain.peel_resonant_modes(vs, es, peel_weight=0.6).any()
     # Zero total weight peels nothing (no division blow-up).
-    assert not edchain.peel_resonant_modes(
-        np.zeros_like(vs), es, peel_weight=0.05
-    ).any()
+    assert not edchain.peel_resonant_modes(np.zeros_like(vs), es, peel_weight=0.05).any()
 
 
 def test_peeled_linked_chain():
@@ -271,9 +261,7 @@ def test_peeled_linked_chain():
     vs = np.full((12, 1), 0.05) + 0j
     vs[3, 0] = 1.0
     vs[8, 0] = 0.8
-    v, hb = edchain.peeled_linked_chain(
-        H_imp, vs, es, peel_weight=0.05, verbose=False, extremely_verbose=False
-    )
+    v, hb = edchain.peeled_linked_chain(H_imp, vs, es, peel_weight=0.05, verbose=False, extremely_verbose=False)
     assert v.shape == (12, 1)
     assert hb.shape == (12, 12)
     # The peeled modes sit at the end as decoupled diagonal spokes with their
@@ -288,11 +276,7 @@ def test_peeled_linked_chain():
     assert np.allclose(np.linalg.eigvalsh(H_full), np.linalg.eigvalsh(H_star))
     z = np.linspace(-3.0, 3.0, 61) + 0.01j
     # In star form the hybridization is an explicit sum over the fitted poles.
-    g_star = 1.0 / (
-        z
-        - H_imp[0, 0]
-        - np.sum(np.abs(vs[:, 0]) ** 2 / (z[:, None] - es[None, :]), axis=1)
-    )
+    g_star = 1.0 / (z - H_imp[0, 0] - np.sum(np.abs(vs[:, 0]) ** 2 / (z[:, None] - es[None, :]), axis=1))
     g_full = np.array([np.linalg.inv(zi * np.eye(13) - H_full)[0, 0] for zi in z])
     assert np.allclose(g_full, g_star, atol=1e-10)
 
@@ -303,8 +287,6 @@ def test_peeled_linked_chain_small_remainder_falls_back_to_star():
     vs = np.array([[1.0], [0.9], [0.8], [0.02]]) + 0j
     # Three of four modes peel; the 1-mode remainder cannot form a linked chain,
     # so everything stays in star form.
-    v, hb = edchain.peeled_linked_chain(
-        H_imp, vs, es, peel_weight=0.05, verbose=False, extremely_verbose=False
-    )
+    v, hb = edchain.peeled_linked_chain(H_imp, vs, es, peel_weight=0.05, verbose=False, extremely_verbose=False)
     assert np.allclose(hb, np.diag(es))
     assert np.allclose(v, vs)
