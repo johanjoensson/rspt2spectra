@@ -1,7 +1,14 @@
+import warnings
+
 import numpy as np
 import pytest
 
-from rspt2spectra.scripts.build_h0 import run
+from rspt2spectra.scripts.build_h0 import (
+    _is_cubic_crystal_field,
+    _spherical_signature,
+    _verify_spherical_basis,
+    run,
+)
 
 
 def _write_rspt_dir(path, w, hyb, h_dft, e_fermi=0.0):
@@ -136,6 +143,67 @@ def test_impurity_level_lands_inside_a_straddling_bath(tmp_path, monkeypatch):
     assert min(bath) <= impurity <= max(bath), f"impurity {impurity} outside bath {min(bath)}..{max(bath)}"
 
 
+# Diagonals measured on real RSPt output (see doc/plans/... for the full table): NiO/base's
+# Ni_win_2 cluster after rotation (genuinely spherical) and FCC_Ni's raw, unrotated local
+# Hamiltonian (genuinely cubic: eg, eg, t2g, t2g, t2g -- not palindromic).
+_SPHERICAL_DIAG = [0.58158, 0.57953, 0.58363, 0.57953, 0.58158]
+_CUBIC_DIAG = [0.71961, 0.71961, 0.71192, 0.71192, 0.71192]
+
+
+def test_spherical_signature_accepts_a_genuinely_spherical_block():
+    H = np.diag(_SPHERICAL_DIAG).astype(complex)
+    H[0, 4] = H[4, 0] = 0.01  # the corner element a genuinely spherical, split block has
+    assert _spherical_signature(H, l_val=2) is True
+
+
+def test_spherical_signature_rejects_a_cubic_block():
+    H = np.diag(_CUBIC_DIAG).astype(complex)  # H[-2, +2] == 0 exactly in the cubic basis
+    assert _spherical_signature(H, l_val=2) is False
+
+
+def test_spherical_signature_undetermined_for_unexpected_size():
+    # Neither 5 (one spin sector) nor 10 (two) -- e.g. a composite multi-shell cluster.
+    assert _spherical_signature(np.eye(3, dtype=complex), l_val=2) is None
+
+
+def test_is_cubic_crystal_field():
+    assert _is_cubic_crystal_field(2, 3) is True
+    assert _is_cubic_crystal_field(2, 0) is False
+    assert _is_cubic_crystal_field(4, 1) is False  # g shell: not a tag generate_rspt_T_matrix knows
+
+
+def test_verify_spherical_basis_raises_on_non_unitary_t():
+    T = 2 * np.eye(5, dtype=complex)
+    H = np.eye(5, dtype=complex)
+    with pytest.raises(RuntimeError, match="not unitary"):
+        _verify_spherical_basis(H, T, "cl", l_val=2, basis_tag=3)
+
+
+def test_verify_spherical_basis_raises_when_cubic_tag_but_signature_fails():
+    T = np.eye(5, dtype=complex)
+    H = np.diag(_CUBIC_DIAG).astype(complex)
+    with pytest.raises(RuntimeError, match="spherical-under-cubic"):
+        _verify_spherical_basis(H, T, "cl", l_val=2, basis_tag=3)
+
+
+def test_verify_spherical_basis_warns_when_tag_is_not_cubic():
+    # basis_tag 0 does not prove the crystal field is cubic, so a failed fingerprint is
+    # inconclusive -- a warning, not a raise.
+    T = np.eye(5, dtype=complex)
+    H = np.diag(_CUBIC_DIAG).astype(complex)
+    with pytest.warns(UserWarning, match="could not conclusively verify"):
+        _verify_spherical_basis(H, T, "cl", l_val=2, basis_tag=0)
+
+
+def test_verify_spherical_basis_is_silent_for_a_good_signature():
+    T = np.eye(5, dtype=complex)
+    H = np.diag(_SPHERICAL_DIAG).astype(complex)
+    H[0, 4] = H[4, 0] = 0.01
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _verify_spherical_basis(H, T, "cl", l_val=2, basis_tag=3)  # must not raise or warn
+
+
 def test_run_raises_when_cluster_is_not_in_green_inp(tmp_path, monkeypatch):
     # A cluster label that does not resolve in green.inp (e.g. the hybridization filenames'
     # "-obs" suffix defeating the match) must not be silently treated as "already spherical".
@@ -147,6 +215,24 @@ def test_run_raises_when_cluster_is_not_in_green_inp(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     with pytest.raises(RuntimeError, match=r"cl.*green\.inp"):
         _run_build_h0(tmp_path, eim)
+
+
+def test_run_always_writes_basis_spherical_and_identity_rotation(tmp_path, monkeypatch):
+    # Even when no rotation was needed (basis_tag 0, no Cf flag) the file must still say
+    # basis: spherical and carry rot_to_spherical (the identity), rather than omitting it --
+    # the file always says how to get to spherical, not just when a rotation happened to run.
+    w = np.linspace(-6, 3, 800)
+    eim = 0.05
+    hyb = 0.7**2 / (w + 1j * eim + 2.0)
+    _write_rspt_dir(tmp_path, w, hyb, -1.0)
+
+    monkeypatch.chdir(tmp_path)
+    _run_build_h0(tmp_path, eim)
+
+    header = (tmp_path / "cl_h0.h0").read_text().splitlines()[1]
+    assert '"basis": "spherical"' in header
+    assert '"rotation_applied": false' in header
+    assert '"rot_to_spherical": [[[1.0, 0.0]]]' in header
 
 
 def test_written_h0_is_read_back_by_impurity_model(tmp_path, monkeypatch):

@@ -4,6 +4,7 @@ Reads RSPt output in the current directory, fits the hybridization function,
 and writes the non-interacting impurity Hamiltonian (h0) as an operator file.
 """
 
+import warnings
 from argparse import ArgumentParser
 from collections.abc import Iterable
 from typing import Callable
@@ -138,6 +139,108 @@ def generate_rspt_T_matrix(l, basis_tag, spinpol):
     return T
 
 
+# The basis tags for which generate_rspt_T_matrix builds cubic (Oh)-irrep columns, keyed by l.
+# A cluster whose green.inp basis tag is one of these is *guaranteed* cubic, independent of
+# whether T came from the dynamic generator or from a matrix RSPt itself printed -- either way
+# it represents the same rotation, so the spherical-under-cubic-symmetry fingerprint below must
+# hold. basis_tag == 0 (or a tag outside this set) proves nothing either way.
+_CUBIC_BASIS_TAGS = {
+    1: {1},
+    2: {1, 2, 3},
+    3: {1, 2, 3, 4, 5, 6, 7},
+}
+
+
+def _is_cubic_crystal_field(l_val, basis_tag):
+    """Whether ``basis_tag`` names one of RSPt's cubic (Oh) irrep decompositions for shell l_val."""
+    return basis_tag in _CUBIC_BASIS_TAGS.get(l_val, set())
+
+
+def _spherical_signature(H, l_val, tol=1e-8):
+    """Check ``H`` for the spherical-under-cubic-symmetry fingerprint.
+
+    Under Oh symmetry, a Hamiltonian written in the spherical harmonics basis (m ordered
+    -l..l, per the column order ``generate_rspt_T_matrix`` builds) for a crystal-field-split
+    shell has a diagonal palindromic in m (``H[m,m] == H[-m,-m]``) and a nonzero ``H[-l,+l]``
+    off-diagonal element linking the extremal m states.
+
+    Parameters
+    ----------
+    H : np.ndarray
+        The impurity Hamiltonian: one or two (spin) ``mmsize x mmsize`` sectors on its
+        diagonal, ``mmsize = 2 * l_val + 1``.
+    l_val : int
+        The shell's angular momentum.
+    tol : float, default 1e-8
+        Absolute tolerance for both checks.
+
+    Returns
+    -------
+    bool or None
+        True/False if the check could be evaluated. None if ``H``'s size does not match one or
+        two spherical-harmonics sectors for ``l_val`` (e.g. a composite multi-shell cluster) --
+        the layout could not be determined, so the fingerprint is not checkable.
+    """
+    mmsize = 2 * l_val + 1
+    n = H.shape[0]
+    if n == mmsize:
+        sectors = [H[:mmsize, :mmsize]]
+    elif n == 2 * mmsize:
+        sectors = [H[:mmsize, :mmsize], H[mmsize:, mmsize:]]
+    else:
+        return None
+
+    if mmsize < 3:
+        return True  # no eg/t2g-like split to fingerprint (s or unsplit p shell)
+
+    for block in sectors:
+        diag = np.diag(block).real
+        if not np.allclose(diag, diag[::-1], atol=tol):
+            return False
+        if abs(block[0, mmsize - 1]) <= tol:
+            return False
+    return True
+
+
+def _verify_spherical_basis(H, T, cluster, l_val, basis_tag):
+    """Verify a rotated impurity Hamiltonian is genuinely in the spherical harmonics basis.
+
+    Raises when the rotation is provably wrong: T is not unitary, or the cluster's basis tag
+    names a cubic crystal field and the fingerprint check fails. Only warns when the check
+    could not be conclusive (non-cubic or composite cluster), since a failure there is not
+    proof of anything -- never a silent pass either way.
+    """
+    if not np.allclose(T @ np.conjugate(T.T), np.eye(T.shape[0]), atol=1e-8):
+        raise RuntimeError(f"Cluster {cluster}: the rotation matrix T is not unitary; refusing to trust it.")
+
+    if l_val == -1:
+        warnings.warn(
+            f"Cluster {cluster}: angular momentum l could not be determined, so the "
+            "spherical-basis signature cannot be checked. Writing basis: spherical on the "
+            "strength of the rotation alone.",
+            stacklevel=2,
+        )
+        return
+
+    sig = _spherical_signature(H, l_val)
+    is_cubic = _is_cubic_crystal_field(l_val, basis_tag)
+    if is_cubic and sig is False:
+        raise RuntimeError(
+            f"Cluster {cluster}: basis tag {basis_tag} names a cubic (Oh) crystal field for "
+            f"l={l_val}, but the rotated Hamiltonian does not show the expected "
+            "spherical-under-cubic-symmetry signature (diagonal palindromic in m, "
+            "H[-l,+l] != 0). Refusing to write a file claiming basis: spherical."
+        )
+    if sig is False or (sig is None and is_cubic):
+        warnings.warn(
+            f"Cluster {cluster}: could not conclusively verify the spherical-basis signature "
+            f"(basis tag {basis_tag}, l={l_val} -- not a recognized cubic decomposition, or a "
+            "composite/multi-shell cluster). Writing basis: spherical on the strength of the "
+            "rotation alone; verify by hand before trusting it.",
+            stacklevel=2,
+        )
+
+
 def filter_and_shift(
     ebs: list[np.ndarray],
     vs: list[np.ndarray],
@@ -270,7 +373,18 @@ def run(
     if cluster in qs:
         T = qs[cluster]
     elif cluster in sharm_qs:
-        T = sharm_qs[cluster]
+        # "sharm2corr of the cluster" plausibly names the opposite direction from "Transformation
+        # to the local cf basis:" ("sph -> corr" vs "corr -> cf"), but every rotation applied
+        # below assumes the same direction as `qs`. No stored workload prints a sharm2corr
+        # matrix to check this against, so using it here would be a guess that could silently
+        # rotate away from the spherical basis rather than into it.
+        raise RuntimeError(
+            f"Cluster {cluster} only has a 'sharm2corr of the cluster' rotation matrix in "
+            f"{prefix}/out (no 'Transformation to the local cf basis:' matrix). Its direction "
+            "convention relative to the latter is unverified against any known workload, so "
+            "using it here would risk silently rotating away from the spherical basis. Verify "
+            "the direction empirically before enabling this path."
+        )
 
     if needs_rotation and T is None:
         if has_cf_flag:
@@ -351,6 +465,8 @@ def run(
         # Data is already in Spherical Harmonics
         hyb_sph = hyb
         H_dft_sph = H_dft
+
+    _verify_spherical_basis(H_dft_sph, T, cluster, l_val, basis_tag)
 
     phase_hyb, Q = block_diagonalize_hyb(hyb_sph)
 
@@ -458,11 +574,11 @@ def run(
         fermi_energy=e_fermi,
         valence_bath=list(valence_bath_indices) if star_geometry else None,
         conduction_bath=list(conduction_bath_indices) if star_geometry else None,
-        rot_to_spherical=np.eye(len(impurity_indices), dtype=complex) if needs_rotation else None,
-        # Provenance rather than a claim: "spherical" is asserted only when a rotation to it
-        # was actually applied. Otherwise the basis is whatever the cluster was defined in,
-        # and the recorded tag lets a consumer work out which.
-        basis="spherical" if needs_rotation else "unknown",
+        # By construction: _verify_spherical_basis has already raised if this does not hold, so
+        # the file always says how to get to spherical (the identity, since it is already
+        # there) rather than omitting the key when no rotation happened to be needed.
+        rot_to_spherical=np.eye(len(impurity_indices), dtype=complex),
+        basis="spherical",
         basis_tag=int(basis_tag),
         rotation_applied=bool(needs_rotation),
         bath_geometry=bath_geometry,
