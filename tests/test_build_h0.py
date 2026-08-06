@@ -115,10 +115,13 @@ def test_fermi_energy_is_subtracted_from_the_local_hamiltonian(tmp_path, monkeyp
     assert abs(h00.real - (-1.0)) < 0.02
 
 
-def test_impurity_level_lands_inside_the_bath_energy_range(tmp_path, monkeypatch):
-    # The invariant that catches a lost energy zero regardless of its cause: a partially
-    # filled impurity level must sit within the span of the bath it hybridizes with, not
-    # above all of it.
+def test_impurity_level_lands_inside_a_straddling_bath(tmp_path, monkeypatch):
+    # With bath states on both sides of E_F the impurity level must sit among them rather
+    # than above all of them, which is what an unsubtracted Fermi energy looks like.
+    #
+    # Only valid when the bath straddles E_F. build_h0 defaults to fit_unocc=False, which
+    # fits the occupied part only, and then a partially filled level is legitimately above
+    # every bath state -- on the real NiO run, -1.3 eV against a bath at -5.3..-4.2 eV.
     w = np.linspace(-6, 3, 800)
     eim = 0.05
     e_fermi = 0.6
