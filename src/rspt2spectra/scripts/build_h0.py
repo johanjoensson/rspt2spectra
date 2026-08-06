@@ -28,7 +28,7 @@ from rspt2spectra.h0 import assemble_h0
 from rspt2spectra.h2imp import matrixToIOp, write_to_file
 from rspt2spectra.hyb_fit import fit_hyb
 from rspt2spectra.natural_orbitals import fit_hyb_natural_orbitals
-from rspt2spectra.readfile import parse_cluster_basis, parse_matrices
+from rspt2spectra.readfile import parse_cluster_basis, parse_fermi_energy, parse_matrices
 from rspt2spectra.utils import block_diagonalize_hyb, matrix_print
 from rspt2spectra.weight_functions import weight_functions
 
@@ -238,6 +238,18 @@ def run(
     H_dft = hs[cluster]
     hyb = hyb_dat.orbitals
     w = hyb_dat.w
+
+    # RSPt prints the local Hamiltonian on an *absolute* energy scale, while the
+    # hybridization function is written on a mesh whose zero is the Fermi level. Combining
+    # them without this shift puts the impurity block several eV above the entire bath -- for
+    # NiO, +8.2 eV against an O 2p bath at -6.7..-1.9 eV, instead of the -0.9 eV a Ni 3d
+    # level should sit at. Subtract at the source, before any rotation; a scalar shift
+    # commutes with the unitaries below, but doing it here keeps the two energy zeros from
+    # ever being separate in the first place.
+    e_fermi = parse_fermi_energy(out_file="out", prefix=prefix)
+    H_dft = H_dft - e_fermi * np.eye(H_dft.shape[0])
+    if verbose:
+        print(f"Fermi energy {e_fermi: .8f} subtracted from the local Hamiltonian (bath mesh has E_F = 0).")
 
     has_cf_flag, basis_tag, l_val = parse_cluster_basis(cluster, inp_file="green.inp", prefix=prefix)
     needs_rotation = has_cf_flag or (basis_tag != 0)

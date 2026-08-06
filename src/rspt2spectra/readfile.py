@@ -50,6 +50,53 @@ def parse_matrices(out_file="out", search_phrase="Local hamiltonian", prefix="."
     return dict(zip(labels, matrices))
 
 
+def parse_fermi_energy(out_file="out", prefix="."):
+    """Extract the Fermi energy from an RSPt ``out`` file.
+
+    RSPt prints ``fermi energy =  6.7596104733184E-01`` once per SCF cycle; the **last**
+    occurrence is the converged one, so that is the one returned.
+
+    The value matters because RSPt's printed ``Local hamiltonian`` is an *absolute* energy
+    while the hybridization function it is combined with is written on a mesh whose zero is
+    the Fermi level. Subtracting it is what puts the impurity and bath blocks on one energy
+    scale; without it the impurity level sits several eV above the entire bath.
+
+    Parameters
+    ----------
+    out_file : str, default "out"
+        Name of the RSPt output file.
+    prefix : str, default "."
+        Directory holding the output file.
+
+    Returns
+    -------
+    float
+        The Fermi energy, in whatever unit the file uses (Rydberg for a default RSPt run).
+
+    Raises
+    ------
+    RuntimeError
+        If the file contains no Fermi energy line.
+    """
+    value = None
+    with open(f"{prefix}/{out_file}", "r") as f:
+        for line in f:
+            lowered = line.lower()
+            if "fermi energy" not in lowered or "=" not in line:
+                continue
+            # Skip derived restatements such as "lda_efsave (fermi energy from lda):".
+            if lowered.strip().startswith("fermi energy"):
+                value = float(line.split("=", 1)[1].split()[0])
+
+    if value is None:
+        raise RuntimeError(
+            f"Could not find a 'fermi energy =' line in {prefix}/{out_file}. "
+            "It is needed to put the local Hamiltonian on the same energy zero as the "
+            "hybridization function."
+        )
+    return value
+
+
 def parse_cluster_basis(cluster_label, inp_file="green.inp", prefix="."):
     """Parse green.inp file to determine if Cf flag or a non-spherical basis was used for the given cluster.
 
