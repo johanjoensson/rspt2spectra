@@ -29,7 +29,7 @@ from rspt2spectra.h2imp import matrixToIOp, write_to_file
 from rspt2spectra.hyb_fit import fit_hyb
 from rspt2spectra.natural_orbitals import fit_hyb_natural_orbitals
 from rspt2spectra.op_printer import write_h0_file
-from rspt2spectra.readfile import parse_cluster_basis, parse_fermi_energy, parse_matrices
+from rspt2spectra.readfile import list_cluster_labels, parse_cluster_basis, parse_fermi_energy, parse_matrices
 from rspt2spectra.utils import block_diagonalize_hyb, matrix_print
 from rspt2spectra.weight_functions import weight_functions
 
@@ -253,7 +253,16 @@ def run(
     if verbose:
         print(f"Fermi energy {e_fermi: .8f} subtracted from the local Hamiltonian (bath mesh has E_F = 0).")
 
-    has_cf_flag, basis_tag, l_val = parse_cluster_basis(cluster, inp_file="green.inp", prefix=prefix)
+    cluster_basis = parse_cluster_basis(cluster, inp_file="green.inp", prefix=prefix)
+    if cluster_basis is None:
+        known = list_cluster_labels(inp_file="green.inp", prefix=prefix)
+        raise RuntimeError(
+            f"Cluster {cluster!r} was not found in {prefix}/green.inp (clusters defined there: "
+            f"{known!r}). Cannot determine whether its data needs rotating to the spherical "
+            "harmonics basis without this match -- refusing to silently assume it is already "
+            "spherical."
+        )
+    has_cf_flag, basis_tag, l_val = cluster_basis
     needs_rotation = has_cf_flag or (basis_tag != 0)
 
     # If transformations to the CF basis were found, use them

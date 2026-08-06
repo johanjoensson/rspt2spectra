@@ -136,6 +136,19 @@ def test_impurity_level_lands_inside_a_straddling_bath(tmp_path, monkeypatch):
     assert min(bath) <= impurity <= max(bath), f"impurity {impurity} outside bath {min(bath)}..{max(bath)}"
 
 
+def test_run_raises_when_cluster_is_not_in_green_inp(tmp_path, monkeypatch):
+    # A cluster label that does not resolve in green.inp (e.g. the hybridization filenames'
+    # "-obs" suffix defeating the match) must not be silently treated as "already spherical".
+    w = np.linspace(-6, 3, 800)
+    eim = 0.05
+    _write_rspt_dir(tmp_path, w, np.zeros_like(w, dtype=complex), -1.0)
+    (tmp_path / "green.inp").write_text("cluster\n 1 Idother\n 1 2 1 1 0\n")
+
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(RuntimeError, match=r"cl.*green\.inp"):
+        _run_build_h0(tmp_path, eim)
+
+
 def test_written_h0_is_read_back_by_impurity_model(tmp_path, monkeypatch):
     """The seam this whole format exists for: build_h0's output must load in impurityModel.
 
