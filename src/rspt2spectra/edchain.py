@@ -236,6 +236,24 @@ def build_full_bath(
             H_baths[b] = H_bath.copy().T @ (-np.identity(H_bath.shape[0]))
             v_tmp[:, blocks[b]] = v
             vs[b] = v_tmp
+
+    # Every block must be reachable from exactly one inequivalent representative via
+    # identical/transposed/particle-hole/particle-hole+transposed -- that reachability is
+    # what `get_inequivalent_blocks`'s union-find is built from, so it should always hold
+    # for a self-consistent BlockStructure. A gap here means some symmetry-equivalent block
+    # would silently keep whatever (nonsensical) `None` entry was left in H_baths/vs below,
+    # rather than sharing the fit its equivalence class was found to warrant -- i.e. exactly
+    # the failure mode a too-tight equivalence tolerance (or a future BlockStructure bug)
+    # would produce, just one step further downstream than where it is easiest to see it.
+    unreached = [b for b in range(len(blocks)) if H_baths[b] is None]
+    if unreached:
+        raise RuntimeError(
+            f"build_full_bath: block(s) {unreached} (orbitals "
+            f"{[blocks[b] for b in unreached]}) were not reached by any inequivalent "
+            "block's identical/transposed/particle-hole relations, so they would not "
+            "receive a shared fit. This indicates an inconsistent BlockStructure -- every "
+            "block must belong to exactly one equivalence class."
+        )
     return sp.linalg.block_diag(*H_baths), np.vstack(vs)
 
 

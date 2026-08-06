@@ -25,12 +25,17 @@ from rspt2spectra.block_structure import (
     build_matrix,
 )
 from rspt2spectra.dat import extract_dat
-from rspt2spectra.h0 import assemble_h0
+from rspt2spectra.h0 import BLOCK_EQUIVALENCE_TOL, assemble_h0
 from rspt2spectra.h2imp import matrixToIOp, write_to_file
 from rspt2spectra.hyb_fit import fit_hyb
 from rspt2spectra.natural_orbitals import fit_hyb_natural_orbitals
 from rspt2spectra.op_printer import write_h0_file
-from rspt2spectra.readfile import list_cluster_labels, parse_cluster_basis, parse_fermi_energy, parse_matrices
+from rspt2spectra.readfile import (
+    list_cluster_labels,
+    parse_cluster_basis,
+    parse_fermi_energy,
+    parse_matrices,
+)
 from rspt2spectra.utils import block_diagonalize_hyb, matrix_print
 from rspt2spectra.weight_functions import weight_functions
 
@@ -169,6 +174,15 @@ def _spherical_signature(H, l_val, tol=1e-8):
     shell has a diagonal palindromic in m (``H[m,m] == H[-m,-m]``) and a nonzero ``H[-l,+l]``
     off-diagonal element linking the extremal m states.
 
+    That statement is about the *orbital* (crystal-field) part of ``H``, which is what
+    Oh symmetry constrains. Spin-orbit coupling adds a ``xi * m * s`` diagonal term per spin
+    sector, which is antisymmetric in ``m`` on its own -- so a genuinely spherical, SOC-dressed
+    ``H`` fails a *per-spin-sector* palindrome check (verified on a real NiO workload: the
+    down-spin sector alone ran -0.857 .. -1.057 eV, not palindromic) while still being exactly
+    spherical. Averaging the two spin sectors cancels the ``xi * m * s`` term (opposite sign
+    for each spin) and recovers the pure crystal-field diagonal the fingerprint is about,
+    without assuming ``H`` has no SOC in it.
+
     Parameters
     ----------
     H : np.ndarray
@@ -189,22 +203,152 @@ def _spherical_signature(H, l_val, tol=1e-8):
     mmsize = 2 * l_val + 1
     n = H.shape[0]
     if n == mmsize:
-        sectors = [H[:mmsize, :mmsize]]
+        block = H[:mmsize, :mmsize]
     elif n == 2 * mmsize:
-        sectors = [H[:mmsize, :mmsize], H[mmsize:, mmsize:]]
+        # Spin-average first: SOC's xi*m*s term has opposite sign in the two sectors and
+        # cancels here, leaving the spin-independent crystal-field part the fingerprint tests.
+        block = 0.5 * (H[:mmsize, :mmsize] + H[mmsize:, mmsize:])
     else:
         return None
 
     if mmsize < 3:
         return True  # no eg/t2g-like split to fingerprint (s or unsplit p shell)
 
-    for block in sectors:
-        diag = np.diag(block).real
-        if not np.allclose(diag, diag[::-1], atol=tol):
-            return False
-        if abs(block[0, mmsize - 1]) <= tol:
-            return False
+    diag = np.diag(block).real
+    if not np.allclose(diag, diag[::-1], atol=tol):
+        return False
+    if abs(block[0, mmsize - 1]) <= tol:
+        return False
     return True
+
+
+def _report_fit_fidelity(
+    w, eim, phase_hyb, block_structure, ebs_star, vs_star, verbose
+):
+    """Print, per inequivalent block, how much of the occupied hybridization weight the fit
+    captured.
+
+    A 12% t2g capture (measured on a real NiO star-bath fit) was previously only discoverable
+    by reverse-engineering the written ``.h0`` file after the fact. This reports it at fit
+    time instead: ``integral(|Im D_fit|) / integral(|Im D_RSPt|)`` below the Fermi level
+    (``w < 0``), diagonal per orbital in the block.
+
+    Reconstructs ``D_fit`` from ``(ebs_star, vs_star)`` directly, in the same block-diagonal
+    basis ``phase_hyb`` is already in -- each pole ``i`` of a block contributes
+    ``V_i^dagger @ V_i / (z - e_i)`` (block-native fitting couples every orbital in the block to
+    one shared degenerate bath energy per pole; see ``hyb_fit.fit_hyb``). Failure to reconstruct
+    a given block (an unexpected pole shape) is reported and skipped rather than raised --
+    this is a diagnostic, not a correctness gate, and must not block writing the file.
+    """
+    if not verbose:
+        return
+    occupied = w < 0
+    if not np.any(occupied):
+        return
+    z = w[occupied, None, None] + 1j * eim
+    print()
+    print(
+        "Hybridization fit fidelity (integral |Im D| below E_F, per orbital in each block):"
+    )
+    for idx, b in enumerate(block_structure.inequivalent_blocks):
+        orbs = block_structure.blocks[b]
+        try:
+            hyb_true = phase_hyb[occupied][:, orbs, :][:, :, orbs]
+            hyb_fit = np.zeros_like(hyb_true)
+            for e_i, v_i in zip(ebs_star[idx], vs_star[idx]):
+                hyb_fit += (np.conjugate(v_i.T) @ v_i)[None] / (z[:, 0, 0] - e_i)[
+                    :, None, None
+                ]
+        except (IndexError, ValueError) as exc:
+            print(
+                f"  block {list(orbs)}: could not reconstruct the fit for reporting ({exc}); skipped."
+            )
+            continue
+        true_int = np.trapezoid(np.abs(hyb_true.imag), w[occupied], axis=0)
+        fit_int = np.trapezoid(np.abs(hyb_fit.imag), w[occupied], axis=0)
+        for k, orb in enumerate(orbs):
+            ratio = (
+                fit_int[k, k] / true_int[k, k] if true_int[k, k] > 0 else float("nan")
+            )
+            print(f"  orbital {orb} (block {list(orbs)}): {100 * ratio:5.1f}% captured")
+
+
+def _check_kramers_degeneracy(H, rtol=1e-8):
+    """Odd-multiplicity eigenvalue clusters of ``H`` -- a basis-independent witness that ``H``
+    breaks time-reversal (Kramers) symmetry.
+
+    Every eigenvalue of a time-reversal-symmetric spin-orbital one-body Hamiltonian is paired
+    with its Kramers partner at the same energy, so every cluster has even size. This is a
+    local copy of the same clustering idea impurityModel's ``symmetries.check_kramers_degeneracy``
+    uses to warn on read -- rspt2spectra has no dependency on impurityModel, so it is
+    reimplemented rather than imported across the repo boundary.
+
+    Parameters
+    ----------
+    H : np.ndarray
+        Dense, Hermitian one-body matrix (impurity + bath).
+    rtol : float, default 1e-8
+        Eigenvalues within ``rtol * max(abs(eigenvalues))`` of each other are one cluster.
+
+    Returns
+    -------
+    list of tuple
+        ``(energy, multiplicity)`` for each odd cluster, sorted by energy. Empty if ``H`` is
+        Kramers-degenerate to within ``rtol``.
+    """
+    w = np.linalg.eigvalsh(H)
+    if w.size == 0:
+        return []
+    scale = np.abs(w).max()
+    atol = rtol * scale if scale > 0 else rtol
+    clusters = [[w[0]]]
+    for x in w[1:]:
+        if x - clusters[-1][-1] <= atol:
+            clusters[-1].append(x)
+        else:
+            clusters.append([x])
+    return [(float(np.mean(c)), len(c)) for c in clusters if len(c) % 2]
+
+
+def _detect_soc(H, l_val, tol_rtol=1e-8):
+    """Whether ``H``'s impurity block already contains spin-orbit coupling.
+
+    A pure crystal-field impurity block conserves spin: in the ``down_first`` spherical
+    layout, the down-down and up-up sectors are the only ones populated, and the down-up
+    coupling block is exactly zero. Spin-orbit coupling is precisely what breaks this -- it
+    mixes ``down m`` into ``up (m +/- 1)`` -- so a nonzero down-up block is direct evidence of
+    SOC already present in the amplitudes, independent of which specific ladder pattern it
+    follows. This is measured, not assumed, so it survives the impurity block being rotated,
+    fit-adjusted, or otherwise not bit-identical to a bare ``getSOCop`` output.
+
+    Parameters
+    ----------
+    H : np.ndarray
+        The impurity Hamiltonian, spin-resolved (``2*mmsize x 2*mmsize``), spherical,
+        down_first.
+    l_val : int
+        The shell's angular momentum. ``-1`` (undetermined) cannot be checked.
+    tol_rtol : float, default 1e-8
+        Relative tolerance against ``max(abs(H))``.
+
+    Returns
+    -------
+    bool or None
+        Whether SOC is present. ``None`` if ``H``'s size does not match a spin-resolved
+        single-shell impurity block for ``l_val``, or if ``l_val`` is undetermined -- the
+        measurement is not meaningful and callers should omit ``contains_soc`` rather than
+        guess.
+    """
+    if l_val == -1:
+        return None
+    mmsize = 2 * l_val + 1
+    if H.shape[0] != 2 * mmsize:
+        return None
+    scale = np.abs(H).max()
+    if scale == 0:
+        return False
+    offdiag_spin_block = H[:mmsize, mmsize:]
+    return bool(np.abs(offdiag_spin_block).max() > tol_rtol * scale)
 
 
 def _verify_spherical_basis(H, T, cluster, l_val, basis_tag):
@@ -216,7 +360,9 @@ def _verify_spherical_basis(H, T, cluster, l_val, basis_tag):
     proof of anything -- never a silent pass either way.
     """
     if not np.allclose(T @ np.conjugate(T.T), np.eye(T.shape[0]), atol=1e-8):
-        raise RuntimeError(f"Cluster {cluster}: the rotation matrix T is not unitary; refusing to trust it.")
+        raise RuntimeError(
+            f"Cluster {cluster}: the rotation matrix T is not unitary; refusing to trust it."
+        )
 
     if l_val == -1:
         warnings.warn(
@@ -291,7 +437,9 @@ def filter_and_shift(
     for eb_block, v_block, shift in zip(ebs, vs, shifts):
         f = np.logical_or(eb_block < w_min, eb_block > w_max)
         shift += np.sum(  # noqa: PLW2901 - in-place update of the arrays in shifts
-            np.conj(np.transpose(v_block[f], (0, 2, 1))) @ v_block[f] / eb_block[f, None, None],
+            np.conj(np.transpose(v_block[f], (0, 2, 1)))
+            @ v_block[f]
+            / eb_block[f, None, None],
             axis=0,
         )
         filtered_ebs_star.append(eb_block[np.logical_not(f)].copy())
@@ -318,6 +466,7 @@ def run(
     grid_type: str,
     peel_weight: float = 0.05,
     legacy_dict: bool = False,
+    allow_broken_time_reversal: bool = False,
     *kwargs,
 ) -> None:
     """Execute the full non-interacting Hamiltonian (h0) building workflow.
@@ -332,7 +481,9 @@ def run(
     verbose = verbose and rank == 0
 
     hyb_dat = extract_dat("hyb", cluster, prefix)
-    hs = parse_matrices(out_file="out", search_phrase="Local hamiltonian", prefix=prefix)
+    hs = parse_matrices(
+        out_file="out", search_phrase="Local hamiltonian", prefix=prefix
+    )
     qs = parse_matrices(
         out_file="out",
         search_phrase="Transformation to the local cf basis:",
@@ -344,7 +495,9 @@ def run(
         prefix=prefix,
     )
     if cluster not in hs:
-        raise RuntimeError(f"Could not extract local hamiltonian for cluster {cluster} from file {prefix}/out.")
+        raise RuntimeError(
+            f"Could not extract local hamiltonian for cluster {cluster} from file {prefix}/out."
+        )
     H_dft = hs[cluster]
     hyb = hyb_dat.orbitals
     w = hyb_dat.w
@@ -359,7 +512,9 @@ def run(
     e_fermi = parse_fermi_energy(out_file="out", prefix=prefix)
     H_dft = H_dft - e_fermi * np.eye(H_dft.shape[0])
     if verbose:
-        print(f"Fermi energy {e_fermi: .8f} subtracted from the local Hamiltonian (bath mesh has E_F = 0).")
+        print(
+            f"Fermi energy {e_fermi: .8f} subtracted from the local Hamiltonian (bath mesh has E_F = 0)."
+        )
 
     cluster_basis = parse_cluster_basis(cluster, inp_file="green.inp", prefix=prefix)
     if cluster_basis is None:
@@ -402,7 +557,9 @@ def run(
             try:
                 N = H_dft.shape[0]
                 if l_val == -1:
-                    raise RuntimeError(f"Could not determine l quantum number for cluster {cluster} from green.inp")
+                    raise RuntimeError(
+                        f"Could not determine l quantum number for cluster {cluster} from green.inp"
+                    )
 
                 # We determine spinpol by checking if N matches 2 * subset size or 1 * subset size
                 # But it's simpler: if N is even, it's very likely spin polarized for ED models.
@@ -424,7 +581,9 @@ def run(
                     if basis_tag & 1:
                         subset_size += 3
                 else:
-                    raise NotImplementedError(f"Dynamic rotation for l={l_val} not supported.")
+                    raise NotImplementedError(
+                        f"Dynamic rotation for l={l_val} not supported."
+                    )
 
                 if subset_size * 2 == N:
                     spinpol = True
@@ -455,8 +614,12 @@ def run(
         if verbose:
             print(f"Cluster {cluster} uses a non-spherical basis (or Cf flag).")
             if T is not None and cluster not in qs and cluster not in sharm_qs:
-                print(f"Dynamically generated RSPt rotation matrix for l={l_val}, basis_tag={basis_tag}.")
-            print("Applying transformation T to rotate to the Spherical Harmonics basis (T @ H @ T.T.conj()).")
+                print(
+                    f"Dynamically generated RSPt rotation matrix for l={l_val}, basis_tag={basis_tag}."
+                )
+            print(
+                "Applying transformation T to rotate to the Spherical Harmonics basis (T @ H @ T.T.conj())."
+            )
             matrix_print(T, "Transformation matrix T:")
             print()
         # Data is in CF basis, rotate to Spherical Harmonics
@@ -472,6 +635,9 @@ def run(
         H_dft_sph = H_dft
 
     _verify_spherical_basis(H_dft_sph, T, cluster, l_val, basis_tag)
+    contains_soc = _detect_soc(H_dft_sph, l_val)
+    if verbose:
+        print(f"Impurity block already contains spin-orbit coupling: {contains_soc}.")
 
     phase_hyb, Q = block_diagonalize_hyb(hyb_sph)
 
@@ -483,10 +649,18 @@ def run(
         )
         print()
 
-    block_structure = build_block_structure(phase_hyb, tol=1e-15)
-
     H_imp = H_dft_sph
     H_local_Q = np.conjugate(Q.T) @ H_imp @ Q
+
+    # Anchor equivalence detection to the local Hamiltonian as well as the hybridization
+    # function (matching `h0.prepare_hyb_fit`'s use of both), and use the shared, measured
+    # tolerance rather than machine epsilon -- see BLOCK_EQUIVALENCE_TOL's docstring. At
+    # tol=1e-15 real RSPt data's ~1.4e-10 noise floor between symmetry-equivalent orbitals
+    # (e.g. a cubic shell's t2g members, or spin-up/spin-down with no SOC) fractures a single
+    # equivalence class into several, each then fit by an independently-seeded stochastic
+    # optimizer -- producing measurably different bath parameters between orbitals that must
+    # be exactly equivalent by symmetry.
+    block_structure = build_block_structure(phase_hyb, mat=H_local_Q, tol=BLOCK_EQUIVALENCE_TOL)
 
     if natural_orbitals:
         H_imp_blocks = [
@@ -537,6 +711,7 @@ def run(
                 matrix_print(vb_i, f"Energy {eb_i: 9.6f} :")
             print()
         print("=" * 80)
+    _report_fit_fidelity(w, eim, phase_hyb, block_structure, ebs_star, vs_star, verbose)
     (
         H,
         _H_star,
@@ -562,6 +737,33 @@ def run(
         peel_weight=peel_weight,
     )
 
+    # SOC is time-reversal *even* (L.S is invariant under T, since both L and S flip sign), so
+    # the true continuous Hamiltonian stays Kramers degenerate with SOC present. But the star
+    # bath discretizes each *inequivalent* block independently (fit_hyb / block_structure), and
+    # time-reversal-conjugate blocks are related by an antiunitary map that identical_blocks /
+    # transposed_blocks / particle_hole_blocks do not track -- without SOC the up/down blocks
+    # are literally identical and share one fit, so degeneracy survives by construction; with
+    # SOC they are not identical, and nothing currently enforces their pairing. Losing exact
+    # Kramers degeneracy in the discretized fit is therefore an expected consequence of SOC
+    # being present, not a fitting defect -- refusing on it would be refusing legitimate output
+    # for the majority of real transition-metal workloads (NiO, FCC Ni, BCC Fe... all have real
+    # 3d SOC). `contains_soc is not True` (rather than testing falsiness) means an undetermined
+    # shell (l_val == -1, contains_soc is None) is treated like "no SOC" -- conservative, since
+    # there is no positive evidence to explain a violation away.
+    if not allow_broken_time_reversal and contains_soc is not True:
+        violations = _check_kramers_degeneracy(H)
+        if violations:
+            detail = ", ".join(f"E={e:.4g} (x{m})" for e, m in violations)
+            raise RuntimeError(
+                f"Cluster {cluster}: the assembled Hamiltonian has {len(violations)} "
+                f"odd-multiplicity eigenvalue cluster(s) -- it breaks time-reversal (Kramers) "
+                f"symmetry: {detail}. No spin-orbit coupling was detected in the impurity "
+                "block, so this is not the expected SOC-driven loss of exact degeneracy -- it "
+                "usually means the cluster is genuinely spin-polarised or field-dressed. If so, "
+                "pass --allow-broken-time-reversal. Otherwise this may indicate a fitting "
+                "problem; try a different --gamma or bath_states_per_orbital."
+            )
+
     # The valence/conduction split is read off the *star* bath diagonal. For a chain geometry
     # each bath site is a Lanczos combination of star modes, so the same index means something
     # different in the matrix actually written -- the labels would be misleading rather than
@@ -569,7 +771,7 @@ def run(
     star_geometry = bath_geometry.lower() == "star"
 
     write_h0_file(
-        f"{cluster}_h0.h0",
+        f"{cluster}.h0",
         H,
         impurity_orbitals={0: impurity_indices},
         # RSPt writes Rydberg unless green.inp asks otherwise; this package works in its
@@ -591,6 +793,10 @@ def run(
         rotation_applied=bool(needs_rotation),
         bath_geometry=bath_geometry,
         impurity_l=int(l_val) if l_val != -1 else None,
+        # Measured from H_dft_sph's down-up spin block (see _detect_soc), not assumed --
+        # None (l_val undetermined) is dropped by write_h0_file, so the key is simply omitted
+        # rather than written with a guessed value.
+        contains_soc=contains_soc,
         producer={"name": "rspt2spectra", "cluster": cluster},
     )
 
@@ -657,6 +863,21 @@ def main() -> None:
         help=(
             "Also write the legacy <cluster>_h0_op.dict, which records no unit, energy "
             "reference, basis or orbital layout. Only for tooling not yet updated to .h0."
+        ),
+    )
+    parser.add_argument(
+        "--allow-broken-time-reversal",
+        dest="allow_broken_time_reversal",
+        action="store_true",
+        help=(
+            "Skip the Kramers-degeneracy check on the assembled Hamiltonian when spin-orbit "
+            "coupling was NOT detected in the impurity block. (When SOC is detected, the check "
+            "is skipped automatically -- exact Kramers degeneracy in the discretized bath fit "
+            "is not expected once SOC is present, since the fit does not enforce it; see the "
+            "comment at the check site in build_h0.py.) Without SOC, every eigenvalue of a "
+            "time-reversal-symmetric one-body H is at least doubly degenerate, so an odd "
+            "cluster there usually means the cluster is genuinely spin-polarised or "
+            "field-dressed -- pass this flag for that case."
         ),
     )
     parser.add_argument("--regularization", type=str, default="l2")

@@ -25,8 +25,22 @@ from rspt2spectra.utils import block_diagonalize_hyb, matrix_print, rotate_matri
 
 logger = logging.getLogger(__name__)
 
+# Numeric equality tolerance for recognizing symmetry-equivalent orbital blocks
+# (spin-degenerate partners, or point-group-equivalent manifolds like a cubic shell's eg/t2g)
+# in `build_block_structure`. Measured on real RSPt-derived NiO data: orbitals that are
+# equivalent by an *exact* symmetry (spin degeneracy with no SOC, or a cubic crystal field)
+# differ only by ~1.4e-10 between each other -- floating-point/text-I/O noise from the
+# RSPt -> .dat -> fit pipeline, not physics. This constant sits ~4 orders of magnitude above
+# that measured noise floor (so real noise never blocks a merge that should happen) and ~4
+# orders of magnitude below the energy scales fit here (so it does not risk merging two
+# genuinely distinct orbitals). A far tighter value (e.g. 1e-15, machine epsilon) fails to
+# merge real symmetry-equivalent blocks and silently fits them as independent, differently-
+# seeded stochastic optimizations -- producing a Hamiltonian that looks nearly, but not
+# exactly, symmetric.
+BLOCK_EQUIVALENCE_TOL = 1e-6
 
-def prepare_hyb_fit(hyb, H_local, tol=1e-6, verbose=True):
+
+def prepare_hyb_fit(hyb, H_local, tol=BLOCK_EQUIVALENCE_TOL, verbose=True):
     """Prepare the fitting basis and block partition for a hybridization fit.
 
     The hybridization function is rotated into a basis where each block is
