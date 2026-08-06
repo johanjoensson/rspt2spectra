@@ -11,7 +11,7 @@ GOLDEN = Path(__file__).parent / "golden_h0_v1_index.h0"
 
 # Pinned in impurityModel's doc/h0_file_format.md. The two repos implement the format
 # independently, so a drifting writer shows up here rather than in a downstream calculation.
-GOLDEN_SHA256 = "eb35f454283638e588e3944b3dc979f1872b9993134f776a8ab99279ab1b2b76"
+GOLDEN_SHA256 = "89c75e53a651fe8fbf70d5960b12cbb697f00507b13642031bb452fdf5c8529c"
 
 
 def _index_encoded(n=8):
@@ -74,6 +74,30 @@ def test_writer_drops_pairwise(tmp_path):
 
     pairs = {(int(line.split()[0]), int(line.split()[1])) for line in out.read_text().splitlines()[3:]}
     assert (1, 2) not in pairs and (2, 1) not in pairs
+
+
+def test_spin_ordering_is_added_to_required_features(tmp_path):
+    # A reader that does not understand spin_ordering must refuse, not silently guess -- so
+    # declaring it must also list it as required, not just set the header key.
+    out = tmp_path / "spin.h0"
+    write_h0_file(
+        out,
+        np.eye(2, dtype=complex),
+        impurity_orbitals={0: [0, 1]},
+        unit="eV",
+        spin_ordering="down_first",
+    )
+    header = json.loads(out.read_text().splitlines()[1])
+    assert header["spin_ordering"] == "down_first"
+    assert "spin_ordering" in header["required_features"]
+
+
+def test_spin_ordering_omitted_by_default(tmp_path):
+    out = tmp_path / "nospin.h0"
+    write_h0_file(out, np.eye(2, dtype=complex), impurity_orbitals={0: [0, 1]}, unit="eV")
+    header = json.loads(out.read_text().splitlines()[1])
+    assert "spin_ordering" not in header
+    assert "spin_ordering" not in header["required_features"]
 
 
 def test_amplitudes_round_trip_exactly(tmp_path):

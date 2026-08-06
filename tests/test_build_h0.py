@@ -1,3 +1,4 @@
+import json
 import warnings
 
 import numpy as np
@@ -233,6 +234,8 @@ def test_run_always_writes_basis_spherical_and_identity_rotation(tmp_path, monke
     assert '"basis": "spherical"' in header
     assert '"rotation_applied": false' in header
     assert '"rot_to_spherical": [[[1.0, 0.0]]]' in header
+    assert '"spin_ordering": "down_first"' in header
+    assert "spin_ordering" in json.loads(header)["required_features"]
 
 
 def test_written_h0_is_read_back_by_impurity_model(tmp_path, monkeypatch):

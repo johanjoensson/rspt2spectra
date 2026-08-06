@@ -108,6 +108,7 @@ def write_h0_file(
     energy_reference="fermi",
     drop_tolerance=DEFAULT_DROP_TOLERANCE,
     rot_to_spherical=None,
+    spin_ordering=None,
     **header_extra,
 ):
     """Write ``h_matrix`` in impurityModel's ``.h0`` format.
@@ -140,6 +141,9 @@ def write_h0_file(
         Applied pairwise so the stored key sets stay symmetric.
     rot_to_spherical : numpy.ndarray, optional
         ``n_imp x n_imp`` rotation from the impurity basis to spherical harmonics.
+    spin_ordering : str, optional
+        ``"down_first"`` or ``"up_first"``. Added to ``required_features`` when given, so a
+        reader that does not understand it must refuse rather than silently guess.
     **header_extra
         Further header keys (``basis``, ``bath_geometry``, ``valence_bath``, ``producer``, ...).
 
@@ -170,6 +174,9 @@ def write_h0_file(
     if rot_to_spherical is not None:
         rot = np.asarray(rot_to_spherical, dtype=complex)
         header["rot_to_spherical"] = [[[float(v.real), float(v.imag)] for v in row] for row in rot]
+    if spin_ordering is not None:
+        header["required_features"].append("spin_ordering")
+        header["spin_ordering"] = spin_ordering
     header.update({k: v for k, v in header_extra.items() if v is not None})
 
     lines = [f"# impurityModel-h0 v{H0_SPEC_VERSION}", json.dumps(header, allow_nan=False), "--"]

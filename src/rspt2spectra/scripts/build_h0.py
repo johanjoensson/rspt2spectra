@@ -130,7 +130,12 @@ def generate_rspt_T_matrix(l, basis_tag, spinpol):
     if not spinpol:
         return T_spatial
 
-    # If spin-polarized, RSPt packs spin-up then spin-down
+    # If spin-polarized, RSPt packs spin-down then spin-up: green_trunk_interface.F90's
+    # lda_mlmsatomicqn assigns qn(2, :offset) = -1 (2*ms, spin down) to the first block and
+    # qn(2, offset+1:) = 1 (spin up) to the second -- i.e. this is a *structural* fact about
+    # how RSPt lays out the array, not a per-run physical property to detect. It happens to
+    # match impurityModel's own c2i convention (s=0 first, s=0 = down; atomic_physics.py),
+    # so build_h0 needs no permutation to satisfy the .h0 format's spin_ordering: down_first.
     N_sph = mmsize * 2
     N_corr = T_spatial.shape[1] * 2
     T = np.zeros((N_sph, N_corr), dtype=complex)
@@ -579,6 +584,9 @@ def run(
         # there) rather than omitting the key when no rotation happened to be needed.
         rot_to_spherical=np.eye(len(impurity_indices), dtype=complex),
         basis="spherical",
+        # Structural, not measured: see the comment in generate_rspt_T_matrix. RSPt always
+        # packs the first spin block as down (2*ms = -1) and the second as up (2*ms = +1).
+        spin_ordering="down_first",
         basis_tag=int(basis_tag),
         rotation_applied=bool(needs_rotation),
         bath_geometry=bath_geometry,
