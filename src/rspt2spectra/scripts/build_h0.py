@@ -28,6 +28,7 @@ from rspt2spectra.h0 import assemble_h0
 from rspt2spectra.h2imp import matrixToIOp, write_to_file
 from rspt2spectra.hyb_fit import fit_hyb
 from rspt2spectra.natural_orbitals import fit_hyb_natural_orbitals
+from rspt2spectra.op_printer import write_h0_file
 from rspt2spectra.readfile import parse_cluster_basis, parse_fermi_energy, parse_matrices
 from rspt2spectra.utils import block_diagonalize_hyb, matrix_print
 from rspt2spectra.weight_functions import weight_functions
@@ -208,6 +209,7 @@ def run(
     natural_orbitals: bool,
     grid_type: str,
     peel_weight: float = 0.05,
+    legacy_dict: bool = False,
     *kwargs,
 ) -> None:
     """Execute the full non-interacting Hamiltonian (h0) building workflow.
@@ -405,7 +407,16 @@ def run(
                 matrix_print(vb_i, f"Energy {eb_i: 9.6f} :")
             print()
         print("=" * 80)
-    H, *_ = assemble_h0(
+    (
+        H,
+        _H_star,
+        impurity_indices,
+        valence_bath_indices,
+        conduction_bath_indices,
+        _v_solver,
+        _H_bath,
+        _H_imp,
+    ) = assemble_h0(
         ebs_star,
         vs_star,
         cs_star,
@@ -421,8 +432,37 @@ def run(
         peel_weight=peel_weight,
     )
 
-    h_op = matrixToIOp(H)
-    write_to_file(h_op, f"{cluster}_h0_op", save_as_dict=True)
+    # The valence/conduction split is read off the *star* bath diagonal. For a chain geometry
+    # each bath site is a Lanczos combination of star modes, so the same index means something
+    # different in the matrix actually written -- the labels would be misleading rather than
+    # approximate. Record them only when the two coincide.
+    star_geometry = bath_geometry.lower() == "star"
+
+    write_h0_file(
+        f"{cluster}_h0.h0",
+        H,
+        impurity_orbitals={0: impurity_indices},
+        # RSPt writes Rydberg unless green.inp asks otherwise; this package works in its
+        # input's unit and records it, and the consumer converts.
+        unit="Ry",
+        energy_reference="fermi",
+        fermi_energy=e_fermi,
+        valence_bath=list(valence_bath_indices) if star_geometry else None,
+        conduction_bath=list(conduction_bath_indices) if star_geometry else None,
+        rot_to_spherical=np.eye(len(impurity_indices), dtype=complex) if needs_rotation else None,
+        # Provenance rather than a claim: "spherical" is asserted only when a rotation to it
+        # was actually applied. Otherwise the basis is whatever the cluster was defined in,
+        # and the recorded tag lets a consumer work out which.
+        basis="spherical" if needs_rotation else "unknown",
+        basis_tag=int(basis_tag),
+        rotation_applied=bool(needs_rotation),
+        bath_geometry=bath_geometry,
+        impurity_l=int(l_val) if l_val != -1 else None,
+        producer={"name": "rspt2spectra", "cluster": cluster},
+    )
+
+    if legacy_dict:
+        write_to_file(matrixToIOp(H), f"{cluster}_h0_op", save_as_dict=True)
 
     if plot and rank == 0:
         try:
@@ -477,6 +517,15 @@ def main() -> None:
     parser.add_argument("-d", "--directory", type=str, default=".", dest="prefix")
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-p", "--plot", action="store_true")
+    parser.add_argument(
+        "--legacy-dict",
+        dest="legacy_dict",
+        action="store_true",
+        help=(
+            "Also write the legacy <cluster>_h0_op.dict, which records no unit, energy "
+            "reference, basis or orbital layout. Only for tooling not yet updated to .h0."
+        ),
+    )
     parser.add_argument("--regularization", type=str, default="l2")
     parser.add_argument("--weight-function", type=str, default="unit")
     parser.add_argument("--weight-factor", type=float, default=2.0)

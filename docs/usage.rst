@@ -52,7 +52,9 @@ where ``<cluster>`` is the RSPt cluster label (e.g. ``0102010100``) and
 per orbital block. The script
 
 1. reads the hybridization function (``real-/imag-hyb-<cluster>.dat``) and
-   the local Hamiltonian and crystal-field transformation from ``out``,
+   the local Hamiltonian, Fermi energy and crystal-field transformation from
+   ``out``, subtracting the Fermi energy so the impurity block shares the
+   hybridization mesh's energy zero,
 2. block-partitions the hybridization function,
 3. fits star bath energies and hoppings per inequivalent block
    (:func:`rspt2spectra.hyb_fit.fit_hyb`, or
@@ -60,7 +62,7 @@ per orbital block. The script
    ``--natural-orbitals``),
 4. transforms the bath to the requested geometry (``--bath-geometry``:
    star, chains, or linked double chain, see :mod:`rspt2spectra.edchain`),
-5. writes the resulting h0 operator to ``<cluster>_h0_op.dict``.
+5. writes the resulting h0 to ``<cluster>_h0.h0``.
 
 Useful options (see ``build_h0 --help`` for the full list):
 
@@ -94,10 +96,23 @@ starts from different initial guesses and the best fit is kept::
 Using the result
 ----------------
 
-The generated ``<cluster>_h0_op.dict`` file contains the one-particle
-Hamiltonian in second-quantization operator format,
-``{((i, "c"), (j, "a")): h0[i, j]}``, directly consumable by e.g.
-`impurityModel <https://github.com/johanjoensson/impurityModel>`_.
+The generated ``<cluster>_h0.h0`` file holds the one-particle Hamiltonian as
+a JSON header plus one ``i j re im`` line per element, directly consumable by
+`impurityModel <https://github.com/johanjoensson/impurityModel>`_'s
+``selfenergy`` and ``susceptibility`` sub-commands. The header records the
+unit, the energy reference, the impurity/bath layout and the basis, so the
+consumer validates rather than assumes; the format is specified in
+impurityModel's ``doc/h0_file_format.md``, which is the single source of
+truth for both implementations.
+
+Values are written in whatever unit RSPt used (Rydberg by default) and the
+header says which, so the consumer converts.
+
+``--legacy-dict`` additionally writes the old ``<cluster>_h0_op.dict``, a bare
+list of ``i j re im`` lines with no header. It records no unit, energy
+reference, basis or orbital layout, and its fixed-point amplitudes are lossy
+below ``|x| ~ 1``; use it only for tooling not yet updated.
+
 Interacting parameters (Slater-Condon integrals, SOC) are not part of h0;
 extract them from RSPt as described below.
 

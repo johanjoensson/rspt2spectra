@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from rspt2spectra.scripts.build_h0 import run
 
@@ -39,12 +40,22 @@ def _run_build_h0(tmp_path, eim):
     )
 
 
-def _read_h00(path):
-    for line in (path / "cl_h0_op.dict").read_text().splitlines():
+def _read_terms(path, name="cl_h0.h0"):
+    """The (i, j) -> amplitude map of a written .h0 file, skipping magic line and header."""
+    terms = {}
+    for line in (path / name).read_text().splitlines():
+        if line.startswith("#") or line.startswith("{") or line.strip() == "--":
+            continue
         i, j, re, im = line.split()
-        if i == "0" and j == "0":
-            return float(re) + 1j * float(im)
-    raise AssertionError("impurity element not found in operator file")
+        terms[(int(i), int(j))] = float(re) + 1j * float(im)
+    return terms
+
+
+def _read_h00(path):
+    terms = _read_terms(path)
+    if (0, 0) not in terms:
+        raise AssertionError("impurity element not found in operator file")
+    return terms[(0, 0)]
 
 
 def test_fitted_constant_offset_shifts_impurity_level(tmp_path, monkeypatch):
@@ -117,10 +128,39 @@ def test_impurity_level_lands_inside_the_bath_energy_range(tmp_path, monkeypatch
     monkeypatch.chdir(tmp_path)
     _run_build_h0(tmp_path, eim)
 
-    diag = {}
-    for line in (tmp_path / "cl_h0_op.dict").read_text().splitlines():
-        i, j, re, _im = line.split()
-        if i == j:
-            diag[int(i)] = float(re)
+    diag = {i: v.real for (i, j), v in _read_terms(tmp_path).items() if i == j}
     impurity, bath = diag[0], [v for k, v in diag.items() if k > 0]
     assert min(bath) <= impurity <= max(bath), f"impurity {impurity} outside bath {min(bath)}..{max(bath)}"
+
+
+def test_written_h0_is_read_back_by_impurity_model(tmp_path, monkeypatch):
+    """The seam this whole format exists for: build_h0's output must load in impurityModel.
+
+    Guarded by importorskip -- the two packages are independent by design and CI for either
+    one does not have the other.
+    """
+    h0_format = pytest.importorskip("impurityModel.ed.h0_format")
+
+    w = np.linspace(-6, 3, 800)
+    eim = 0.05
+    e_fermi = 0.6
+    hyb = 0.7**2 / (w + 1j * eim + 2.0) + 0.5**2 / (w + 1j * eim + 0.5)
+    _write_rspt_dir(tmp_path, w, hyb, -1.0 + e_fermi, e_fermi=e_fermi)
+
+    monkeypatch.chdir(tmp_path)
+    _run_build_h0(tmp_path, eim)
+
+    parsed = h0_format.read_h0_file(tmp_path / "cl_h0.h0")
+
+    # The file declares Rydberg; the reader converts, so the two differ by exactly that.
+    ry_to_ev = h0_format.RY_TO_EV
+    written = _read_terms(tmp_path)
+    assert parsed.h0[((0, "c"), (0, "a"))] == pytest.approx(written[(0, 0)] * ry_to_ev)
+
+    assert parsed.energy_reference == "fermi"
+    assert parsed.header["fermi_energy"] == pytest.approx(e_fermi)
+    assert parsed.impurity_orbitals == {0: (0,)}
+    # And the invariant that catches a lost energy zero, now in the consumer's units.
+    h = parsed.to_matrix()
+    diag = h.diagonal().real
+    assert diag[1:].min() <= diag[0] <= diag[1:].max()
