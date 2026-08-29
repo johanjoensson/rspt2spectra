@@ -668,6 +668,8 @@ def get_v_and_eb_varpro_basin_hopping(
     realvalue_v,
     max_moment=3,
     full_gradient=True,
+    rng=None,
+    optimize_bath_energies=True,
 ):
     """Fit bath energies with VARPRO basin-hopping.
 
@@ -684,6 +686,17 @@ def get_v_and_eb_varpro_basin_hopping(
     dependence through the analytic inner solve.  Set it False to fall back to
     the cheaper Kaufman approximation (`_varpro_cost_and_grad`), which treats the
     solved residues as fixed and gives a less accurate search direction.
+
+    ``rng`` seeds :func:`scipy.optimize.basinhopping`'s random displacement walk.
+    Pass a :class:`numpy.random.Generator` (the caller's per-rank one) to make the
+    fit reproducible -- with ``rng=None`` basin-hopping draws from the unseeded
+    process-global RNG, so two fits of the *same* hybridization return different
+    bath energies whenever the block has competing local minima.
+
+    ``optimize_bath_energies`` (default ``True``): set ``False`` to freeze the bath
+    energies at ``ebs[0]`` and solve only the hoppings and the constant offset, by
+    least squares (one :func:`_varpro_inner_solve`). No basin-hopping, no polish --
+    the returned energies are exactly the ones passed in (clipped into the window).
     """
     grad_fun = _varpro_cost_and_full_grad if full_gradient else _varpro_cost_and_grad
     n_eb = ebs.shape[1]
@@ -692,6 +705,13 @@ def get_v_and_eb_varpro_basin_hopping(
     z = w + 1j * delta_arr
     weight_array = weight_function(w)
     W_mn = moment_weights(w, max_moment)
+
+    if not optimize_bath_energies:
+        w_min, w_max = eb_restrictions[0]
+        eb_fixed = np.sort(np.clip(np.asarray(ebs[0], dtype=float), w_min, w_max))
+        _, V, _, C = _varpro_inner_solve(eb_fixed, z, hyb, realvalue_v)
+        cost = _varpro_cost_and_grad(eb_fixed, z, hyb, weight_array, W_mn, realvalue_v)[0]
+        return V, eb_fixed, C, float(cost)
 
     # Reparametrize bath energies as [first energy, gaps]; gaps >= delta keep the
     # states sorted and separated by at least the broadening, so no post-fit merge
@@ -740,6 +760,7 @@ def get_v_and_eb_varpro_basin_hopping(
             "bounds": gap_bounds,
         },
         disp=False,
+        rng=rng,
     )
 
     # No merge: the gap constraint already guarantees separation >= delta.  A

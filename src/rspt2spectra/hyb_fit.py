@@ -98,8 +98,8 @@ def fit_hyb(
     comm=None,
     weight_fun=np.ones_like,
     ebs_guess=None,
-    vs_guess=None,
     regularization=None,
+    optimize_bath_energies=True,
 ):
     """Fit bath energies and hoppings to the hybridization function.
 
@@ -129,10 +129,14 @@ def fit_hyb(
         fit is kept on all ranks.
     weight_fun : callable, default ``np.ones_like``
         Energy-dependent fit weight, ``weight_fun(w) -> (M,) array``.
-    ebs_guess, vs_guess : list of np.ndarray, optional
-        Initial guesses per inequivalent block (e.g. from a previous fit).
+    ebs_guess : list of (n_b,) np.ndarray, optional
+        Bath-energy seed per inequivalent block (e.g. from a previous fit). Only the
+        energies are seeded; the hoppings are always solved for.
     regularization : {"L1", "L2", "none", None}
         Regularization type for the hopping parameters.
+    optimize_bath_energies : bool, default True
+        ``False`` freezes the bath energies at ``ebs_guess`` and solves only the
+        hoppings (least squares). ``ebs_guess`` is then required.
 
     Returns
     -------
@@ -210,16 +214,14 @@ def fit_hyb(
         realvalue_v = np.all(np.abs(block_hyb - np.conj(np.transpose(block_hyb, (0, 2, 1)))) < 1e-6)
 
         bath_guess = None
-        v_guess = None
-        if vs_guess is not None:
-            v_guess = vs_guess[inequivalent_block_i]
         if ebs_guess is not None:
-            bath_guess = ebs_guess[inequivalent_block_i]
+            bath_guess = np.unique(np.asarray(ebs_guess[inequivalent_block_i], dtype=float))
 
-        # Block structure has changed!
-        # Remove all hopping guesses, but keep the bath energies
-        if v_guess is not None and bath_guess is not None and v_guess.shape[1] != block_hyb.shape[1]:
-            v_guess = None
+        if not optimize_bath_energies and bath_guess is None:
+            raise ValueError(
+                "fit_hyb(optimize_bath_energies=False) needs ebs_guess for every hybridizing "
+                f"block; block {block_i} has none"
+            )
 
         block_eb_star, block_vs_star, block_C_star = fit_block(
             block_hyb[mask, :, :],
@@ -232,9 +234,9 @@ def fit_hyb(
             verbose=verbose,
             weight_fun=weight_fun,
             bath_guess=bath_guess,
-            hopping_guess=v_guess,
             regularization=regularization,
             use_bounds=True,
+            optimize_bath_energies=optimize_bath_energies,
         )
         # Remove states with negligible hopping
         bath_mask = np.linalg.norm(block_vs_star, axis=(1, 2)) > 1e-10
@@ -339,15 +341,19 @@ def fit_block(
     verbose,
     weight_fun,
     bath_guess=None,
-    hopping_guess=None,
     regularization=None,
     use_bounds=True,
+    optimize_bath_energies=True,
 ):
     """Fit one hybridization block with VARPRO basin-hopping.
 
     Bath-energy seeds are drawn around the peaks of the block's spectral
     trace (weighted by ``weight_fun``); each MPI rank uses its own RNG seed
     and the lowest-cost fit across ranks is returned everywhere.
+
+    ``optimize_bath_energies`` (default ``True``): set ``False`` to freeze the bath
+    energies at ``bath_guess`` and solve only the hoppings (least squares); the
+    basin-hopping search over energies is skipped. ``bath_guess`` is then required.
 
     Returns
     -------
@@ -363,6 +369,34 @@ def fit_block(
     seed_sequence = np.random.SeedSequence(base_seed)
     child_seeds = seed_sequence.spawn(size)
     rng = np.random.default_rng(seed=child_seeds[rank])
+
+    if not optimize_bath_energies:
+        # Freeze the energies at the supplied guess and solve only the hoppings.
+        if bath_guess is None:
+            raise ValueError(
+                "fit_block(optimize_bath_energies=False) requires bath_guess -- the bath energies to freeze"
+            )
+        eb_guess = np.sort(np.asarray(bath_guess, dtype=float))[None, :]
+        eb_bounds = [(w[0], w[-1])] * eb_guess.shape[1]
+        v, bath_energies, C, min_cost = get_v_and_eb_varpro_basin_hopping(
+            w,
+            delta,
+            hyb,
+            eb_guess,
+            eb_bounds,
+            gamma=gamma,
+            regularization=regularization,
+            weight_function=weight_fun,
+            realvalue_v=realvalue_v,
+            rng=rng,
+            optimize_bath_energies=False,
+        )
+        if comm is not None:
+            bath_energies, v, C, _ = comm.allreduce((bath_energies, v, C, min_cost), op=_get_v_opt_op())
+        if verbose:
+            print(f"Final cost:    {abs(min_cost):.3e}  (bath energies frozen)")
+            print(f"Bath energies: {_fmt_floats(bath_energies)}")
+        return bath_energies, v, C
 
     # Cap the requested count at what reasonably fits in the window (min
     # separation delta), so seeds are built at a feasible size from the start.
@@ -417,6 +451,7 @@ def fit_block(
         regularization=regularization,
         weight_function=weight_fun,
         realvalue_v=realvalue_v,
+        rng=rng,
     )
     if comm is not None:
         bath_energies, v, C, _ = comm.allreduce((bath_energies, v, C, min_cost), op=_get_v_opt_op())

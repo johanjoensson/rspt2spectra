@@ -673,3 +673,58 @@ def test_varpro_full_gradient_matches_finite_difference():
             assert np.isclose(c_full, c_kauf, rtol=0, atol=1e-9)
             rel = np.max(np.abs(g_full - g_num)) / (np.linalg.norm(g_num) + 1e-30)
             assert rel < 1e-5, f"n_imp={n_imp} real={realvalue}: full-grad rel err {rel:.2e}"
+
+
+def test_basin_hopping_is_reproducible_with_an_rng():
+    # basinhopping's random-displacement walk draws from the process-global RNG when
+    # rng=None, so two fits of the SAME hybridization can land in different local minima.
+    # Passing an rng makes the search reproducible.
+    rng = np.random.default_rng(0)
+    wgrid = np.linspace(-5, 5, 301)
+    d = 0.1
+    z = wgrid + 1j * (d * (1 + 0.5 * np.abs(wgrid) ** 2))
+    true_eb = np.array([-2.3, -0.4, 1.1, 2.6])
+    true_v = np.array([0.6, 0.9, 0.5, 0.7]).reshape(-1, 1)
+    hyb_syn = get_hyb(z, true_eb, true_v)
+    n_eb = true_eb.shape[0]
+    ebs = np.sort(rng.uniform(-4, 4, size=(20, n_eb)), axis=1)
+    eb_restrictions = [(wgrid[0], wgrid[-1])] * n_eb
+
+    def _fit(seed):
+        return get_v_and_eb_varpro_basin_hopping(
+            wgrid, d, hyb_syn, ebs, eb_restrictions, gamma=0.0, regularization=None,
+            weight_function=np.ones_like, realvalue_v=True, rng=np.random.default_rng(seed),
+        )[1]
+
+    np.testing.assert_array_equal(_fit(7), _fit(7))
+
+
+def test_freeze_bath_energies_solves_only_hoppings():
+    # optimize_bath_energies=False returns the passed-in energies unchanged (clipped to the
+    # window) and solves the hoppings by least squares.
+    wgrid = np.linspace(-5, 5, 401)
+    d = 0.1
+    z = wgrid + 1j * (d * (1 + 0.5 * np.abs(wgrid) ** 2))
+    true_eb = np.array([-2.3, -0.4, 1.1, 2.6])
+    true_v = np.array([0.6, 0.9, 0.5, 0.7]).reshape(-1, 1)
+    hyb_syn = get_hyb(z, true_eb, true_v)
+    eb_restrictions = [(wgrid[0], wgrid[-1])] * true_eb.shape[0]
+    frozen = np.sort(true_eb + np.array([0.05, -0.03, 0.02, -0.04]))
+
+    def _frozen_fit(eb):
+        return get_v_and_eb_varpro_basin_hopping(
+            wgrid, d, hyb_syn, np.sort(eb)[None, :], eb_restrictions, gamma=0.0,
+            regularization=None, weight_function=np.ones_like, realvalue_v=True,
+            optimize_bath_energies=False,
+        )
+
+    v, eb_out, _C, cost = _frozen_fit(frozen)
+    np.testing.assert_allclose(np.sort(eb_out), np.sort(frozen))
+    assert v.shape[0] == frozen.shape[0]
+    assert np.isfinite(cost) and cost >= 0.0
+    # Frozen at the true energies the least-squares hoppings recover the target almost exactly,
+    # and much better than frozen at energies that are off by ~1.
+    _, _, _, cost_true = _frozen_fit(true_eb)
+    _, _, _, cost_bad = _frozen_fit(true_eb + np.array([1.0, -0.9, 0.8, -1.1]))
+    assert cost_true < 1e-6
+    assert cost_true < cost < cost_bad
