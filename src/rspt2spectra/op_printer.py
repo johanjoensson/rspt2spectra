@@ -162,24 +162,37 @@ def write_h0_file(
 
     header = {
         "version": H0_SPEC_VERSION,
-        "required_features": ["unit", "energy_reference", "index_convention", "storage"],
+        "required_features": [
+            "unit",
+            "energy_reference",
+            "index_convention",
+            "storage",
+        ],
         "unit": unit,
         "energy_reference": energy_reference,
         "n_orb": int(n_orb),
         "index_convention": "impurity-block-first",
         "storage": "full",
-        "impurity_orbitals": {str(k): [int(o) for o in orbs] for k, orbs in impurity_orbitals.items()},
+        "impurity_orbitals": {
+            str(k): [int(o) for o in orbs] for k, orbs in impurity_orbitals.items()
+        },
         "drop_tolerance": float(drop_tolerance),
     }
     if rot_to_spherical is not None:
         rot = np.asarray(rot_to_spherical, dtype=complex)
-        header["rot_to_spherical"] = [[[float(v.real), float(v.imag)] for v in row] for row in rot]
+        header["rot_to_spherical"] = [
+            [[float(v.real), float(v.imag)] for v in row] for row in rot
+        ]
     if spin_ordering is not None:
         header["required_features"].append("spin_ordering")
         header["spin_ordering"] = spin_ordering
     header.update({k: v for k, v in header_extra.items() if v is not None})
 
-    lines = [f"# impurityModel-h0 v{H0_SPEC_VERSION}", json.dumps(header, allow_nan=False), "--"]
+    lines = [
+        f"# impurityModel-h0 v{H0_SPEC_VERSION}",
+        json.dumps(header, allow_nan=False),
+        "--",
+    ]
     for i in range(n_orb):
         for j in range(n_orb):
             if max(abs(h[i, j]), abs(h[j, i])) <= cutoff:

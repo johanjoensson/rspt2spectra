@@ -27,7 +27,11 @@ def gaussian(w0, c):
 
 def sqrtgauss(w0, c):
     r"""Return :math:`\sqrt{|w - w_0|}\,\exp(-c\,|w - w_0|^2/2)`, peak-normalized."""
-    return lambda w: np.sqrt(np.abs(w - w0)) * np.exp(-c / 2 * np.abs(w - w0) ** 2) * (2 * c * np.e) ** (1 / 4)
+    return (
+        lambda w: np.sqrt(np.abs(w - w0))
+        * np.exp(-c / 2 * np.abs(w - w0) ** 2)
+        * (2 * c * np.e) ** (1 / 4)
+    )
 
 
 def lingauss(w0, c):

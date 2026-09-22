@@ -1,7 +1,12 @@
 import numpy as np
 import pytest
 
-from rspt2spectra.readfile import list_cluster_labels, parse_cluster_basis, parse_fermi_energy, parse_matrices
+from rspt2spectra.readfile import (
+    list_cluster_labels,
+    parse_cluster_basis,
+    parse_fermi_energy,
+    parse_matrices,
+)
 
 
 def test_parse_matrices_single_block_at_eof(tmp_path):
@@ -9,9 +14,13 @@ def test_parse_matrices_single_block_at_eof(tmp_path):
     (tmp_path / "out").write_text(
         "Cluster cl Local hamiltonian\n real part\n -1.5  0.2\n  0.2 -0.7\n imag part\n  0.0  0.1\n -0.1  0.0\n"
     )
-    hs = parse_matrices(out_file="out", search_phrase="Local hamiltonian", prefix=str(tmp_path))
+    hs = parse_matrices(
+        out_file="out", search_phrase="Local hamiltonian", prefix=str(tmp_path)
+    )
     assert list(hs) == ["cl"]
-    expected = np.array([[-1.5, 0.2], [0.2, -0.7]]) + 1j * np.array([[0.0, 0.1], [-0.1, 0.0]])
+    expected = np.array([[-1.5, 0.2], [0.2, -0.7]]) + 1j * np.array(
+        [[0.0, 0.1], [-0.1, 0.0]]
+    )
     assert np.allclose(hs["cl"], expected)
 
 
@@ -29,13 +38,17 @@ def test_parse_matrices_multiple_blocks(tmp_path):
         "  0.5\n"
         "trailing text\n"
     )
-    hs = parse_matrices(out_file="out", search_phrase="Local hamiltonian", prefix=str(tmp_path))
+    hs = parse_matrices(
+        out_file="out", search_phrase="Local hamiltonian", prefix=str(tmp_path)
+    )
     assert np.allclose(hs["a"], [[1.0]])
     assert np.allclose(hs["b"], [[2.0 + 0.5j]])
 
 
 def test_parse_fermi_energy(tmp_path):
-    (tmp_path / "out").write_text(" some preamble\n fermi energy =  6.7596104733184E-01\n more output\n")
+    (tmp_path / "out").write_text(
+        " some preamble\n fermi energy =  6.7596104733184E-01\n more output\n"
+    )
     assert parse_fermi_energy(prefix=str(tmp_path)) == pytest.approx(0.67596104733184)
 
 
@@ -99,7 +112,9 @@ def test_parse_cluster_basis_returns_none_when_file_missing(tmp_path):
 
 
 def test_list_cluster_labels(tmp_path):
-    (tmp_path / "green.inp").write_text("cluster\n 1 Ida\n 1 2 1 1 0\ncluster\n 1 Idb\n 1 2 1 1 3\n")
+    (tmp_path / "green.inp").write_text(
+        "cluster\n 1 Ida\n 1 2 1 1 0\ncluster\n 1 Idb\n 1 2 1 1 3\n"
+    )
     assert list_cluster_labels(prefix=str(tmp_path)) == ["a", "b"]
 
 

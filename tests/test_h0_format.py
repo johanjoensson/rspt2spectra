@@ -17,7 +17,10 @@ GOLDEN_SHA256 = "89c75e53a651fe8fbf70d5960b12cbb697f00507b13642031bb452fdf5c8529
 def _index_encoded(n=8):
     # Values encode their own indices, so any permutation, transpose or conjugation error
     # in the writer changes the bytes.
-    h = np.array([[(10 * i + j) + 0.5j * (i - j) for j in range(n)] for i in range(n)], dtype=complex)
+    h = np.array(
+        [[(10 * i + j) + 0.5j * (i - j) for j in range(n)] for i in range(n)],
+        dtype=complex,
+    )
     h = 0.5 * (h + h.conj().T)
     np.fill_diagonal(h, h.diagonal().real)
     return h
@@ -25,7 +28,9 @@ def _index_encoded(n=8):
 
 def test_golden_fixture_hash_is_the_one_the_spec_pins():
     digest = hashlib.sha256(GOLDEN.read_bytes()).hexdigest()
-    assert digest == GOLDEN_SHA256, "the shared fixture drifted from the one impurityModel tests"
+    assert (
+        digest == GOLDEN_SHA256
+    ), "the shared fixture drifted from the one impurityModel tests"
 
 
 def test_writer_reproduces_the_golden_fixture(tmp_path):
@@ -63,7 +68,12 @@ def test_writer_rejects_a_non_hermitian_hamiltonian(tmp_path):
 
 def test_writer_rejects_non_finite(tmp_path):
     with pytest.raises(ValueError, match="non-finite"):
-        write_h0_file(tmp_path / "bad.h0", np.array([[np.nan]]), impurity_orbitals={0: [0]}, unit="eV")
+        write_h0_file(
+            tmp_path / "bad.h0",
+            np.array([[np.nan]]),
+            impurity_orbitals={0: [0]},
+            unit="eV",
+        )
 
 
 def test_writer_drops_pairwise(tmp_path):
@@ -72,7 +82,10 @@ def test_writer_drops_pairwise(tmp_path):
     out = tmp_path / "drop.h0"
     write_h0_file(out, h, impurity_orbitals={0: [0]}, unit="eV")
 
-    pairs = {(int(line.split()[0]), int(line.split()[1])) for line in out.read_text().splitlines()[3:]}
+    pairs = {
+        (int(line.split()[0]), int(line.split()[1]))
+        for line in out.read_text().splitlines()[3:]
+    }
     assert (1, 2) not in pairs and (2, 1) not in pairs
 
 
@@ -94,7 +107,9 @@ def test_spin_ordering_is_added_to_required_features(tmp_path):
 
 def test_spin_ordering_omitted_by_default(tmp_path):
     out = tmp_path / "nospin.h0"
-    write_h0_file(out, np.eye(2, dtype=complex), impurity_orbitals={0: [0, 1]}, unit="eV")
+    write_h0_file(
+        out, np.eye(2, dtype=complex), impurity_orbitals={0: [0, 1]}, unit="eV"
+    )
     header = json.loads(out.read_text().splitlines()[1])
     assert "spin_ordering" not in header
     assert "spin_ordering" not in header["required_features"]
