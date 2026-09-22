@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 BLOCK_EQUIVALENCE_TOL = 1e-6
 
 
-def prepare_hyb_fit(hyb, H_local, tol=BLOCK_EQUIVALENCE_TOL, verbose=True):
+def prepare_hyb_fit(hyb, H_local, tol=BLOCK_EQUIVALENCE_TOL, verbose=True, w=None):
     """Prepare the fitting basis and block partition for a hybridization fit.
 
     The hybridization function is rotated into a basis where each block is
@@ -64,6 +64,10 @@ def prepare_hyb_fit(hyb, H_local, tol=BLOCK_EQUIVALENCE_TOL, verbose=True):
         Connectivity/equivalence tolerance.
     verbose : bool, default True
         Print the resulting block structure.
+    w : np.ndarray of shape (n_w,), optional
+        Frequency mesh of ``hyb``. Needed to test particle-hole equivalence
+        between blocks, which relates ``omega`` to ``-omega``; without it those
+        relations are skipped.
 
     Returns
     -------
@@ -78,7 +82,7 @@ def prepare_hyb_fit(hyb, H_local, tol=BLOCK_EQUIVALENCE_TOL, verbose=True):
     """
     phase_hyb, Q = block_diagonalize_hyb(hyb, tol=tol)
     H_local_Q = rotate_matrix(H_local, Q)
-    block_structure = build_block_structure(phase_hyb, mat=H_local_Q, tol=tol)
+    block_structure = build_block_structure(phase_hyb, mat=H_local_Q, tol=tol, w=w)
     # Guaranteed by the union connectivity above; guard against regressions.
     off_block = np.abs(H_local_Q.copy())
     for orbs in block_structure.blocks:
@@ -243,10 +247,22 @@ def assemble_h0(
     """
     n_orb = H_imp.shape[0]
     H_shift = np.zeros_like(H_imp)
+    # The constant offset is part of the fitted hybridization, so it follows the
+    # same equivalence relations as the bath: a transposed block gets C^T and a
+    # particle-hole equivalent one gets -conj(C).  Broadcasting it over identical
+    # blocks only would leave every other equivalent block with no impurity-level
+    # shift at all.
     for inequiv_block_i, shift in zip(block_structure.inequivalent_blocks, shifts):
-        for block_i in block_structure.identical_blocks[inequiv_block_i]:
-            orbs = block_structure.blocks[block_i]
-            H_shift[np.ix_(orbs, orbs)] = shift
+        related = (
+            (block_structure.identical_blocks[inequiv_block_i], shift),
+            (block_structure.transposed_blocks[inequiv_block_i], shift.T),
+            (block_structure.particle_hole_blocks[inequiv_block_i], -np.conj(shift)),
+            (block_structure.particle_hole_transposed_blocks[inequiv_block_i], -np.conj(shift).T),
+        )
+        for block_indices, block_shift in related:
+            for block_i in block_indices:
+                orbs = block_structure.blocks[block_i]
+                H_shift[np.ix_(orbs, orbs)] = block_shift
     if verbose:
         matrix_print(H_shift, r"Shift of $\Delta(\omega=0)$")
     # Any double counting must be present in H_local_Q: the linked double

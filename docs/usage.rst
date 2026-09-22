@@ -56,7 +56,9 @@ per orbital block. The script
    ``out``, subtracting the Fermi energy so the impurity block shares the
    hybridization mesh's energy zero,
 2. block-partitions the hybridization function,
-3. fits star bath energies and hoppings per inequivalent block
+3. detects the symmetries each inequivalent block's hybridization actually
+   has (:mod:`rspt2spectra.symmetries`) and fits star bath energies and
+   hoppings subject to them
    (:func:`rspt2spectra.hyb_fit.fit_hyb`, or
    :func:`rspt2spectra.natural_orbitals.fit_hyb_natural_orbitals` with
    ``--natural-orbitals``),
@@ -73,7 +75,16 @@ Useful options (see ``build_h0 --help`` for the full list):
    evaluated (default 0.01).
 ``--fit-unocc``
    Also fit the unoccupied (positive-energy) part of the hybridization
-   function; by default only the occupied part is fitted.
+   function; by default only the occupied part is fitted. Particle-hole
+   symmetry can only be *enforced* with this flag: it mirrors the bath about
+   the Fermi level, so half the poles would otherwise fall outside the fitted
+   region. It is still detected and reported without it.
+``--no-enforce-symmetry``, ``--symmetry-tol <value>``
+   By default the fitted bath reproduces the symmetries of the hybridization
+   function exactly -- orbital degeneracy inside a block, time reversal (or
+   simply real hoppings), and particle-hole mirroring. ``-v`` lists what was
+   detected per block with the measured relative residual. See
+   :mod:`rspt2spectra.symmetries`.
 ``--weight-function {unit,exponential,gaussian,lorentzian}``, ``--weight-factor``, ``--fit-center``
    Weighting of the fit as a function of energy, see
    :mod:`rspt2spectra.weight_functions`.

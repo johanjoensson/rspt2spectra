@@ -30,7 +30,7 @@ def one_orbital_model():
     hyb = np.zeros((len(Z), 1, 1), dtype=complex)
     for e, v in poles:
         hyb[:, 0, 0] += v**2 / (Z - e)
-    Q, phase_hyb, H_local_Q, block_structure = prepare_hyb_fit(hyb, H_loc, verbose=False)
+    Q, phase_hyb, H_local_Q, block_structure = prepare_hyb_fit(hyb, H_loc, verbose=False, w=Z.real)
     ebs = np.array([e for e, _ in poles])
     vs = np.array([[[v * Q[0, 0]]] for _, v in poles], dtype=complex)
     ebs_flat, vs_flat = flatten_star_levels(ebs, vs)
@@ -51,7 +51,7 @@ def two_orbital_model():
     hyb = np.zeros((len(Z), 2, 2), dtype=complex)
     for e, v in poles:
         hyb += np.conj(v[None, :, None]) * v[None, None, :] / (Z - e)[:, None, None]
-    Q, phase_hyb, H_local_Q, block_structure = prepare_hyb_fit(hyb, H_loc, verbose=False)
+    Q, phase_hyb, H_local_Q, block_structure = prepare_hyb_fit(hyb, H_loc, verbose=False, w=Z.real)
     ebs = np.array([e for e, _ in poles])
     vs = np.array([v @ Q for _, v in poles]).reshape((len(poles), 1, 2))
     ebs_flat, vs_flat = flatten_star_levels(ebs, vs)
@@ -78,7 +78,7 @@ def peel_model():
     hyb = np.zeros((len(Z), 1, 1), dtype=complex)
     for e, v in poles:
         hyb[:, 0, 0] += v**2 / (Z - e)
-    Q, phase_hyb, H_local_Q, block_structure = prepare_hyb_fit(hyb, H_loc, verbose=False)
+    Q, phase_hyb, H_local_Q, block_structure = prepare_hyb_fit(hyb, H_loc, verbose=False, w=Z.real)
     ebs = np.array([e for e, _ in poles])
     vs = np.array([[[v * Q[0, 0]]] for _, v in poles], dtype=complex)
     ebs_flat, vs_flat = flatten_star_levels(ebs, vs)

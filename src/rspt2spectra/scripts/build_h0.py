@@ -36,6 +36,7 @@ from rspt2spectra.readfile import (
     parse_fermi_energy,
     parse_matrices,
 )
+from rspt2spectra.symmetries import DEFAULT_SYMMETRY_TOL
 from rspt2spectra.utils import block_diagonalize_hyb, matrix_print
 from rspt2spectra.weight_functions import weight_functions
 
@@ -222,9 +223,7 @@ def _spherical_signature(H, l_val, tol=1e-8):
     return True
 
 
-def _report_fit_fidelity(
-    w, eim, phase_hyb, block_structure, ebs_star, vs_star, verbose
-):
+def _report_fit_fidelity(w, eim, phase_hyb, block_structure, ebs_star, vs_star, verbose):
     """Print, per inequivalent block, how much of the occupied hybridization weight the fit
     captured.
 
@@ -247,29 +246,21 @@ def _report_fit_fidelity(
         return
     z = w[occupied, None, None] + 1j * eim
     print()
-    print(
-        "Hybridization fit fidelity (integral |Im D| below E_F, per orbital in each block):"
-    )
+    print("Hybridization fit fidelity (integral |Im D| below E_F, per orbital in each block):")
     for idx, b in enumerate(block_structure.inequivalent_blocks):
         orbs = block_structure.blocks[b]
         try:
             hyb_true = phase_hyb[occupied][:, orbs, :][:, :, orbs]
             hyb_fit = np.zeros_like(hyb_true)
             for e_i, v_i in zip(ebs_star[idx], vs_star[idx]):
-                hyb_fit += (np.conjugate(v_i.T) @ v_i)[None] / (z[:, 0, 0] - e_i)[
-                    :, None, None
-                ]
+                hyb_fit += (np.conjugate(v_i.T) @ v_i)[None] / (z[:, 0, 0] - e_i)[:, None, None]
         except (IndexError, ValueError) as exc:
-            print(
-                f"  block {list(orbs)}: could not reconstruct the fit for reporting ({exc}); skipped."
-            )
+            print(f"  block {list(orbs)}: could not reconstruct the fit for reporting ({exc}); skipped.")
             continue
         true_int = np.trapezoid(np.abs(hyb_true.imag), w[occupied], axis=0)
         fit_int = np.trapezoid(np.abs(hyb_fit.imag), w[occupied], axis=0)
         for k, orb in enumerate(orbs):
-            ratio = (
-                fit_int[k, k] / true_int[k, k] if true_int[k, k] > 0 else float("nan")
-            )
+            ratio = fit_int[k, k] / true_int[k, k] if true_int[k, k] > 0 else float("nan")
             print(f"  orbital {orb} (block {list(orbs)}): {100 * ratio:5.1f}% captured")
 
 
@@ -360,9 +351,7 @@ def _verify_spherical_basis(H, T, cluster, l_val, basis_tag):
     proof of anything -- never a silent pass either way.
     """
     if not np.allclose(T @ np.conjugate(T.T), np.eye(T.shape[0]), atol=1e-8):
-        raise RuntimeError(
-            f"Cluster {cluster}: the rotation matrix T is not unitary; refusing to trust it."
-        )
+        raise RuntimeError(f"Cluster {cluster}: the rotation matrix T is not unitary; refusing to trust it.")
 
     if l_val == -1:
         warnings.warn(
@@ -437,9 +426,7 @@ def filter_and_shift(
     for eb_block, v_block, shift in zip(ebs, vs, shifts):
         f = np.logical_or(eb_block < w_min, eb_block > w_max)
         shift += np.sum(  # noqa: PLW2901 - in-place update of the arrays in shifts
-            np.conj(np.transpose(v_block[f], (0, 2, 1)))
-            @ v_block[f]
-            / eb_block[f, None, None],
+            np.conj(np.transpose(v_block[f], (0, 2, 1))) @ v_block[f] / eb_block[f, None, None],
             axis=0,
         )
         filtered_ebs_star.append(eb_block[np.logical_not(f)].copy())
@@ -467,6 +454,8 @@ def run(
     peel_weight: float = 0.05,
     legacy_dict: bool = False,
     allow_broken_time_reversal: bool = False,
+    enforce_symmetry: bool = True,
+    symmetry_tol: float = DEFAULT_SYMMETRY_TOL,
     *kwargs,
 ) -> None:
     """Execute the full non-interacting Hamiltonian (h0) building workflow.
@@ -481,9 +470,7 @@ def run(
     verbose = verbose and rank == 0
 
     hyb_dat = extract_dat("hyb", cluster, prefix)
-    hs = parse_matrices(
-        out_file="out", search_phrase="Local hamiltonian", prefix=prefix
-    )
+    hs = parse_matrices(out_file="out", search_phrase="Local hamiltonian", prefix=prefix)
     qs = parse_matrices(
         out_file="out",
         search_phrase="Transformation to the local cf basis:",
@@ -495,9 +482,7 @@ def run(
         prefix=prefix,
     )
     if cluster not in hs:
-        raise RuntimeError(
-            f"Could not extract local hamiltonian for cluster {cluster} from file {prefix}/out."
-        )
+        raise RuntimeError(f"Could not extract local hamiltonian for cluster {cluster} from file {prefix}/out.")
     H_dft = hs[cluster]
     hyb = hyb_dat.orbitals
     w = hyb_dat.w
@@ -512,9 +497,7 @@ def run(
     e_fermi = parse_fermi_energy(out_file="out", prefix=prefix)
     H_dft = H_dft - e_fermi * np.eye(H_dft.shape[0])
     if verbose:
-        print(
-            f"Fermi energy {e_fermi: .8f} subtracted from the local Hamiltonian (bath mesh has E_F = 0)."
-        )
+        print(f"Fermi energy {e_fermi: .8f} subtracted from the local Hamiltonian (bath mesh has E_F = 0).")
 
     cluster_basis = parse_cluster_basis(cluster, inp_file="green.inp", prefix=prefix)
     if cluster_basis is None:
@@ -557,9 +540,7 @@ def run(
             try:
                 N = H_dft.shape[0]
                 if l_val == -1:
-                    raise RuntimeError(
-                        f"Could not determine l quantum number for cluster {cluster} from green.inp"
-                    )
+                    raise RuntimeError(f"Could not determine l quantum number for cluster {cluster} from green.inp")
 
                 # We determine spinpol by checking if N matches 2 * subset size or 1 * subset size
                 # But it's simpler: if N is even, it's very likely spin polarized for ED models.
@@ -581,9 +562,7 @@ def run(
                     if basis_tag & 1:
                         subset_size += 3
                 else:
-                    raise NotImplementedError(
-                        f"Dynamic rotation for l={l_val} not supported."
-                    )
+                    raise NotImplementedError(f"Dynamic rotation for l={l_val} not supported.")
 
                 if subset_size * 2 == N:
                     spinpol = True
@@ -614,12 +593,8 @@ def run(
         if verbose:
             print(f"Cluster {cluster} uses a non-spherical basis (or Cf flag).")
             if T is not None and cluster not in qs and cluster not in sharm_qs:
-                print(
-                    f"Dynamically generated RSPt rotation matrix for l={l_val}, basis_tag={basis_tag}."
-                )
-            print(
-                "Applying transformation T to rotate to the Spherical Harmonics basis (T @ H @ T.T.conj())."
-            )
+                print(f"Dynamically generated RSPt rotation matrix for l={l_val}, basis_tag={basis_tag}.")
+            print("Applying transformation T to rotate to the Spherical Harmonics basis (T @ H @ T.T.conj()).")
             matrix_print(T, "Transformation matrix T:")
             print()
         # Data is in CF basis, rotate to Spherical Harmonics
@@ -660,7 +635,7 @@ def run(
     # equivalence class into several, each then fit by an independently-seeded stochastic
     # optimizer -- producing measurably different bath parameters between orbitals that must
     # be exactly equivalent by symmetry.
-    block_structure = build_block_structure(phase_hyb, mat=H_local_Q, tol=BLOCK_EQUIVALENCE_TOL)
+    block_structure = build_block_structure(phase_hyb, mat=H_local_Q, tol=BLOCK_EQUIVALENCE_TOL, w=w)
 
     if natural_orbitals:
         H_imp_blocks = [
@@ -697,6 +672,8 @@ def run(
             comm,
             regularization=regularization,
             weight_fun=weight_functions[weight_function](fit_center, weight_factor),
+            enforce_symmetry=enforce_symmetry,
+            symmetry_tol=symmetry_tol,
         )
     for ebss, vss in zip(ebs_star, vs_star):
         if len(ebss) == 0:
@@ -878,6 +855,27 @@ def main() -> None:
             "time-reversal-symmetric one-body H is at least doubly degenerate, so an odd "
             "cluster there usually means the cluster is genuinely spin-polarised or "
             "field-dressed -- pass this flag for that case."
+        ),
+    )
+    parser.add_argument(
+        "--no-enforce-symmetry",
+        dest="enforce_symmetry",
+        action="store_false",
+        help=(
+            "Fit every block unconstrained. By default the symmetries each block's "
+            "hybridization actually has -- orbital degeneracy, time reversal, and (when "
+            "the fit window reaches above the Fermi level) particle-hole -- are detected "
+            "and imposed exactly on the fitted bath."
+        ),
+    )
+    parser.add_argument(
+        "--symmetry-tol",
+        type=float,
+        default=DEFAULT_SYMMETRY_TOL,
+        help=(
+            "Relative tolerance for accepting a symmetry. Too loose imposes a symmetry "
+            "the data does not have and distorts the fit; too tight simply falls back to "
+            "an unconstrained fit."
         ),
     )
     parser.add_argument("--regularization", type=str, default="l2")

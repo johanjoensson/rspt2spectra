@@ -483,12 +483,12 @@ def test_block_equivalence_tol_merges_the_measured_rspt_noise_floor():
     for i in range(4):
         hyb[:, i, i] = base + noise[i]
 
-    bs_shipped = build_block_structure(hyb, tol=BLOCK_EQUIVALENCE_TOL)
+    bs_shipped = build_block_structure(hyb, tol=BLOCK_EQUIVALENCE_TOL, w=w)
     assert len(bs_shipped.inequivalent_blocks) == 1
 
     # The old default: tight enough that the measured noise floor above defeats it, splitting
     # a single physical equivalence class into several independently-fit pieces.
-    bs_machine_eps = build_block_structure(hyb, tol=1e-15)
+    bs_machine_eps = build_block_structure(hyb, tol=1e-15, w=w)
     assert len(bs_machine_eps.inequivalent_blocks) > 1
 
 
@@ -536,7 +536,7 @@ def test_assemble_h0_shares_one_fit_across_the_full_equivalence_class():
         H_local[i, i] = -0.2 + noise[i]
 
     Q, phase_hyb, H_local_Q, block_structure = prepare_hyb_fit(
-        hyb, H_local, tol=BLOCK_EQUIVALENCE_TOL, verbose=False
+        hyb, H_local, tol=BLOCK_EQUIVALENCE_TOL, verbose=False, w=w
     )
     assert len(block_structure.inequivalent_blocks) == 1
 

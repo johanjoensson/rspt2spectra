@@ -11,6 +11,7 @@ Core pipeline
    rspt2spectra.dat
    rspt2spectra.readfile
    rspt2spectra.block_structure
+   rspt2spectra.symmetries
    rspt2spectra.hyb_fit
    rspt2spectra.offdiagonal
    rspt2spectra.natural_orbitals

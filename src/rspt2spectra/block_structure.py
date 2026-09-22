@@ -9,10 +9,13 @@ inequivalent blocks need to be fitted. `build_matrix` reassembles a full
 matrix from its inequivalent blocks.
 """
 
+import warnings
 from collections import namedtuple
 
 import numpy as np
 import scipy as sp
+
+from .symmetries import mirror_interpolation_error, mirror_on_mesh
 
 BlockStructure = namedtuple(
     "BlockStructure",
@@ -117,7 +120,7 @@ def get_equivalent_blocks(block_structure):
     return eq_blocks
 
 
-def build_block_structure(G, mat=None, tol=1e-6):
+def build_block_structure(G, mat=None, tol=1e-6, w=None):
     """Analyze a Green's function or a matrix to build a BlockStructure object.
 
     Parameters
@@ -129,6 +132,11 @@ def build_block_structure(G, mat=None, tol=1e-6):
     tol : float, default 1e-6
         Tolerance threshold for considering matrix elements/Green's function values
         as non-zero or identical.
+    w : (n_omega,) np.ndarray, optional
+        Frequency mesh of ``G``.  Particle-hole equivalence relates a block at
+        ``omega`` to another at ``-omega``, so it can only be tested when the mesh
+        is known; without ``w`` the particle-hole relations are skipped and a
+        warning is issued.
 
     Returns
     -------
@@ -141,8 +149,8 @@ def build_block_structure(G, mat=None, tol=1e-6):
     blocks = get_blocks(G, mat, tol=tol)
     identical_blocks = get_identical_blocks(blocks, G, mat, tol=tol)
     transposed_blocks = get_transposed_blocks(blocks, G, mat, tol=tol)
-    particle_hole_blocks = get_particle_hole_blocks(blocks, G, mat, tol=tol)
-    particle_hole_and_transposed_blocks = get_particle_hole_and_transpose_blocks(blocks, G, mat, tol=tol)
+    particle_hole_blocks = get_particle_hole_blocks(blocks, G, mat, tol=tol, w=w)
+    particle_hole_and_transposed_blocks = get_particle_hole_and_transpose_blocks(blocks, G, mat, tol=tol, w=w)
     inequivalent_blocks = get_inequivalent_blocks(
         identical_blocks,
         transposed_blocks,
@@ -537,10 +545,18 @@ def _particle_hole_blocks_matrix(blocks, mat, tol):
             continue
         particle_hole = []
         idx_i = np.ix_(block_i, block_i)
-        for jp, block_j in enumerate(blocks[i:]):
+        # Start at i + 1: a block is never its own particle-hole partner here.
+        # A block CAN be particle-hole symmetric with itself, and with the
+        # frequency mirror in place that self-test now passes -- but listing it
+        # as its own partner makes every consumer write the block twice
+        # (identical first, particle-hole second), replacing the fitted bath with
+        # its own mirror image. That self-symmetry is a constraint on the fit, not
+        # an equivalence between blocks, and is handled by
+        # :mod:`rspt2spectra.symmetries` instead.
+        for jp, block_j in enumerate(blocks[i + 1 :]):
             if len(block_i) != len(block_j):
                 continue
-            j = i + jp
+            j = i + jp + 1
             if any(j in b for b in particle_hole_blocks):
                 continue
             idx_j = np.ix_(block_j, block_j)
@@ -552,7 +568,7 @@ def _particle_hole_blocks_matrix(blocks, mat, tol):
     return particle_hole_blocks
 
 
-def _particle_hole_blocks(blocks, G, mat, tol):
+def _particle_hole_blocks(blocks, G, mat, tol, mirror):
     """Find particle-hole equivalent blocks based on G and mat.
 
     Parameters
@@ -571,22 +587,32 @@ def _particle_hole_blocks(blocks, G, mat, tol):
     list of list of int
         List of lists of particle-hole equivalent block indices.
     """
+    G_mirrored, mask = mirror
     particle_hole_blocks = [[] for _ in blocks]
     for i, block_i in enumerate(blocks):
         if np.any([i in b for b in particle_hole_blocks]):
             continue
         particle_hole = []
-        idx_i = np.ix_(range(G.shape[0]), block_i, block_i)
-        for jp, block_j in enumerate(blocks[i:]):
+        idx_i = np.ix_(np.flatnonzero(mask), block_i, block_i)
+        # Start at i + 1: a block is never its own particle-hole partner here.
+        # A block CAN be particle-hole symmetric with itself, and with the
+        # frequency mirror in place that self-test now passes -- but listing it
+        # as its own partner makes every consumer write the block twice
+        # (identical first, particle-hole second), replacing the fitted bath with
+        # its own mirror image. That self-symmetry is a constraint on the fit, not
+        # an equivalence between blocks, and is handled by
+        # :mod:`rspt2spectra.symmetries` instead.
+        for jp, block_j in enumerate(blocks[i + 1 :]):
             if len(block_i) != len(block_j):
                 continue
-            j = i + jp
+            j = i + jp + 1
             if any(j in b for b in particle_hole_blocks):
                 continue
-            idx_j = np.ix_(range(G.shape[0]), block_j, block_j)
+            idx_j = np.ix_(np.flatnonzero(mask), block_j, block_j)
+            # G_j(w) == -conj(G_i(-w)), compared on the mirrored mesh.
             if (
-                np.all(np.abs(np.real(G[idx_i] + G[idx_j])) < tol)
-                and np.all(np.abs(np.imag(G[idx_i] - G[idx_j])) < tol)
+                np.all(np.abs(np.real(G_mirrored[idx_i] + G[idx_j])) < tol)
+                and np.all(np.abs(np.imag(G_mirrored[idx_i] - G[idx_j])) < tol)
                 and np.all(np.abs(np.real(mat[idx_i[1:]] + mat[idx_j[1:]])) < tol)
                 and np.all(np.abs(np.imag(mat[idx_i[1:]] - mat[idx_j[1:]])) < tol)
             ):
@@ -595,7 +621,48 @@ def _particle_hole_blocks(blocks, G, mat, tol):
     return particle_hole_blocks
 
 
-def get_particle_hole_blocks(blocks, G=None, mat=None, tol=1e-6):
+def _mirror_or_skip(G, w, tol):
+    """Return ``(G(-omega), mask)`` for the particle-hole tests, or ``None``.
+
+    Particle-hole equivalence is ``G_j(omega) = -conj(G_i(-omega))``: the real
+    parts are opposite and the imaginary parts equal *at mirrored frequencies*.
+    Comparing at the same frequency index instead is not merely a different
+    convention, it is unsatisfiable -- Kramers-Kronig ties the two parts
+    together, so ``Im G_j = Im G_i`` forces ``Re G_j = Re G_i``, which
+    contradicts ``Re G_j = -Re G_i`` unless both blocks vanish.
+    """
+    if w is None:
+        warnings.warn(
+            "build_block_structure was called without the frequency mesh w, so particle-hole "
+            "equivalence between blocks cannot be tested and is skipped.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+        return None
+    w = np.asarray(w, dtype=float)
+    mirrored, mask = mirror_on_mesh(w, G)
+    if not np.any(mask):
+        warnings.warn(
+            "The frequency mesh has no sub-window symmetric about zero, so particle-hole "
+            "equivalence between blocks cannot be tested and is skipped.",
+            RuntimeWarning,
+            stacklevel=4,
+        )
+        return None
+    error = mirror_interpolation_error(w, G)
+    if error > tol:
+        warnings.warn(
+            f"The frequency mesh is not symmetric about zero, so G(-w) has to be interpolated; "
+            f"the interpolation error ({error:.2e}) exceeds the equivalence tolerance ({tol:.2e}), "
+            "so particle-hole equivalence between blocks cannot be resolved and is skipped.",
+            RuntimeWarning,
+            stacklevel=4,
+        )
+        return None
+    return mirrored, mask
+
+
+def get_particle_hole_blocks(blocks, G=None, mat=None, tol=1e-6, w=None):
     """Find all particle-hole equivalent blocks in the block structure.
 
     Parameters
@@ -621,7 +688,10 @@ def get_particle_hole_blocks(blocks, G=None, mat=None, tol=1e-6):
         G = G.reshape((1, G.shape[0], G.shape[1]))
     if mat is None:
         mat = np.zeros((G.shape[1], G.shape[2]))
-    return _particle_hole_blocks(blocks, G, mat, tol)
+    mirror = _mirror_or_skip(G, w, tol)
+    if mirror is None:
+        return [[] for _ in blocks]
+    return _particle_hole_blocks(blocks, G, mat, tol, mirror)
 
 
 def _particle_hole_transpose_blocks_matrix(blocks, mat, tol):
@@ -647,10 +717,18 @@ def _particle_hole_transpose_blocks_matrix(blocks, mat, tol):
             continue
         patricle_hole_and_transpose = []
         idx_i = np.ix_(block_i, block_i)
-        for jp, block_j in enumerate(blocks[i:]):
+        # Start at i + 1: a block is never its own particle-hole partner here.
+        # A block CAN be particle-hole symmetric with itself, and with the
+        # frequency mirror in place that self-test now passes -- but listing it
+        # as its own partner makes every consumer write the block twice
+        # (identical first, particle-hole second), replacing the fitted bath with
+        # its own mirror image. That self-symmetry is a constraint on the fit, not
+        # an equivalence between blocks, and is handled by
+        # :mod:`rspt2spectra.symmetries` instead.
+        for jp, block_j in enumerate(blocks[i + 1 :]):
             if len(block_i) != len(block_j):
                 continue
-            j = i + jp
+            j = i + jp + 1
             if any(j in b for b in patricle_hole_and_transpose_blocks):
                 continue
             idx_j = np.ix_(block_j, block_j)
@@ -662,7 +740,7 @@ def _particle_hole_transpose_blocks_matrix(blocks, mat, tol):
     return patricle_hole_and_transpose_blocks
 
 
-def _particle_hole_transpose_blocks(blocks, G, mat, tol):
+def _particle_hole_transpose_blocks(blocks, G, mat, tol, mirror):
     """Find particle-hole and transposed equivalent blocks based on G and mat.
 
     Parameters
@@ -681,22 +759,32 @@ def _particle_hole_transpose_blocks(blocks, G, mat, tol):
     list of list of int
         List of lists of particle-hole and transposed equivalent block indices.
     """
+    G_mirrored, mask = mirror
     patricle_hole_and_transpose_blocks = [[] for _ in blocks]
     for i, block_i in enumerate(blocks):
         if np.any([i in b for b in patricle_hole_and_transpose_blocks]):
             continue
         patricle_hole_and_transpose = []
-        idx_i = np.ix_(range(G.shape[0]), block_i, block_i)
-        for jp, block_j in enumerate(blocks[i:]):
+        idx_i = np.ix_(np.flatnonzero(mask), block_i, block_i)
+        # Start at i + 1: a block is never its own particle-hole partner here.
+        # A block CAN be particle-hole symmetric with itself, and with the
+        # frequency mirror in place that self-test now passes -- but listing it
+        # as its own partner makes every consumer write the block twice
+        # (identical first, particle-hole second), replacing the fitted bath with
+        # its own mirror image. That self-symmetry is a constraint on the fit, not
+        # an equivalence between blocks, and is handled by
+        # :mod:`rspt2spectra.symmetries` instead.
+        for jp, block_j in enumerate(blocks[i + 1 :]):
             if len(block_i) != len(block_j):
                 continue
-            j = i + jp
+            j = i + jp + 1
             if any(j in b for b in patricle_hole_and_transpose_blocks):
                 continue
-            idx_j = np.ix_(range(G.shape[0]), block_j, block_j)
+            idx_j = np.ix_(np.flatnonzero(mask), block_j, block_j)
+            # G_j(w) == -conj(G_i(-w))^T, compared on the mirrored mesh.
             if (
-                np.all(np.abs(np.real(G[idx_i] + np.transpose(G[idx_j], (0, 2, 1)))) < tol)
-                and np.all(np.abs(np.imag(G[idx_i] - np.transpose(G[idx_j], (0, 2, 1)))) < tol)
+                np.all(np.abs(np.real(G_mirrored[idx_i] + np.transpose(G[idx_j], (0, 2, 1)))) < tol)
+                and np.all(np.abs(np.imag(G_mirrored[idx_i] - np.transpose(G[idx_j], (0, 2, 1)))) < tol)
                 and np.all(np.abs(np.real(mat[idx_i[1:]] + mat[idx_j[1:]].T)) < tol)
                 and np.all(np.abs(np.imag(mat[idx_i[1:]] - mat[idx_j[1:]].T)) < tol)
             ):
@@ -705,7 +793,7 @@ def _particle_hole_transpose_blocks(blocks, G, mat, tol):
     return patricle_hole_and_transpose_blocks
 
 
-def get_particle_hole_and_transpose_blocks(blocks, G=None, mat=None, tol=1e-6):
+def get_particle_hole_and_transpose_blocks(blocks, G=None, mat=None, tol=1e-6, w=None):
     """Find all particle-hole and transposed equivalent blocks in the block structure.
 
     Parameters
@@ -731,7 +819,10 @@ def get_particle_hole_and_transpose_blocks(blocks, G=None, mat=None, tol=1e-6):
         G = G.reshape((1, G.shape[0], G.shape[1]))
     if mat is None:
         mat = np.zeros((G.shape[1], G.shape[2]))
-    return _particle_hole_transpose_blocks(blocks, G, mat, tol)
+    mirror = _mirror_or_skip(G, w, tol)
+    if mirror is None:
+        return [[] for _ in blocks]
+    return _particle_hole_transpose_blocks(blocks, G, mat, tol, mirror)
 
 
 def build_matrix(inequivalent_parts: list[np.ndarray], block_structure: BlockStructure):
@@ -763,10 +854,10 @@ def build_matrix(inequivalent_parts: list[np.ndarray], block_structure: BlockStr
             M[orbs] = m.T
         for block in block_structure.particle_hole_blocks[i_block]:
             orbs = np.ix_(block_structure.blocks[block], block_structure.blocks[block])
-            M[orbs] = m
+            M[orbs] = -np.conj(m)
         for block in block_structure.particle_hole_transposed_blocks[i_block]:
             orbs = np.ix_(block_structure.blocks[block], block_structure.blocks[block])
-            M[orbs] = m.T
+            M[orbs] = -np.conj(m).T
     return M
 
 
@@ -784,6 +875,15 @@ def build_greens_function(inequivalent_parts: list[np.ndarray], block_structure:
     -------
     np.ndarray
         The assembled full Green's function.
+
+    Notes
+    -----
+    The particle-hole relation ``G_j(w) = -conj(G_i(-w))`` is applied by writing
+    into the reversed frequency axis, which performs ``w -> -w`` only on a mesh
+    symmetric about zero.  The mesh is not available here, so that is the
+    caller's responsibility; `build_block_structure` detects the relation with an
+    explicit mirror (`rspt2spectra.symmetries.mirror_on_mesh`) and refuses to
+    report it when the mesh cannot support one.
     """
     assert len(inequivalent_parts) != 0
     assert len(inequivalent_parts[0].shape) > 2
@@ -798,11 +898,13 @@ def build_greens_function(inequivalent_parts: list[np.ndarray], block_structure:
         for block in block_structure.transposed_blocks[i_block]:
             orbs = np.ix_(block_structure.blocks[block], block_structure.blocks[block])
             G[..., orbs[0], orbs[1]] = m.swapaxes(-2, -1)
+        # G_j(w) = -conj(G_i(-w)): writing into the reversed frequency axis
+        # performs the w -> -w mirror on a mesh symmetric about zero.
         for block in block_structure.particle_hole_blocks[i_block]:
             orbs = np.ix_(block_structure.blocks[block], block_structure.blocks[block])
-            G[..., ::-1, orbs[0], orbs[1]] = m
+            G[..., ::-1, orbs[0], orbs[1]] = -np.conj(m)
         for block in block_structure.particle_hole_transposed_blocks[i_block]:
             orbs = np.ix_(block_structure.blocks[block], block_structure.blocks[block])
-            G[..., ::-1, orbs[0], orbs[1]] = m.swapaxes(-2, -1)
+            G[..., ::-1, orbs[0], orbs[1]] = -np.conj(m).swapaxes(-2, -1)
 
     return G

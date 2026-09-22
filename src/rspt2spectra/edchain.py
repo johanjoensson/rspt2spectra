@@ -226,15 +226,26 @@ def build_full_bath(
             H_baths[b] = H_bath.copy().T
             v_tmp[:, blocks[b]] = v
             vs[b] = v_tmp
+        # Particle-hole equivalence is Delta_j(w) = -conj(Delta_i(-w)): the bath
+        # energies flip sign and the residues transpose, A_j = A_i^T. With
+        # A = v^dagger v that makes the mirrored hopping conj(v).
+        #
+        # Copying v unchanged (as this did) builds a perfectly valid retarded
+        # hybridization -- just the wrong one: it yields the *transpose*,
+        # [-conj(Delta_i(-w))]^T, i.e. the particle-hole-AND-transposed relation
+        # applied to the plain particle-hole class. The two coincide exactly
+        # whenever the residues are symmetric (real hoppings), which is why the
+        # error stayed invisible; it bites only on complex hoppings, i.e. with
+        # spin-orbit coupling.
         for b in particle_hole_blocks[block_i]:
             v_tmp = np.zeros((v.shape[0], n_orb), dtype=complex)
             H_baths[b] = H_bath.copy() @ (-np.identity(H_bath.shape[0]))
-            v_tmp[:, blocks[b]] = v
+            v_tmp[:, blocks[b]] = np.conj(v)
             vs[b] = v_tmp
         for b in particle_hole_and_transposed_blocks[block_i]:
             v_tmp = np.zeros((v.shape[0], n_orb), dtype=complex)
             H_baths[b] = H_bath.copy().T @ (-np.identity(H_bath.shape[0]))
-            v_tmp[:, blocks[b]] = v
+            v_tmp[:, blocks[b]] = np.conj(v)
             vs[b] = v_tmp
 
     # Every block must be reachable from exactly one inequivalent representative via

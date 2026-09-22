@@ -30,6 +30,7 @@ from rspt2spectra.offdiagonal import (
     vectorized_cost_function,
     vectorized_jacobian,
 )
+from rspt2spectra.symmetries import trivial_symmetry
 
 eb = np.array([-1, 0, 1], dtype=float)
 vs = np.array([[[1, 2], [0, 1]], [[2, 1], [0, 1]], [[3, 3], [0, 1]]], dtype=float)
@@ -468,7 +469,7 @@ def test_fit_enforces_min_separation_no_merge():
         gamma=0.0,
         regularization=None,
         weight_function=np.ones_like,
-        realvalue_v=True,
+        sym=trivial_symmetry(hyb_syn.shape[1]),
     )
 
     gaps = np.diff(np.sort(eb_final))
@@ -575,7 +576,7 @@ def test_fit_caps_states_to_window_without_failing():
         gamma=0.0,
         regularization=None,
         weight_function=lambda x: 1.0 / (1.0 + x**2),
-        realvalue_v=True,
+        sym=trivial_symmetry(hyb_syn.shape[1]),
     )
     assert eb_final.shape[0] <= n_max
     # Edge-packed fit: top state sits at w_max up to the SLSQP constraint tolerance.
@@ -631,7 +632,7 @@ def test_fit_keeps_states_inside_window(optimizer):
         gamma=0.0,
         regularization=None,
         weight_function=lambda x: 1.0 / (1.0 + x**2),
-        realvalue_v=True,
+        sym=trivial_symmetry(hyb_syn.shape[1]),
     )
 
     assert eb_final.max() <= w_max + 1e-9, f"state above window: {eb_final.max()}"
@@ -639,13 +640,15 @@ def test_fit_keeps_states_inside_window(optimizer):
     assert np.all(np.diff(np.sort(eb_final)) >= d - 1e-9)
 
 
-def _synthetic_varpro_problem(n_imp, seed):
+def _synthetic_varpro_problem(n_imp, seed, complex_v=False):
     rng = np.random.default_rng(seed)
     wgrid = np.linspace(-5, 5, 351)
     d = 0.1
     z = wgrid + 1j * (d * (1 + 0.5 * np.abs(wgrid) ** 2))
     true_eb = np.sort(rng.uniform(-3, 3, size=4))
     Vt = rng.normal(size=(4, n_imp, n_imp))
+    if complex_v:
+        Vt = Vt + 1j * rng.normal(size=(4, n_imp, n_imp))
     hyb_syn = get_hyb_2(z, true_eb[None], Vt[None])[0]
     weight_array = 1.0 / (1.0 + wgrid**2)  # non-trivial weight
     W_mn = moment_weights(wgrid, 3)
@@ -656,23 +659,24 @@ def test_varpro_full_gradient_matches_finite_difference():
     # The exact total-derivative gradient must agree with a finite-difference
     # gradient of the reduced cost, and must beat the Kaufman approximation.
     for n_imp in (1, 2, 3):
-        for realvalue in (True, False):
-            z, hyb_syn, wa, W_mn = _synthetic_varpro_problem(n_imp, 10 * n_imp + int(realvalue))
+        for complex_v in (False, True):
+            z, hyb_syn, wa, W_mn = _synthetic_varpro_problem(n_imp, 10 * n_imp + int(complex_v), complex_v=complex_v)
+            sym = trivial_symmetry(n_imp)
             rng = np.random.default_rng(7)
             eb = np.sort(rng.uniform(-2.5, 2.5, size=4))  # positive residues -> smooth region
 
-            def cost(e, z=z, hyb_syn=hyb_syn, wa=wa, W_mn=W_mn, realvalue=realvalue):
-                return _varpro_cost_and_full_grad(e, z, hyb_syn, wa, W_mn, realvalue)[0]
+            def cost(e, z=z, hyb_syn=hyb_syn, wa=wa, W_mn=W_mn, sym=sym):
+                return _varpro_cost_and_full_grad(e, z, hyb_syn, wa, W_mn, sym)[0]
 
-            c_full, g_full, _, _ = _varpro_cost_and_full_grad(eb, z, hyb_syn, wa, W_mn, realvalue)
-            c_kauf, _, _, _ = _varpro_cost_and_grad(eb, z, hyb_syn, wa, W_mn, realvalue)
+            c_full, g_full, _, _ = _varpro_cost_and_full_grad(eb, z, hyb_syn, wa, W_mn, sym)
+            c_kauf, _, _, _ = _varpro_cost_and_grad(eb, z, hyb_syn, wa, W_mn, sym)
 
             h = 1e-6
             g_num = np.array([(cost(eb + h * np.eye(4)[i]) - cost(eb - h * np.eye(4)[i])) / (2 * h) for i in range(4)])
             # Cost is identical to the Kaufman routine (same forward model).
             assert np.isclose(c_full, c_kauf, rtol=0, atol=1e-9)
             rel = np.max(np.abs(g_full - g_num)) / (np.linalg.norm(g_num) + 1e-30)
-            assert rel < 1e-5, f"n_imp={n_imp} real={realvalue}: full-grad rel err {rel:.2e}"
+            assert rel < 1e-5, f"n_imp={n_imp} complex={complex_v}: full-grad rel err {rel:.2e}"
 
 
 def test_basin_hopping_is_reproducible_with_an_rng():
@@ -692,8 +696,16 @@ def test_basin_hopping_is_reproducible_with_an_rng():
 
     def _fit(seed):
         return get_v_and_eb_varpro_basin_hopping(
-            wgrid, d, hyb_syn, ebs, eb_restrictions, gamma=0.0, regularization=None,
-            weight_function=np.ones_like, realvalue_v=True, rng=np.random.default_rng(seed),
+            wgrid,
+            d,
+            hyb_syn,
+            ebs,
+            eb_restrictions,
+            gamma=0.0,
+            regularization=None,
+            weight_function=np.ones_like,
+            sym=trivial_symmetry(hyb_syn.shape[1]),
+            rng=np.random.default_rng(seed),
         )[1]
 
     np.testing.assert_array_equal(_fit(7), _fit(7))
@@ -713,8 +725,15 @@ def test_freeze_bath_energies_solves_only_hoppings():
 
     def _frozen_fit(eb):
         return get_v_and_eb_varpro_basin_hopping(
-            wgrid, d, hyb_syn, np.sort(eb)[None, :], eb_restrictions, gamma=0.0,
-            regularization=None, weight_function=np.ones_like, realvalue_v=True,
+            wgrid,
+            d,
+            hyb_syn,
+            np.sort(eb)[None, :],
+            eb_restrictions,
+            gamma=0.0,
+            regularization=None,
+            weight_function=np.ones_like,
+            sym=trivial_symmetry(hyb_syn.shape[1]),
             optimize_bath_energies=False,
         )
 

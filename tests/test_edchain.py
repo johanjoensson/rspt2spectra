@@ -218,7 +218,7 @@ def test_build_H_bath_v():
 
 def test_build_full_bath():
     H_bath_inequiv = [np.diag([1.0, 2.0]), np.diag([3.0, 4.0])]
-    v_inequiv = [np.array([[0.1], [0.2]]), np.array([[0.3], [0.4]])]
+    v_inequiv = [np.array([[0.1 + 0.05j], [0.2 - 0.03j]]), np.array([[0.3], [0.4]])]
 
     block_structure = BlockStructure(
         blocks=[[0], [1], [2], [3], [4]],  # 5 orbitals total
@@ -239,6 +239,14 @@ def test_build_full_bath():
     assert np.allclose(H_bath_full[0:2, 0:2], H_bath_inequiv[0])
     assert np.allclose(H_bath_full[2:4, 2:4], H_bath_inequiv[0])
     assert np.allclose(H_bath_full[4:6, 4:6], H_bath_inequiv[1])
+
+    # The particle-hole partner (block 4) negates the bath energies AND
+    # conjugates the hoppings, so its residues are the transpose of block 0's:
+    # Delta_4(w) = -conj(Delta_0(-w)).  Copying v unchanged would build
+    # -Delta_0(-w), which is not a retarded hybridization.
+    assert np.allclose(H_bath_full[8:10, 8:10], -H_bath_inequiv[0])
+    assert np.allclose(vs_full[8:10, 4], np.conj(v_inequiv[0][:, 0]))
+    assert np.allclose(vs_full[0:2, 0], v_inequiv[0][:, 0])
 
 
 def test_peel_resonant_modes():
