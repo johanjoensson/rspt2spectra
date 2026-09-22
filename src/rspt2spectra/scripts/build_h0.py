@@ -218,14 +218,11 @@ def _spherical_signature(H, l_val, tol=1e-8):
     diag = np.diag(block).real
     if not np.allclose(diag, diag[::-1], atol=tol):
         return False
-    if abs(block[0, mmsize - 1]) <= tol:
-        return False
-    return True
+    return bool(abs(block[0, mmsize - 1]) > tol)
 
 
 def _report_fit_fidelity(w, eim, phase_hyb, block_structure, ebs_star, vs_star, verbose):
-    """Print, per inequivalent block, how much of the occupied hybridization weight the fit
-    captured.
+    """Print, per inequivalent block, how much of the occupied hybridization weight the fit captured.
 
     A 12% t2g capture (measured on a real NiO star-bath fit) was previously only discoverable
     by reverse-engineering the written ``.h0`` file after the fact. This reports it at fit
@@ -265,8 +262,9 @@ def _report_fit_fidelity(w, eim, phase_hyb, block_structure, ebs_star, vs_star, 
 
 
 def _check_kramers_degeneracy(H, rtol=1e-8):
-    """Odd-multiplicity eigenvalue clusters of ``H`` -- a basis-independent witness that ``H``
-    breaks time-reversal (Kramers) symmetry.
+    """Odd-multiplicity eigenvalue clusters of ``H``: a witness that ``H`` breaks Kramers symmetry.
+
+    The clusters are basis-independent, so they witness broken time-reversal symmetry in any basis.
 
     Every eigenvalue of a time-reversal-symmetric spin-orbital one-body Hamiltonian is paired
     with its Kramers partner at the same energy, so every cluster has even size. This is a

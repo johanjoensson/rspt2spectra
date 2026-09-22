@@ -85,10 +85,7 @@ def _print_block_structure(block_structure):
 def _print_symmetries(block_structure, syms):
     """Print the symmetry detected for each inequivalent block."""
     print("Detected symmetries")
-    width = max(
-        len(str(block_structure.blocks[ib]))
-        for ib in block_structure.inequivalent_blocks
-    )
+    width = max(len(str(block_structure.blocks[ib])) for ib in block_structure.inequivalent_blocks)
     for sym, block_i in zip(syms, block_structure.inequivalent_blocks, strict=True):
         print(f"  {block_structure.blocks[block_i]!s:<{width}} : {describe(sym)}")
 
@@ -208,19 +205,13 @@ def fit_hyb(
                 for ib in block_structure.inequivalent_blocks
             ],
         )
-    mask = (
-        np.logical_and(x_lim[0] <= w, w < x_lim[1])
-        if x_lim is not None
-        else np.ones(len(w), bool)
-    )
+    mask = np.logical_and(x_lim[0] <= w, w < x_lim[1]) if x_lim is not None else np.ones(len(w), bool)
 
     if verbose:
         print(_rule("Hybridization fit"))
         _print_block_structure(block_structure)
 
-    ebs_star = [
-        np.empty((0,), dtype=float) for _ in block_structure.inequivalent_blocks
-    ]
+    ebs_star = [np.empty((0,), dtype=float) for _ in block_structure.inequivalent_blocks]
     vs_star = [
         np.empty(
             (0, len(block_structure.blocks[ib]), len(block_structure.blocks[ib])),
@@ -281,9 +272,7 @@ def fit_hyb(
 
         bath_guess = None
         if ebs_guess is not None:
-            bath_guess = np.unique(
-                np.asarray(ebs_guess[inequivalent_block_i], dtype=float)
-            )
+            bath_guess = np.unique(np.asarray(ebs_guess[inequivalent_block_i], dtype=float))
             if sym.particle_hole:
                 # Only the positive half of a mirrored bath is parametrized; an
                 # unpaired pole at E_F is carried by `sym.zero_pole`, not here.
@@ -374,11 +363,7 @@ def _detect_symmetries(
             ph_data=(w, block_hyb),
         )
         if sym.particle_hole and not optimize_bath_energies:
-            guess = (
-                np.asarray(ebs_guess[len(syms)], dtype=float)
-                if ebs_guess is not None
-                else None
-            )
+            guess = np.asarray(ebs_guess[len(syms)], dtype=float) if ebs_guess is not None else None
             mirrored, zero_pole = _frozen_bath_is_mirrored(guess, delta)
             if not mirrored:
                 sym = _skip_particle_hole(sym, "frozen bath is not mirror symmetric")
@@ -446,9 +431,7 @@ def _frozen_bath_is_mirrored(energies, delta):
         # Nothing but a pole at E_F: there is no pair to mirror, and the gap
         # parametrization has no free energy to work with.
         return False, False
-    rebuilt = np.concatenate(
-        [-half[::-1], np.zeros(1) if zero_pole else np.zeros(0), half]
-    )
+    rebuilt = np.concatenate([-half[::-1], np.zeros(1) if zero_pole else np.zeros(0), half])
     if rebuilt.shape != energies.shape:
         return False, False
     return bool(np.allclose(rebuilt, energies, atol=0.1 * delta)), zero_pole
@@ -538,8 +521,7 @@ def get_state_per_inequivalent_block(
         block_hyb = hyb[idx]
         weight_per_inequivalent_block[inequivalent_block_i] = (
             sp.integrate.simpson(
-                -np.imag(np.sum(np.diagonal(block_hyb, axis1=1, axis2=2), axis=1))
-                * weight_fun(w),
+                -np.imag(np.sum(np.diagonal(block_hyb, axis1=1, axis2=2), axis=1)) * weight_fun(w),
                 w,
             )
             * block_multiplicity
@@ -553,18 +535,14 @@ def get_state_per_inequivalent_block(
     # Pool of B states per block, shared out by hybridization strength.
     pool = bath_states_per_orbital * n_blocks
     if total_weight > 0:
-        states = np.round(pool * weight_per_inequivalent_block / total_weight).astype(
-            int
-        )
+        states = np.round(pool * weight_per_inequivalent_block / total_weight).astype(int)
     else:
         states = np.zeros(n_blocks, dtype=int)
 
     # Coverage: every hybridizing block gets at least one bath state per orbital,
     # so an n-orbital block can represent its full n x n hybridization.
     hybridizing = weight_per_inequivalent_block > 0
-    states[hybridizing] = np.maximum(
-        states[hybridizing], orbitals_per_block[hybridizing]
-    )
+    states[hybridizing] = np.maximum(states[hybridizing], orbitals_per_block[hybridizing])
 
     # Window cap: never request more states than reasonably fit in the window.
     if syms is None:
@@ -643,9 +621,7 @@ def fit_block(
             optimize_bath_energies=False,
         )
         if comm is not None:
-            bath_energies, v, C, _ = comm.allreduce(
-                (bath_energies, v, C, min_cost), op=_get_v_opt_op()
-            )
+            bath_energies, v, C, _ = comm.allreduce((bath_energies, v, C, min_cost), op=_get_v_opt_op())
         if verbose:
             print(f"Final cost:    {abs(min_cost):.3e}  (bath energies frozen)")
             print(f"Bath energies: {_fmt_floats(bath_energies)}")
@@ -653,9 +629,7 @@ def fit_block(
 
     # Cap the requested count at what reasonably fits in the window (min
     # separation delta), so seeds are built at a feasible size from the start.
-    bath_states_per_orbital = min(
-        bath_states_per_orbital, max_bath_states(w[0], w[-1], delta, sym)
-    )
+    bath_states_per_orbital = min(bath_states_per_orbital, max_bath_states(w[0], w[-1], delta, sym))
     # A mirrored bath only parametrizes its positive half (plus, for an odd
     # count, one unpaired pole at E_F that carries no free energy).  The cap
     # above can change the parity of the count, so re-derive the unpaired pole
@@ -685,9 +659,7 @@ def fit_block(
 
     scores = weight_fun(w[peaks]) * hyb_trace[peaks]
     score_sum = np.sum(scores)
-    normalised_scores = (
-        scores / score_sum if score_sum > 0 else np.ones_like(scores) / len(scores)
-    )
+    normalised_scores = scores / score_sum if score_sum > 0 else np.ones_like(scores) / len(scores)
 
     if verbose:
         _print_peaks(
@@ -734,9 +706,7 @@ def fit_block(
         rng=rng,
     )
     if comm is not None:
-        bath_energies, v, C, _ = comm.allreduce(
-            (bath_energies, v, C, min_cost), op=_get_v_opt_op()
-        )
+        bath_energies, v, C, _ = comm.allreduce((bath_energies, v, C, min_cost), op=_get_v_opt_op())
 
     if verbose:
         print(f"Final cost:    {abs(min_cost):.3e}")

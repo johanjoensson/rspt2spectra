@@ -45,9 +45,7 @@ def test_extract_dat_indexmap_roundtrip(tmp_path):
     rng = np.random.default_rng(7)
     n_w, n_orb = 11, 2
     w = np.linspace(-5, 5, n_w)
-    matrices = rng.normal(size=(n_w, n_orb, n_orb)) + 1j * rng.normal(
-        size=(n_w, n_orb, n_orb)
-    )
+    matrices = rng.normal(size=(n_w, n_orb, n_orb)) + 1j * rng.normal(size=(n_w, n_orb, n_orb))
     # Element (0,1)/(1,0) not stored; diagonal in columns 2 and 3 (1-based).
     indexmap = np.array([[2, 0], [0, 3]])
     matrices[:, 0, 1] = 0

@@ -138,9 +138,7 @@ def extract_dat(dataname, cluster, prefix="."):
         try:
             header, indexmap = _read_dat_header(imagname)
         except FileNotFoundError:
-            raise FileNotFoundError(
-                f"Could not find either {realname} or {imagname}."
-            ) from None
+            raise FileNotFoundError(f"Could not find either {realname} or {imagname}.") from None
     if indexmap is not None:
         indexmap = np.array(indexmap, dtype=int)
 
@@ -180,12 +178,8 @@ def extract_dat(dataname, cluster, prefix="."):
 
     orb_data = None
     if indexmap is not None:
-        orb_data = np.zeros(
-            (dat.shape[0], indexmap.shape[0], indexmap.shape[1]), dtype=complex
-        )
-        for i, j in itertools.product(
-            range(indexmap.shape[0]), range(indexmap.shape[1])
-        ):
+        orb_data = np.zeros((dat.shape[0], indexmap.shape[0], indexmap.shape[1]), dtype=complex)
+        for i, j in itertools.product(range(indexmap.shape[0]), range(indexmap.shape[1])):
             if indexmap[i, j] == 0:
                 continue
             orb_data[:, i, j] = dat[:, indexmap[i, j] - 1]

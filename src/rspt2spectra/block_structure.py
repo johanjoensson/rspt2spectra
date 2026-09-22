@@ -57,15 +57,9 @@ def print_block_structure(block_structure):
             parent_map[b] = inequiv
 
     for block_i, orbs in enumerate(block_structure.blocks):
-        idx = np.ix_(
-            [orb - orb_offset for orb in orbs], [orb - orb_offset for orb in orbs]
-        )
+        idx = np.ix_([orb - orb_offset for orb in orbs], [orb - orb_offset for orb in orbs])
         mat[idx] = parent_map.get(block_i, block_i)
-    print(
-        "\n".join(
-            " ".join(f"{el:^3d}" if el != -1 else " + " for el in row) for row in mat
-        )
-    )
+    print("\n".join(" ".join(f"{el:^3d}" if el != -1 else " + " for el in row) for row in mat))
 
 
 def get_equivalent_orbs(block_structure):
@@ -81,9 +75,7 @@ def get_equivalent_orbs(block_structure):
     list of list of int
         A list of lists of equivalent orbital indices for each inequivalent block.
     """
-    blocks, ident_blocks, transp_blocks, ph_blocks, phtransp_blocks, ineq_blocks = (
-        block_structure
-    )
+    blocks, ident_blocks, transp_blocks, ph_blocks, phtransp_blocks, ineq_blocks = block_structure
     eq_orbs = [[] for _ in ineq_blocks]
     for ib, i_eq_orbs in zip(ineq_blocks, eq_orbs):
         tmp = set()
@@ -112,9 +104,7 @@ def get_equivalent_blocks(block_structure):
     list of list of int
         A list of lists of equivalent block indices for each inequivalent block.
     """
-    _blocks, ident_blocks, transp_blocks, ph_blocks, phtransp_blocks, ineq_blocks = (
-        block_structure
-    )
+    _blocks, ident_blocks, transp_blocks, ph_blocks, phtransp_blocks, ineq_blocks = block_structure
     eq_blocks = [[] for _ in ineq_blocks]
     for ib, i_eq_blocks in zip(ineq_blocks, eq_blocks):
         tmp = set()
@@ -160,9 +150,7 @@ def build_block_structure(G, mat=None, tol=1e-6, w=None):
     identical_blocks = get_identical_blocks(blocks, G, mat, tol=tol)
     transposed_blocks = get_transposed_blocks(blocks, G, mat, tol=tol)
     particle_hole_blocks = get_particle_hole_blocks(blocks, G, mat, tol=tol, w=w)
-    particle_hole_and_transposed_blocks = get_particle_hole_and_transpose_blocks(
-        blocks, G, mat, tol=tol, w=w
-    )
+    particle_hole_and_transposed_blocks = get_particle_hole_and_transpose_blocks(blocks, G, mat, tol=tol, w=w)
     inequivalent_blocks = get_inequivalent_blocks(
         identical_blocks,
         transposed_blocks,
@@ -256,14 +244,10 @@ def get_n_blocks_block_indices_mask_matrix(mat: np.ndarray, tol=1e-6):
         An array of component labels for each orbital.
     """
     mask = np.abs(mat) > tol
-    return sp.sparse.csgraph.connected_components(
-        mask, directed=False, return_labels=True
-    )
+    return sp.sparse.csgraph.connected_components(mask, directed=False, return_labels=True)
 
 
-def get_n_blocks_block_indices_mask(
-    G: np.ndarray = None, mat: np.ndarray = None, tol=1e-6
-):
+def get_n_blocks_block_indices_mask(G: np.ndarray = None, mat: np.ndarray = None, tol=1e-6):
     """Determine block components of a Green's function and/or a matrix.
 
     Parameters
@@ -292,9 +276,7 @@ def get_n_blocks_block_indices_mask(
     else:
         mask = np.abs(mat) > tol
 
-    return sp.sparse.csgraph.connected_components(
-        mask, directed=False, return_labels=True
-    )
+    return sp.sparse.csgraph.connected_components(mask, directed=False, return_labels=True)
 
 
 def get_blocks(G: np.ndarray = None, mat=None, tol=1e-6):
@@ -314,9 +296,7 @@ def get_blocks(G: np.ndarray = None, mat=None, tol=1e-6):
     list of list of int
         A list where each element is a list of orbital indices belonging to that block.
     """
-    assert (
-        G is not None or mat is not None
-    ), "Must supply at least one of hamiltonian or G"
+    assert G is not None or mat is not None, "Must supply at least one of hamiltonian or G"
     if G is not None:
         if len(G.shape) == 2:
             G = G.reshape((1, G.shape[0], G.shape[1]))
@@ -402,9 +382,7 @@ def _identical_blocks(blocks, G, mat, tol):
             if any(j in b for b in identical_blocks):
                 continue
             idx_j = np.ix_(range(G.shape[0]), block_j, block_j)
-            if np.all(np.abs(G[idx_i] - G[idx_j]) < tol) and np.all(
-                np.abs(mat[idx_i[1:]] - mat[idx_j[1:]]) < tol
-            ):
+            if np.all(np.abs(G[idx_i] - G[idx_j]) < tol) and np.all(np.abs(mat[idx_i[1:]] - mat[idx_j[1:]]) < tol):
                 identical.append(j)
         identical_blocks[i] = identical
     return identical_blocks
@@ -507,9 +485,9 @@ def _transposed_blocks(blocks, G, mat, tol):
             if any(j in b for b in transposed_blocks):
                 continue
             idx_j = np.ix_(range(G.shape[0]), block_j, block_j)
-            if np.all(
-                np.abs(G[idx_i] - np.transpose(G[idx_j], (0, 2, 1))) < tol
-            ) and np.all(np.abs(mat[idx_i[1:]] - mat[idx_j[1:]].T) < tol):
+            if np.all(np.abs(G[idx_i] - np.transpose(G[idx_j], (0, 2, 1))) < tol) and np.all(
+                np.abs(mat[idx_i[1:]] - mat[idx_j[1:]].T) < tol
+            ):
                 transposed.append(j)
         transposed_blocks[i] = transposed
     return transposed_blocks
@@ -805,18 +783,8 @@ def _particle_hole_transpose_blocks(blocks, G, mat, tol, mirror):
             idx_j = np.ix_(np.flatnonzero(mask), block_j, block_j)
             # G_j(w) == -conj(G_i(-w))^T, compared on the mirrored mesh.
             if (
-                np.all(
-                    np.abs(
-                        np.real(G_mirrored[idx_i] + np.transpose(G[idx_j], (0, 2, 1)))
-                    )
-                    < tol
-                )
-                and np.all(
-                    np.abs(
-                        np.imag(G_mirrored[idx_i] - np.transpose(G[idx_j], (0, 2, 1)))
-                    )
-                    < tol
-                )
+                np.all(np.abs(np.real(G_mirrored[idx_i] + np.transpose(G[idx_j], (0, 2, 1)))) < tol)
+                and np.all(np.abs(np.imag(G_mirrored[idx_i] - np.transpose(G[idx_j], (0, 2, 1)))) < tol)
                 and np.all(np.abs(np.real(mat[idx_i[1:]] + mat[idx_j[1:]].T)) < tol)
                 and np.all(np.abs(np.imag(mat[idx_i[1:]] - mat[idx_j[1:]].T)) < tol)
             ):
@@ -893,9 +861,7 @@ def build_matrix(inequivalent_parts: list[np.ndarray], block_structure: BlockStr
     return M
 
 
-def build_greens_function(
-    inequivalent_parts: list[np.ndarray], block_structure: BlockStructure
-):
+def build_greens_function(inequivalent_parts: list[np.ndarray], block_structure: BlockStructure):
     """Build a full Green's function from its unique inequivalent block parts.
 
     Parameters

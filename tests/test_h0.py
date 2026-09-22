@@ -34,9 +34,7 @@ def analytic_hyb(z):
 
 
 def analytic_g0(z):
-    return np.linalg.inv(
-        z[:, None, None] * np.eye(2)[None] - H_LOC[None] - analytic_hyb(z)
-    )
+    return np.linalg.inv(z[:, None, None] * np.eye(2)[None] - H_LOC[None] - analytic_hyb(z))
 
 
 def prepared():
@@ -114,9 +112,7 @@ def test_chain_geometries_preserve_impurity_g0(geometry):
     assert H.shape == H_star.shape
     z = W[::10] + 1j * EIM
     G0 = np.linalg.inv(z[:, None, None] * np.eye(H.shape[0])[None] - H[None])[:, :2, :2]
-    G0_star = np.linalg.inv(
-        z[:, None, None] * np.eye(H_star.shape[0])[None] - H_star[None]
-    )[:, :2, :2]
+    G0_star = np.linalg.inv(z[:, None, None] * np.eye(H_star.shape[0])[None] - H_star[None])[:, :2, :2]
     assert np.allclose(G0, G0_star, atol=1e-10)
     assert np.allclose(G0, analytic_g0(z), atol=1e-10)
 

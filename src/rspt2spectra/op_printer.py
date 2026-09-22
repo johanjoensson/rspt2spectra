@@ -173,16 +173,12 @@ def write_h0_file(
         "n_orb": int(n_orb),
         "index_convention": "impurity-block-first",
         "storage": "full",
-        "impurity_orbitals": {
-            str(k): [int(o) for o in orbs] for k, orbs in impurity_orbitals.items()
-        },
+        "impurity_orbitals": {str(k): [int(o) for o in orbs] for k, orbs in impurity_orbitals.items()},
         "drop_tolerance": float(drop_tolerance),
     }
     if rot_to_spherical is not None:
         rot = np.asarray(rot_to_spherical, dtype=complex)
-        header["rot_to_spherical"] = [
-            [[float(v.real), float(v.imag)] for v in row] for row in rot
-        ]
+        header["rot_to_spherical"] = [[[float(v.real), float(v.imag)] for v in row] for row in rot]
     if spin_ordering is not None:
         header["required_features"].append("spin_ordering")
         header["spin_ordering"] = spin_ordering
