@@ -685,10 +685,14 @@ def create_decoupled_hamiltonian(H, n_imp):
     eigvals[:] = eigvals[sort_idx]
     eigvecs[:] = eigvecs[:, sort_idx]
 
-    # Put the pivot point at the eigenstate with energy closest to 0
+    # Put the pivot point at the highest occupied eigenstate (energy below 0). Choosing the
+    # eigenstate closest to 0 instead is a tie in a particle-hole symmetric spectrum (+-a
+    # pairs), which roundoff broke either way: when +a won, an unoccupied state joined the
+    # occupied chain and the linked chains came out lopsided.
     # In order to ensure we always get two decoupled blocks, the pivot will never
     # be placed at the last eigenstate (unless there is only one eigenstate block.)
-    pivot = n_imp * (min(np.argmin(np.abs(eigvals)), max(len(eigvals) - 2 * n_imp, 0)) // n_imp)
+    highest_occupied = max(np.count_nonzero(eigvals < 0) - 1, 0)
+    pivot = n_imp * (min(highest_occupied, max(len(eigvals) - 2 * n_imp, 0)) // n_imp)
 
     #          [ v_0, . . ., v_pivot-1, v_pivot, ..., v_m-1 ]
     # eigvecs  |                                         |

@@ -101,6 +101,28 @@ def test_linked_double_chain():
     assert hb.shape == (4, 4)
 
 
+def test_linked_double_chain_is_particle_hole_symmetric():
+    # A particle-hole symmetric star (impurity at 0, mirrored bath with one mode at 0) has a
+    # particle-hole symmetric linked double chain: the coupling site sits in the middle at
+    # zero energy, with mirrored valence and conduction chains. Its one-particle spectrum
+    # comes in +-a pairs, so a pivot chosen by closest-to-zero is a tie that roundoff breaks
+    # (either way, depending on the bath); several random baths catch both outcomes.
+    H_imp = np.array([[0.0]]) + 0j
+    for seed in range(20):
+        rng = np.random.default_rng(seed)
+        half = np.sort(rng.uniform(0.1, 2.0, 5))
+        ebs = np.concatenate((-half[::-1], [0.0], half))
+        v_half = rng.uniform(0.1, 1.0, 5)
+        vs = np.concatenate((v_half[::-1], [rng.uniform(0.1, 1.0)], v_half)).reshape(-1, 1) + 0j
+        v, hb = edchain.linked_double_chain(H_imp, vs, ebs, verbose=False, extremely_verbose=False)
+        middle = len(ebs) // 2
+        onsite = np.real(np.diag(hb))
+        assert np.flatnonzero(np.abs(v[:, 0]) > 1e-10).tolist() == [middle - 1, middle, middle + 1], seed
+        assert abs(onsite[middle]) < 1e-10, seed
+        assert np.allclose(onsite, -onsite[::-1], atol=1e-10), seed
+        assert np.allclose(np.abs(v[:, 0]), np.abs(v[::-1, 0]), atol=1e-10), seed
+
+
 def test_double_chains():
     np.random.seed(42)
     H_imp = np.array([[0.0]]) + 0j
