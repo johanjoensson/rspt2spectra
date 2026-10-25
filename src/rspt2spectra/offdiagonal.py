@@ -1022,6 +1022,91 @@ def _varpro_cost_and_full_grad(eb_free, z, hyb, weight_array, W_mn, sym):
     return float(cost), grad_expl + grad_impl, V, C_h
 
 
+def _varpro_setup(w, delta, weight_function, max_moment):
+    """Build the broadened mesh, fit weights and moment weights shared by the VARPRO fitters.
+
+    The broadening grows with ``|w|`` to focus the fit near the Fermi energy.
+    """
+    delta_arr = delta * (1 + 0.5 * np.abs(w) ** 2)
+    z = w + 1j * delta_arr
+    return z, weight_function(w), moment_weights(w, max_moment)
+
+
+def _gap_cost_and_grad(grad_fun, z, hyb, weight_array, W_mn, sym):
+    """Wrap the reduced VARPRO cost and its gradient as a function of the gap vector."""
+
+    def _fg(p):
+        eb = _gaps_to_eb(p)
+        c, g, _, _ = grad_fun(eb, z, hyb, weight_array, W_mn, sym)
+        return float(c), _gaps_grad(g)
+
+    return _fg
+
+
+def _local_minimizer_kwargs(gap_bounds):
+    """Return the local minimizer used inside basin-hopping, and alone for a warm start."""
+    return {
+        "method": "L-BFGS-B",
+        "jac": True,
+        "tol": 1e-6,
+        "options": {"maxiter": 500},
+        "bounds": gap_bounds,
+    }
+
+
+def get_v_and_eb_varpro_local(
+    w,
+    delta,
+    hyb,
+    eb0,
+    eb_restrictions,
+    gamma,
+    regularization,
+    weight_function,
+    sym,
+    max_moment=3,
+    full_gradient=True,
+):
+    """Refine a bath fit locally from the bath energies ``eb0``: no basin-hopping.
+
+    The warm-start counterpart of :func:`get_v_and_eb_varpro_basin_hopping`: the same
+    gap-parametrized L-BFGS-B minimizer that basin-hopping runs at each hop, started
+    from ``eb0`` (one ``(n_eb,)`` set of free energies -- the positive half for a
+    mirrored bath), followed by the same SLSQP polish of eb, V and C. It stays in the
+    basin ``eb0`` lies in, which is what keeps a refit of a slightly changed
+    hybridization from jumping to a different, near-degenerate minimum. It draws no
+    random numbers, so every MPI rank gets the identical result.
+
+    Returns ``(v, eb, C, cost)`` over the *full* pole set, like the basin-hopping fit.
+    """
+    grad_fun = _varpro_cost_and_full_grad if full_gradient else _varpro_cost_and_grad
+    eb0 = np.sort(np.asarray(eb0, dtype=float))
+    n_eb = len(eb0)
+
+    z, weight_array, W_mn = _varpro_setup(w, delta, weight_function, max_moment)
+
+    lo, hi = free_window(*eb_restrictions[0], delta, sym)
+    gap_bounds = _gap_bounds(lo, hi, n_eb, delta)
+    x0 = _repair_gaps(_eb_to_gaps(eb0, delta), lo, hi, delta)
+
+    res = minimize(
+        _gap_cost_and_grad(grad_fun, z, hyb, weight_array, W_mn, sym),
+        x0,
+        **_local_minimizer_kwargs(gap_bounds),
+    )
+    return _gap_slsqp_polish(
+        res.x,
+        z,
+        hyb,
+        gamma,
+        regularization,
+        weight_array,
+        W_mn,
+        sym,
+        gap_bounds,
+    )
+
+
 def get_v_and_eb_varpro_basin_hopping(
     w,
     delta,
@@ -1071,10 +1156,7 @@ def get_v_and_eb_varpro_basin_hopping(
     grad_fun = _varpro_cost_and_full_grad if full_gradient else _varpro_cost_and_grad
     n_eb = ebs.shape[1]
 
-    delta_arr = delta * (1 + 0.5 * np.abs(w) ** 2)
-    z = w + 1j * delta_arr
-    weight_array = weight_function(w)
-    W_mn = moment_weights(w, max_moment)
+    z, weight_array, W_mn = _varpro_setup(w, delta, weight_function, max_moment)
 
     if not optimize_bath_energies:
         lo, hi = free_window(*eb_restrictions[0], delta, sym)
@@ -1107,10 +1189,7 @@ def get_v_and_eb_varpro_basin_hopping(
 
     x0 = gap_seeds[np.argmin(initial_costs)]
 
-    def _fg(p):
-        eb = _gaps_to_eb(p)
-        c, g, _, _ = grad_fun(eb, z, hyb, weight_array, W_mn, sym)
-        return float(c), _gaps_grad(g)
+    _fg = _gap_cost_and_grad(grad_fun, z, hyb, weight_array, W_mn, sym)
 
     # L-BFGS-B (box bounds only) explores: it gives markedly better minima here
     # than a constrained SLSQP, and has no incentive to push a pole out of the
@@ -1124,13 +1203,7 @@ def get_v_and_eb_varpro_basin_hopping(
         x0,
         niter=150,
         T=T,
-        minimizer_kwargs={
-            "method": "L-BFGS-B",
-            "jac": True,
-            "tol": 1e-6,
-            "options": {"maxiter": 500},
-            "bounds": gap_bounds,
-        },
+        minimizer_kwargs=_local_minimizer_kwargs(gap_bounds),
         disp=False,
         rng=rng,
     )
@@ -1170,10 +1243,7 @@ def get_v_and_eb_differential_evolution(
     After DE convergence a final SLSQP polish refines eb, V, and C jointly.
     """
     n_eb = ebs.shape[1]
-    delta_arr = delta * (1 + 0.5 * np.abs(w) ** 2)
-    z = w + 1j * delta_arr
-    weight_array = weight_function(w)
-    W_mn = moment_weights(w, max_moment)
+    z, weight_array, W_mn = _varpro_setup(w, delta, weight_function, max_moment)
 
     # Gap parametrization [first energy, gaps]; gaps >= delta enforce ordering and
     # minimum separation, removing the need to merge overlapping states afterwards.
