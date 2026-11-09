@@ -87,3 +87,23 @@ def test_joint_diagonalization_labels_survive_roundoff_ties():
     _, Q2 = block_diagonalize_hyb(pert)
     assert np.allclose(np.abs(Q1), np.abs(Q2), atol=1e-6)
     assert np.allclose(Q1, Q2, atol=1e-6)
+
+
+def test_split_margin_brackets_the_coupling():
+    """A single H coupling of relative size c splits for tol > c and merges below it."""
+    from rspt2spectra.h0 import split_margin
+
+    n = 4
+    H = np.diag([0.0, 0.0, 1.0, 1.0]).astype(complex)
+    H[0, 2] = H[2, 0] = 0.02
+    hyb = np.zeros((3, n, n), dtype=complex)
+    for k in range(n):
+        hyb[:, k, k] = -0.1j
+    lo, hi = split_margin(hyb, H, tol=0.5)
+    assert lo is not None and 0.0 < lo < 0.5
+    assert hi is None or hi > 0.5
+    lo2, hi2 = split_margin(hyb, H, tol=1e-3)
+    assert lo2 is None or lo2 < 1e-3
+    assert hi2 is not None and hi2 < 0.5
+    # the two windows are adjacent but different partitions
+    assert abs(hi2 - lo) / lo < 1e-6

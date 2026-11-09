@@ -52,6 +52,54 @@ BLOCK_EQUIVALENCE_TOL = 1e-6
 BLOCKING_VERSION = "joint-jacobi-v2;h-weight=0.1;h-scale=max(spread,min-broadening)"
 
 
+def _partition(hyb, H, tol):
+    return frozenset(frozenset(int(i) for i in b) for b in get_blocks(hyb, H, tol=tol))
+
+
+def split_margin(hyb, H, tol, limit=1e3, bisections=24):
+    """The range ``(lo, hi)`` of ``symm_prec`` over which the partition at ``tol`` does not change.
+
+    ``lo`` is ``None`` when lowering the threshold never changes it (below the absolute coupling
+    floor the threshold stops falling); ``hi`` is ``None`` when raising it up to ``limit`` never
+    does.  The partition is monotone in the threshold (a higher one only neglects more), so each
+    end is found by doubling and then bisecting in the logarithm.
+    """
+    ref = _partition(hyb, H, tol)
+
+    def edge(direction):
+        inside, step = tol, 2.0**direction
+        outside = None
+        for _ in range(60):
+            trial = inside * step
+            if trial > limit or trial < 1e-14:
+                return None
+            if _partition(hyb, H, trial) != ref:
+                outside = trial
+                break
+            inside = trial
+        if outside is None:
+            return None
+        for _ in range(bisections):
+            mid = np.sqrt(inside * outside)
+            if _partition(hyb, H, mid) == ref:
+                inside = mid
+            else:
+                outside = mid
+        return inside
+
+    return edge(-1), edge(+1)
+
+
+def _print_split_margin(hyb, H, tol):
+    lo, hi = split_margin(hyb, H, tol)
+    lo_txt = f"{lo:.3g}" if lo is not None else "0 (absolute coupling floor)"
+    hi_txt = f"{hi:.3g}" if hi is not None else "no upper limit"
+    print(
+        f"Partition holds for symm_prec in [{lo_txt}, {hi_txt}] (set {tol:g}); "
+        "pick a value well inside this window so DMFT iterations do not flip it."
+    )
+
+
 def _print_neglected(hyb, H, blocks, tol):
     """Print the size of the couplings between blocks that are about to be neglected."""
     n = H.shape[0]
@@ -139,6 +187,7 @@ def prepare_hyb_fit(
     blocks = get_blocks(phase_hyb[window], H_local_rot, tol=tol)
     if verbose if report is None else report:
         _print_neglected(phase_hyb[window], H_local_rot, blocks, tol)
+        _print_split_margin(phase_hyb[window], H_local_rot, tol)
     phase_hyb = project_to_blocks(phase_hyb, blocks)
     H_local_Q = project_to_blocks(H_local_rot, blocks)
     # The partition was decided on the fit window; the equivalences between the blocks are
