@@ -120,7 +120,7 @@ def get_equivalent_blocks(block_structure):
     return eq_blocks
 
 
-def build_block_structure(G, mat=None, tol=1e-6, w=None):
+def build_block_structure(G, mat=None, tol=1e-6, w=None, equiv_tol=None, blocks=None):
     """Analyze a Green's function or a matrix to build a BlockStructure object.
 
     Parameters
@@ -130,13 +130,24 @@ def build_block_structure(G, mat=None, tol=1e-6, w=None):
     mat : np.ndarray, optional
         Hamiltonian or other matrix of shape `(n_orb, n_orb)`.
     tol : float, default 1e-6
-        Tolerance threshold for considering matrix elements/Green's function values
-        as non-zero or identical.
+        Connectivity threshold, *relative* to the strongest diagonal element of ``G``
+        and to the eigenvalue spread of ``mat`` (see `get_blocks`), but never below the
+        absolute noise floor ``min(tol, ABS_COUPLING_FLOOR)``.  Couplings below it do not
+        join orbitals into one block.
+    equiv_tol : float, optional
+        Absolute tolerance for deciding that two blocks are identical, transposed or
+        particle-hole related.  Defaults to ``min(tol, ABS_COUPLING_FLOOR)``: a loose ``tol``
+        that truncates weak couplings must not also loosen the equivalence test, or
+        inequivalent blocks get merged.  Matches ``rspt2spectra.h0.BLOCK_EQUIVALENCE_TOL``.
     w : (n_omega,) np.ndarray, optional
         Frequency mesh of ``G``.  Particle-hole equivalence relates a block at
         ``omega`` to another at ``-omega``, so it can only be tested when the mesh
         is known; without ``w`` the particle-hole relations are skipped and a
         warning is issued.
+    blocks : list of list of int, optional
+        A partition decided by the caller (for instance from a restricted frequency window).
+        When given, ``tol`` is not used and only the equivalences between these blocks are
+        computed, on all of ``G``.
 
     Returns
     -------
@@ -146,11 +157,16 @@ def build_block_structure(G, mat=None, tol=1e-6, w=None):
     assert G is not None or mat is not None, "You must supply at least one of G or mat"
     if G is not None and len(G.shape) == 2:
         G = G.reshape((1, G.shape[0], G.shape[1]))
-    blocks = get_blocks(G, mat, tol=tol)
-    identical_blocks = get_identical_blocks(blocks, G, mat, tol=tol)
-    transposed_blocks = get_transposed_blocks(blocks, G, mat, tol=tol)
-    particle_hole_blocks = get_particle_hole_blocks(blocks, G, mat, tol=tol, w=w)
-    particle_hole_and_transposed_blocks = get_particle_hole_and_transpose_blocks(blocks, G, mat, tol=tol, w=w)
+    if equiv_tol is None:
+        equiv_tol = min(tol, ABS_COUPLING_FLOOR)
+    if blocks is None:
+        blocks = get_blocks(G, mat, tol=tol)
+    identical_blocks = get_identical_blocks(blocks, G, mat, tol=equiv_tol)
+    transposed_blocks = get_transposed_blocks(blocks, G, mat, tol=equiv_tol)
+    particle_hole_blocks = get_particle_hole_blocks(blocks, G, mat, tol=equiv_tol, w=w)
+    particle_hole_and_transposed_blocks = get_particle_hole_and_transpose_blocks(
+        blocks, G, mat, tol=equiv_tol, w=w
+    )
     inequivalent_blocks = get_inequivalent_blocks(
         identical_blocks,
         transposed_blocks,
@@ -226,6 +242,67 @@ def get_inequivalent_blocks(
     return sorted({find(block) for block in range(n_blocks)})
 
 
+#: Absolute noise floor of a coupling threshold, in the units of the data (Ry).  The relative
+#: threshold ``tol * scale`` is never allowed below ``min(tol, ABS_COUPLING_FLOOR)``, so at the
+#: default ``tol`` it equals the absolute 1e-6 the block detection always used, and a vanishing
+#: scale (degenerate crystal field, empty window) cannot turn numerical noise into couplings.
+ABS_COUPLING_FLOOR = 1e-6
+
+
+def _threshold(tol, scale):
+    """Coupling threshold: ``tol`` relative to ``scale``, but not below the absolute noise floor."""
+    return max(tol * scale, min(tol, ABS_COUPLING_FLOOR))
+
+
+def _g_scale(G):
+    """Largest diagonal magnitude of ``G`` (shape `(n_omega, n, n)`) over all frequencies."""
+    return float(np.max(np.abs(np.einsum("wii->wi", G))))
+
+
+def _mat_scale(mat):
+    """Spread of the eigenvalues of the Hermitian part of ``mat``, i.e. the crystal-field scale."""
+    ev = np.linalg.eigvalsh(0.5 * (mat + np.conj(mat.T)))
+    return float(ev[-1] - ev[0])
+
+
+def _min_broadening(G):
+    """Smallest per-orbital frequency average of ``|Im G_ii|``: the weakest orbital's hybridization width."""
+    return float(np.min(np.mean(np.abs(np.imag(np.einsum("wii->wi", G))), axis=0)))
+
+
+def _mat_scale_with_hyb(mat, G):
+    """Scale for the couplings of ``mat`` when it is tested together with the hybridization ``G``.
+
+    The crystal-field spread of ``mat`` alone is the wrong yardstick: the ligand field lives in
+    the hybridization, and a coupling smaller than the hybridization width of the weakest orbital
+    does not resolve into a separate level.  The scale is therefore the larger of the spread
+    and that width.
+    """
+    return max(_mat_scale(mat), _min_broadening(G))
+
+
+def project_to_blocks(arr, blocks):
+    """Zero every element of ``arr`` that couples two different blocks.
+
+    Parameters
+    ----------
+    arr : np.ndarray
+        Array of shape `(n, n)` or `(..., n, n)`.
+    blocks : list of list of int
+        Orbital indices of each block.
+
+    Returns
+    -------
+    np.ndarray
+        Copy of ``arr`` that is exactly block diagonal with respect to ``blocks``.
+    """
+    arr = np.asarray(arr)
+    mask = np.zeros(arr.shape[-2:], dtype=bool)
+    for block in blocks:
+        mask[np.ix_(block, block)] = True
+    return np.where(mask, arr, 0)
+
+
 def get_n_blocks_block_indices_mask_matrix(mat: np.ndarray, tol=1e-6):
     """Determine block components of a matrix using connected components analysis.
 
@@ -243,7 +320,7 @@ def get_n_blocks_block_indices_mask_matrix(mat: np.ndarray, tol=1e-6):
     labels : np.ndarray of int
         An array of component labels for each orbital.
     """
-    mask = np.abs(mat) > tol
+    mask = np.abs(mat) > _threshold(tol, _mat_scale(mat))
     return sp.sparse.csgraph.connected_components(mask, directed=False, return_labels=True)
 
 
@@ -257,7 +334,9 @@ def get_n_blocks_block_indices_mask(G: np.ndarray = None, mat: np.ndarray = None
     mat : np.ndarray, optional
         The matrix to analyze.
     tol : float, default 1e-6
-        Tolerance threshold for connection.
+        Connection threshold, relative to the largest diagonal element of ``G``
+        and, for ``mat``, to the larger of its eigenvalue spread and the smallest
+        orbital-resolved hybridization width of ``G`` (the spread alone when ``G`` is absent).
 
     Returns
     -------
@@ -270,11 +349,11 @@ def get_n_blocks_block_indices_mask(G: np.ndarray = None, mat: np.ndarray = None
     if G is not None:
         if len(G.shape) == 2:
             G = G.reshape((1, G.shape[0], G.shape[1]))
-        mask = np.any(np.abs(G) > tol, axis=0)
+        mask = np.any(np.abs(G) > _threshold(tol, _g_scale(G)), axis=0)
         if mat is not None:
-            mask = np.logical_or(mask, np.abs(mat) > tol)
+            mask = np.logical_or(mask, np.abs(mat) > _threshold(tol, _mat_scale_with_hyb(mat, G)))
     else:
-        mask = np.abs(mat) > tol
+        mask = np.abs(mat) > _threshold(tol, _mat_scale(mat))
 
     return sp.sparse.csgraph.connected_components(mask, directed=False, return_labels=True)
 

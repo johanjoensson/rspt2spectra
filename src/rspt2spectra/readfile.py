@@ -176,7 +176,7 @@ def _parse_cluster_id(lines, i):
 
 
 def parse_cluster_basis(cluster_label, inp_file="green.inp", prefix="."):
-    """Parse green.inp file to determine if Cf flag or a non-spherical basis was used for the given cluster.
+    """Parse green.inp to find the Cf flag, the basis index of every shell and the ``Irr`` tokens of a cluster.
 
     Parameters
     ----------
@@ -189,13 +189,15 @@ def parse_cluster_basis(cluster_label, inp_file="green.inp", prefix="."):
 
     Returns
     -------
-    tuple[bool, int, int] or None
-        ``(has_cf_flag, basis_tag, l_val)`` for the matched cluster -- ``has_cf_flag`` is True
-        if the data is in the CF basis, ``basis_tag`` is nonzero for a non-spherical basis, and
-        ``l_val`` is the shell's angular momentum (``-1`` if it could not be determined). Returns
-        ``None`` if the input file is missing or no cluster in it matches ``cluster_label`` --
-        this is deliberately *not* the same value as a genuine "basis tag 0" match, since a
-        caller must not treat an unresolved cluster as "already spherical".
+    tuple[bool, list[tuple[int, int]], list[str]] or None
+        ``(has_cf_flag, shells, irr_labels)`` for the matched cluster. ``has_cf_flag`` is True
+        if the data is in the CF basis. ``shells`` holds ``(l, basis_tag)`` for each site line
+        of the cluster, in file order. ``irr_labels`` are the header tokens containing ``Irr``
+        (case-sensitive, as in RSPt), in order; each names a custom projector file
+        ``proj-<cluster>-<token>.inp`` and makes RSPt ignore the shells' basis indices.
+        Returns ``None`` if the input file is missing or no cluster in
+        it matches ``cluster_label`` -- deliberately *not* the same as a genuine "basis tag 0"
+        match, since a caller must not treat an unresolved cluster as "already spherical".
     """
     try:
         with open(f"{prefix}/{inp_file}", "r") as f:
@@ -205,53 +207,104 @@ def parse_cluster_basis(cluster_label, inp_file="green.inp", prefix="."):
 
     target = _normalized_cluster_label(cluster_label)
     for i in range(len(lines)):
-        line = lines[i].strip()
-        line_lower = line.lower()
+        if not lines[i].strip().lower().startswith("cluster") or i + 1 >= len(lines):
+            continue
 
-        # Look for the cluster initialization block
-        if line_lower.startswith("cluster"):
-            if i + 1 >= len(lines):
-                continue
+        words = lines[i + 1].split("!")[0].split("#")[0].split()
+        if not words:
+            continue
+        try:
+            ntot = int(words[0])
+        except ValueError:
+            continue
 
-            ntot_line = lines[i + 1].strip()
-            # Handle comments
-            code_part = ntot_line.split("!")[0].split("#")[0].strip()
+        if _normalized_cluster_label(_parse_cluster_id(lines, i)) != target:
+            continue
 
-            words = code_part.split()
-            if not words:
-                continue
-
-            try:
-                ntot = int(words[0])
-            except ValueError:
-                continue
-
-            parsed_id = _parse_cluster_id(lines, i)
-
-            cfflag_local = False
-            for word in words[1:]:
-                if word.lower() == "cf":
-                    cfflag_local = True
-                    break
-
-            if _normalized_cluster_label(parsed_id) == target:
-                cfflag = cfflag_local
-                basis_tag = 0
-                l_val = -1
-                for j in range(ntot):
-                    if i + 2 + j < len(lines):
-                        site_line = lines[i + 2 + j].split("!")[0].split("#")[0]
-                        site_parts = site_line.split()
-                        # id(1) = type, id(2) = l, id(3) = e, id(4) = site/tail, id(5) = basis tag
-                        if len(site_parts) >= 5:
-                            try:
-                                if l_val == -1:
-                                    l_val = int(site_parts[1])
-                                b = int(site_parts[4])
-                                if b != 0:
-                                    basis_tag = b
-                            except ValueError:
-                                pass
-                return cfflag, basis_tag, l_val
+        cfflag = any(word.lower() == "cf" for word in words[1:])
+        irr_labels = [word for word in words[1:] if "Irr" in word]
+        shells = []
+        for j in range(ntot):
+            if i + 2 + j >= len(lines):
+                break
+            site_parts = lines[i + 2 + j].split("!")[0].split("#")[0].split()
+            # id(1) = type, id(2) = l, id(3) = e, id(4) = site/tail, id(5) = basis tag
+            if len(site_parts) >= 5:
+                try:
+                    shells.append((int(site_parts[1]), int(site_parts[4])))
+                except ValueError:
+                    pass
+        return cfflag, shells, irr_labels
 
     return None
+
+
+def _projection_values(line):
+    """Strip comments and split a proj-file line on whitespace and commas."""
+    return line.split("!")[0].replace(",", " ").split()
+
+
+def read_projection_file(path):
+    """Read an RSPt custom projector file ``proj-<cluster>-<Irr token>.inp``.
+
+    Parameters
+    ----------
+    path : str
+        Path of the file.
+
+    Returns
+    -------
+    set_sizes : list[int]
+        Number of columns (both spins) of every orbital set in the file.
+    entries : list[tuple[int, int, complex]]
+        ``(i, j, value)`` with 1-based row ``i`` of the cluster's pre-basis and 1-based
+        column ``j`` of this file. Reading stops at the first line with fewer than four
+        values, which ends the data (a version-1 file's trailing quantum-number section is
+        ignored).
+
+    Raises
+    ------
+    ValueError
+        For an unknown version, an odd set size, or unparsable data lines.
+    """
+    with open(path, "r") as f:
+        lines = f.readlines()
+
+    def fail(lineno, msg):
+        raise ValueError(f"{path}, line {lineno}: {msg}")
+
+    first = _projection_values(lines[0]) if lines else []
+    if not first:
+        fail(1, "empty file or header")
+    try:
+        if len(first) >= 3:  # legacy header: i msize nline
+            set_sizes = [int(first[1])]
+            start = 1
+        else:
+            version = int(first[0])
+            start = 2
+            set_sizes = [int(x) for x in _projection_values(lines[1])] if version in (0, 1) else []
+    except (ValueError, IndexError) as exc:
+        fail(1, f"cannot parse header: {exc}")
+    if len(first) < 3 and version not in (0, 1):
+        fail(1, f"unknown projection file version {version}")
+    if any(s <= 0 or s % 2 for s in set_sizes):
+        fail(start, f"orbital set sizes must be positive even numbers, got {set_sizes}")
+
+    msize = sum(set_sizes)
+    entries = []
+    for lineno, line in enumerate(lines[start:], start=start + 1):
+        values = _projection_values(line)
+        if len(values) < 4:
+            break
+        try:
+            i, j = int(values[0]), int(values[1])
+            re, im = float(values[2]), float(values[3])
+        except ValueError:
+            fail(lineno, f"cannot parse projection entry {line.strip()!r}")
+        if i < 1:
+            fail(lineno, f"row index {i} must be positive")
+        if not 1 <= j <= msize:
+            fail(lineno, f"column index {j} outside 1..{msize}")
+        entries.append((i, j, complex(re, im)))
+    return set_sizes, entries

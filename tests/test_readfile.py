@@ -6,6 +6,7 @@ from rspt2spectra.readfile import (
     parse_cluster_basis,
     parse_fermi_energy,
     parse_matrices,
+    read_projection_file,
 )
 
 
@@ -79,8 +80,8 @@ def test_parse_cluster_basis_matches_despite_obs_suffix(tmp_path):
     _write_fcc_ni_style_green_inp(tmp_path / "green.inp")
     # The unsuffixed label (what green.inp defines) and the "-obs" one (what "out" and the
     # hybridization filenames actually carry) must resolve to the same cluster.
-    assert parse_cluster_basis("0102010103", prefix=str(tmp_path)) == (False, 3, 2)
-    assert parse_cluster_basis("0102010103-obs", prefix=str(tmp_path)) == (False, 3, 2)
+    assert parse_cluster_basis("0102010103", prefix=str(tmp_path)) == (False, [(2, 3)], [])
+    assert parse_cluster_basis("0102010103-obs", prefix=str(tmp_path)) == (False, [(2, 3)], [])
 
 
 def test_parse_cluster_basis_lowercase_id_prefix_is_not_honored(tmp_path):
@@ -90,7 +91,19 @@ def test_parse_cluster_basis_lowercase_id_prefix_is_not_honored(tmp_path):
     # here would recognize a label RSPt itself does not and silently mismatch the real output.
     _write_fcc_ni_style_green_inp(tmp_path / "green.inp")
     assert parse_cluster_basis("Ni", prefix=str(tmp_path)) is None
-    assert parse_cluster_basis("0102010103-obs", prefix=str(tmp_path)) == (False, 3, 2)
+    assert parse_cluster_basis("0102010103-obs", prefix=str(tmp_path)) == (False, [(2, 3)], [])
+
+
+def test_parse_cluster_basis_returns_every_shell_and_the_cf_flag(tmp_path):
+    # Shape of impmod_tests/Nd/base: f, d, p, s sites in one cluster, with trailing tokens.
+    (tmp_path / "green.inp").write_text(
+        "cluster\n 4 Cf IdNd\n 1 3 1 1 7 Ewin -0.8, 0.2\n 1 2 1 1 3\n 1 1 1 1 0\n 1 0 1 1 0\n"
+    )
+    assert parse_cluster_basis("Nd", prefix=str(tmp_path)) == (
+        True,
+        [(3, 7), (2, 3), (1, 0), (0, 0)],
+        [],
+    )
 
 
 def test_parse_cluster_basis_returns_none_when_unmatched(tmp_path):
@@ -110,3 +123,37 @@ def test_list_cluster_labels(tmp_path):
 
 def test_list_cluster_labels_missing_file(tmp_path):
     assert list_cluster_labels(prefix=str(tmp_path)) == []
+
+
+def test_parse_cluster_basis_returns_irr_tokens_in_order(tmp_path):
+    (tmp_path / "green.inp").write_text("cluster\n 1 IdNi IrrEg IrrT2g\n 1 2 1 1 0\n")
+    assert parse_cluster_basis("Ni", prefix=str(tmp_path)) == (False, [(2, 0)], ["IrrEg", "IrrT2g"])
+
+
+def test_read_projection_file_legacy_header(tmp_path):
+    f = tmp_path / "proj.inp"
+    f.write_text("1 4 2\n1 1 0.5 0.0\n2 3 0.0 -1.0\n")
+    assert read_projection_file(str(f)) == ([4], [(1, 1, 0.5 + 0j), (2, 3, -1j)])
+
+
+def test_read_projection_file_versioned_header_with_commas_and_comments(tmp_path):
+    f = tmp_path / "proj.inp"
+    f.write_text("0 ! version\n4, 6 ! two sets\n1 1 1.0 0.0 ! entry\n2, 5, 0.0, 2.0\n")
+    assert read_projection_file(str(f)) == ([4, 6], [(1, 1, 1 + 0j), (2, 5, 2j)])
+
+
+def test_read_projection_file_stops_at_the_quantum_number_section(tmp_path):
+    f = tmp_path / "proj.inp"
+    f.write_text("1\n2\n1 1 1.0 0.0\n\n1\n1 2 3\n")
+    assert read_projection_file(str(f)) == ([2], [(1, 1, 1 + 0j)])
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["2\n2\n", "0\n3\n", "0\n2\n1 1 abc 0.0\n", "0\n2\n1 3 1.0 0.0\n", "0\n2\n0 1 1.0 0.0\n", ""],
+)
+def test_read_projection_file_rejects_malformed_files(tmp_path, text):
+    f = tmp_path / "proj.inp"
+    f.write_text(text)
+    with pytest.raises(ValueError):
+        read_projection_file(str(f))

@@ -3,12 +3,15 @@ import pytest
 
 from rspt2spectra.block_structure import (
     BlockStructure,
+    _mat_scale_with_hyb,
     build_block_structure,
     build_greens_function,
     build_matrix,
+    get_blocks,
     get_equivalent_blocks,
     get_equivalent_orbs,
     print_block_structure,
+    project_to_blocks,
 )
 
 
@@ -221,3 +224,52 @@ def test_build_greens_function_particle_hole_transposed():
     G = build_greens_function([b1], bs)
     assert np.allclose(G[:, 0:2, 0:2], b1)
     assert np.allclose(G[:, 2:4, 2:4], -np.conj(b1[::-1]).swapaxes(-2, -1))
+
+
+def test_project_to_blocks_zeroes_only_the_off_block_elements():
+
+    a = np.arange(1, 17, dtype=float).reshape(4, 4)
+    out = project_to_blocks(a, [[0, 1], [2, 3]])
+    assert np.all(out[:2, 2:] == 0) and np.all(out[2:, :2] == 0)
+    assert np.all(out[:2, :2] == a[:2, :2]) and np.all(out[2:, 2:] == a[2:, 2:])
+    stack = np.stack([a, 2 * a])
+    assert np.allclose(project_to_blocks(stack, [[0, 1], [2, 3]]), np.stack([out, 2 * out]))
+
+
+def test_tol_truncates_weak_coupling_but_equiv_tol_does_not_merge_blocks():
+    H = np.diag([0.0, 0.5, 1.0, 1.5]).astype(complex)
+    H[0, 1] = H[1, 0] = 0.3
+    H[2, 3] = H[3, 2] = 0.3
+    H[1, 2] = H[2, 1] = 1e-3  # weak coupling between two 2-orbital blocks
+    # Strict tol joins everything into one block, a loose one neglects the coupling.
+    assert len(build_block_structure(None, mat=H, tol=1e-6).blocks) == 1
+    bs = build_block_structure(None, mat=H, tol=1e-2, equiv_tol=1e-8)
+    assert bs.blocks == [[0, 1], [2, 3]]
+    # The two blocks differ by 1 in their diagonal, so a tiny equiv_tol keeps them inequivalent
+    # even though the connectivity threshold is loose.
+    assert len(bs.inequivalent_blocks) == 2
+
+
+def test_h_coupling_is_measured_against_the_hybridization_width_when_larger():
+    """A coupling in H below the smallest hybridization width does not resolve into a level."""
+    w = np.linspace(-1, 1, 41)
+    hyb = np.zeros((len(w), 2, 2), dtype=complex)
+    hyb[:, 0, 0] = hyb[:, 1, 1] = -0.05j  # width 0.05, no hybridization coupling
+    H = np.array([[0.0, 0.003], [0.003, 0.01]])
+    assert _mat_scale_with_hyb(H, hyb) == pytest.approx(0.05)
+    # spread alone: threshold 0.1 * 0.01 = 1e-3 < 3e-3, connected
+    assert get_blocks(mat=H, tol=0.1) == [[0, 1]]
+    # with the width: threshold 0.1 * 0.05 = 5e-3 > 3e-3, separate
+    assert get_blocks(hyb, H, tol=0.1) == [[0], [1]]
+    # the default threshold is unchanged by the width (absolute floor dominates)
+    assert get_blocks(hyb, H, tol=1e-6) == [[0, 1]]
+
+
+def test_equivalence_tolerance_does_not_loosen_with_the_truncation_threshold():
+    """A loose ``tol`` truncates couplings; blocks differing by more than 1e-6 stay inequivalent."""
+    n = 3
+    mat = np.diag([1.0, 1.0, 1.0 + 1e-3])
+    G = np.broadcast_to(np.eye(n, dtype=complex), (1, n, n)).copy()
+    bs = build_block_structure(G, mat=mat, tol=0.1)
+    assert bs.blocks == [[0], [1], [2]]
+    assert bs.identical_blocks[0] == [0, 1]  # block 0 is identical to 1 (and itself), not to 2

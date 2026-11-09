@@ -521,9 +521,10 @@ def get_state_per_inequivalent_block(
     the blocks in proportion to their hybridization strength so blocks with
     strong hybridization get more states.  Two guards make the split sensible:
 
-    * **Coverage.** Every block that hybridizes at all gets at least one bath
-      state per orbital, so a weak block is never silently dropped by the
-      weighting/rounding and an n-orbital block can span its n x n hybridization.
+    * **Coverage.** Every block that hybridizes at all gets at least one pole
+      level, so a weak block is never silently dropped by the weighting/rounding.
+      A pole level of an n-orbital block is a full-rank residue and costs n bath
+      orbitals, so this floor is one state, not n.
     * **Window cap.** No block is asked to fit more states than can reasonably
       sit inside the frequency window separated by ``delta`` (see
       `rspt2spectra.offdiagonal.max_bath_states`); an over-large share is capped,
@@ -545,10 +546,8 @@ def get_state_per_inequivalent_block(
 
     n_blocks = len(inequivalent_blocks)
     average_weight_per_inequivalent_block = np.zeros((n_blocks,), dtype=float)
-    orbitals_per_block = np.zeros((n_blocks,), dtype=int)
     for inequivalent_block_i, block_i in enumerate(inequivalent_blocks):
         block = blocks[block_i]
-        orbitals_per_block[inequivalent_block_i] = len(block)
         block_multiplicity = (
             len(identical_blocks[block_i])
             + len(transposed_blocks[block_i])
@@ -583,12 +582,11 @@ def get_state_per_inequivalent_block(
     else:
         states = np.zeros(n_blocks, dtype=int)
 
-    # Coverage: every hybridizing block gets at least one bath state per orbital,
-    # so an n-orbital block can represent its full n x n hybridization.
+    # Coverage: every hybridizing block gets at least one pole level.  The residue of a
+    # pole is full rank, so one level already spans the block's n x n hybridization; a
+    # floor of n levels would cost n^2 bath orbitals per block.
     hybridizing = average_weight_per_inequivalent_block > 0
-    states[hybridizing] = np.maximum(
-        states[hybridizing], orbitals_per_block[hybridizing]
-    )
+    states[hybridizing] = np.maximum(states[hybridizing], 1)
 
     # Window cap: never request more states than reasonably fit in the window.
     if syms is None:

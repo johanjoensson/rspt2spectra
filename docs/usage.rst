@@ -17,16 +17,34 @@ Preparing the RSPt simulation
 Choose impurity orbitals
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
-For the hybridization function and the on-site energies of the impurity, the
-choice of impurity orbitals matters.
+The basis index (fifth integer on each site line of the ``green.inp`` cluster
+definition) is a fixed rotation of the shell's orbitals. It is not tied to the
+point group of the crystal.
 
-* For an atom in a cubic environment (O\ :sub:`h` symmetry) the natural
-  choice is cubic harmonics: use basis index ``3`` in the ``green.inp``
-  cluster definition.
-* For low-symmetry systems, RSPt's default spherical harmonics
-  (basis index ``0``) are a convenient choice. ``build_h0`` automatically
-  block-partitions the hybridization function and local Hamiltonian, so a
-  diagonal basis is not required.
+* Index ``0`` keeps RSPt's complex spherical harmonics.
+* Indices ``1`` to ``7`` select real (cubic) harmonic sets. For a d shell,
+  ``3`` is the full ``e_g`` plus ``t_2g`` set, and it is valid in any
+  crystal structure, not only cubic ones. Indices that select only part of a
+  shell, such as ``1`` for d, cannot be rotated back to spherical harmonics
+  and are refused.
+* Index ``9`` is the JJ basis.
+
+``build_h0`` reads the index of every shell of the cluster, builds the
+rotation back to spherical harmonics for each of them, and writes the
+impurity block in spherical harmonics. With the ``Cf`` flag it also applies
+the local crystal-field transformation printed by a verbose RSPt run. The
+rotated JJ bases (``10`` and ``11``) are not supported yet.
+
+RSPt's custom projectors are supported as well. They are declared with
+``Irr`` tokens on the cluster header line, for example ``1 IdNi IrrEg IrrT2g``,
+and defined in the files ``proj-<cluster>-<token>.inp`` (here
+``proj-Ni-IrrEg.inp`` and ``proj-Ni-IrrT2g.inp``). ``build_h0`` reads these
+files and ignores the basis indices of the cluster's shells, as RSPt does. The
+projectors must together span every shell of the cluster, since a partial
+projection cannot be rotated back to spherical harmonics, and the correlated
+orbital sets must come first. For a spin-unpolarized RSPt run the files list
+only the spin-down columns. The files that were read are recorded in the
+header of the ``.h0`` file.
 
 Generate the hybridization function
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

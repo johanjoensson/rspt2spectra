@@ -1,5 +1,4 @@
 import json
-import warnings
 from unittest.mock import patch
 
 import numpy as np
@@ -9,11 +8,10 @@ from rspt2spectra.block_structure import BlockStructure, build_block_structure
 from rspt2spectra.edchain import build_full_bath
 from rspt2spectra.h0 import BLOCK_EQUIVALENCE_TOL, assemble_h0, prepare_hyb_fit
 from rspt2spectra.hyb_fit import fit_hyb
+from rspt2spectra.rspt_basis import cluster_rotation
 from rspt2spectra.scripts.build_h0 import (
     _check_kramers_degeneracy,
     _detect_soc,
-    _is_cubic_crystal_field,
-    _spherical_signature,
     _verify_spherical_basis,
     run,
 )
@@ -30,7 +28,7 @@ def _write_rspt_dir(path, w, hyb, h_dft, e_fermi=0.0):
         f" fermi energy = {e_fermi: .13E}\n"
         f"Cluster cl Local hamiltonian\n real part\n {h_dft:.6f}\n imag part\n  0.000000\n"
     )
-    (path / "green.inp").write_text("cluster\n 1 Idcl\n 1 2 1 1 0\n")
+    (path / "green.inp").write_text("cluster\n 1 Idcl\n 1 0 1 1 0\n")
 
 
 def _run_build_h0(tmp_path, eim):
@@ -161,65 +159,14 @@ def test_impurity_level_lands_inside_a_straddling_bath(tmp_path, monkeypatch):
     assert min(bath) <= impurity <= max(bath), f"impurity {impurity} outside bath {min(bath)}..{max(bath)}"
 
 
-# Diagonals measured on real RSPt output (see doc/plans/... for the full table): NiO/base's
-# Ni_win_2 cluster after rotation (genuinely spherical) and FCC_Ni's raw, unrotated local
-# Hamiltonian (genuinely cubic: eg, eg, t2g, t2g, t2g -- not palindromic).
-_SPHERICAL_DIAG = [0.58158, 0.57953, 0.58363, 0.57953, 0.58158]
-_CUBIC_DIAG = [0.71961, 0.71961, 0.71192, 0.71192, 0.71192]
-
-
-def test_spherical_signature_accepts_a_genuinely_spherical_block():
-    H = np.diag(_SPHERICAL_DIAG).astype(complex)
-    H[0, 4] = H[4, 0] = 0.01  # the corner element a genuinely spherical, split block has
-    assert _spherical_signature(H, l_val=2) is True
-
-
-def test_spherical_signature_rejects_a_cubic_block():
-    H = np.diag(_CUBIC_DIAG).astype(complex)  # H[-2, +2] == 0 exactly in the cubic basis
-    assert _spherical_signature(H, l_val=2) is False
-
-
-def test_spherical_signature_undetermined_for_unexpected_size():
-    # Neither 5 (one spin sector) nor 10 (two) -- e.g. a composite multi-shell cluster.
-    assert _spherical_signature(np.eye(3, dtype=complex), l_val=2) is None
-
-
-def test_is_cubic_crystal_field():
-    assert _is_cubic_crystal_field(2, 3) is True
-    assert _is_cubic_crystal_field(2, 0) is False
-    assert _is_cubic_crystal_field(4, 1) is False  # g shell: not a tag generate_rspt_T_matrix knows
-
-
 def test_verify_spherical_basis_raises_on_non_unitary_t():
-    T = 2 * np.eye(5, dtype=complex)
-    H = np.eye(5, dtype=complex)
     with pytest.raises(RuntimeError, match="not unitary"):
-        _verify_spherical_basis(H, T, "cl", l_val=2, basis_tag=3)
+        _verify_spherical_basis(2 * np.eye(5, dtype=complex), "cl")
 
 
-def test_verify_spherical_basis_raises_when_cubic_tag_but_signature_fails():
-    T = np.eye(5, dtype=complex)
-    H = np.diag(_CUBIC_DIAG).astype(complex)
-    with pytest.raises(RuntimeError, match="spherical-under-cubic"):
-        _verify_spherical_basis(H, T, "cl", l_val=2, basis_tag=3)
-
-
-def test_verify_spherical_basis_warns_when_tag_is_not_cubic():
-    # basis_tag 0 does not prove the crystal field is cubic, so a failed fingerprint is
-    # inconclusive -- a warning, not a raise.
-    T = np.eye(5, dtype=complex)
-    H = np.diag(_CUBIC_DIAG).astype(complex)
-    with pytest.warns(UserWarning, match="could not conclusively verify"):
-        _verify_spherical_basis(H, T, "cl", l_val=2, basis_tag=0)
-
-
-def test_verify_spherical_basis_is_silent_for_a_good_signature():
-    T = np.eye(5, dtype=complex)
-    H = np.diag(_SPHERICAL_DIAG).astype(complex)
-    H[0, 4] = H[4, 0] = 0.01
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        _verify_spherical_basis(H, T, "cl", l_val=2, basis_tag=3)  # must not raise or warn
+def test_verify_spherical_basis_accepts_any_unitary_t_without_a_symmetry_check():
+    # A rotation is valid whatever the crystal's symmetry: no Oh fingerprint is required.
+    _verify_spherical_basis(np.eye(5, dtype=complex), "cl")
 
 
 def test_run_raises_when_cluster_is_not_in_green_inp(tmp_path, monkeypatch):
@@ -301,24 +248,37 @@ def test_check_kramers_degeneracy_flags_a_displaced_pair():
     assert all(m == 1 for _, m in violations)
 
 
+def _spin_diag_block(l):
+    n = 2 * l + 1
+    h = np.zeros((2 * n, 2 * n), dtype=complex)
+    h[:n, :n] = np.diag(np.arange(n, dtype=float))
+    h[n:, n:] = h[:n, :n]
+    return h
+
+
 def test_detect_soc_false_on_a_spin_diagonal_block():
-    # down-down and up-up sectors populated, down-up sector exactly zero -- pure crystal field.
-    h = np.zeros((10, 10), dtype=complex)
-    h[:5, :5] = np.diag([1.0, 2.0, 3.0, 2.0, 1.0])
-    h[5:, 5:] = np.diag([1.0, 2.0, 3.0, 2.0, 1.0])
-    assert _detect_soc(h, l_val=2) is False
+    assert _detect_soc(_spin_diag_block(2), [(2, 3)]) is False
 
 
 def test_detect_soc_true_when_the_spin_block_is_populated():
-    h = np.zeros((10, 10), dtype=complex)
-    h[:5, :5] = np.diag([1.0, 2.0, 3.0, 2.0, 1.0])
-    h[5:, 5:] = np.diag([1.0, 2.0, 3.0, 2.0, 1.0])
+    h = _spin_diag_block(2)
     h[0, 5] = h[5, 0] = 0.1  # down m=-2 <-> up m=-2: SOC-style spin mixing
-    assert _detect_soc(h, l_val=2) is True
+    assert _detect_soc(h, [(2, 3)]) is True
 
 
-def test_detect_soc_undetermined_for_unknown_l():
-    assert _detect_soc(np.eye(10, dtype=complex), l_val=-1) is None
+def test_detect_soc_looks_at_every_shell_of_a_multi_shell_cluster():
+    h = np.zeros((16, 16), dtype=complex)
+    h[:10, :10] = _spin_diag_block(2)
+    h[10:, 10:] = _spin_diag_block(1)
+    shells = [(2, 3), (1, 0)]
+    assert _detect_soc(h, shells) is False
+    h[10, 13] = h[13, 10] = 0.1  # SOC only in the p shell
+    assert _detect_soc(h, shells) is True
+
+
+def test_detect_soc_undetermined_when_shell_sizes_do_not_match():
+    assert _detect_soc(np.eye(10, dtype=complex), [(1, 0)]) is None
+    assert _detect_soc(np.eye(10, dtype=complex), [(-1, 0)]) is None
 
 
 def test_run_refuses_a_kramers_violating_fit(tmp_path, monkeypatch):
@@ -396,7 +356,7 @@ def test_run_skips_the_kramers_check_when_soc_is_detected(tmp_path, monkeypatch)
     directly by test_detect_soc_true_when_the_spin_block_is_populated; this test is only about
     the integration point -- the conditional gate in run() -- so patching is appropriate rather
     than building a full spin-resolved RSPt fixture (_write_rspt_dir's Local hamiltonian block
-    is a single scalar, not spin-resolved; see test_detect_soc_undetermined_for_unknown_l for
+    is a single scalar, not spin-resolved; see test_detect_soc_undetermined_when_shell_sizes_do_not_match for
     why that shape alone leaves contains_soc undetermined, not True).
     """
     w = np.linspace(-6, 3, 800)
@@ -429,7 +389,7 @@ def test_run_skips_the_kramers_check_when_soc_is_detected(tmp_path, monkeypatch)
 
 def test_run_still_checks_when_soc_is_undetermined(tmp_path, monkeypatch):
     """contains_soc is not True (rather than a falsiness test) treats an undetermined shell
-    (_detect_soc returns None, e.g. l_val == -1) the same as "no SOC": still checked. There is
+    (_detect_soc returns None) the same as "no SOC": still checked. There is
     no positive evidence to explain a Kramers violation away, so the conservative default is to
     keep refusing.
     """
@@ -578,3 +538,170 @@ def test_assemble_h0_shares_one_fit_across_the_full_equivalence_class():
     for i in range(1, n_orb):
         column = np.sort(bath_couplings[:, i][bath_couplings[:, i] > 0])
         np.testing.assert_allclose(column, reference)
+
+
+def _write_d_shell_dir(path, h_cubic, green_inp, alocal=None, with_qs=False):
+    """A 10-orbital (spin-resolved d shell) RSPt directory with zero hybridization."""
+    n = h_cubic.shape[0]
+    w = np.linspace(-6, 3, 50)
+    header = "# Frequency, total\n# indexmap: (column index of projected elements)\n"
+    for i in range(n):
+        header += "# " + " ".join(str(3 + i) if j == i else "0" for j in range(n)) + "\n"
+    for fname in ("real-hyb-cl.dat", "imag-hyb-cl.dat"):
+        rows = np.column_stack([w, np.zeros_like(w)] + [np.zeros_like(w)] * n)
+        (path / fname).write_text(header + "\n".join(" ".join(f"{x:.10e}" for x in r) for r in rows) + "\n")
+
+    def matrix_block(m, label):
+        real = "\n".join(" ".join(f"{x:.12f}" for x in r) for r in m.real)
+        imag = "\n".join(" ".join(f"{x:.12f}" for x in r) for r in m.imag)
+        return f"{label}\n Real:\n{real}\n Imag:\n{imag}\n"
+
+    text = " fermi energy = 0.0\n" + matrix_block(h_cubic, "Cluster cl Local hamiltonian")
+    if with_qs:
+        text += matrix_block(
+            alocal,
+            "      ID cl     Transformation to the local cf basis:\n Irreducible representations (irr. rep., state)",
+        )
+    (path / "out").write_text(text)
+    (path / "green.inp").write_text(green_inp)
+
+
+def _run_zero_hyb(tmp_path):
+    run(
+        "cl",
+        "star",
+        0.05,
+        1,
+        0.01,
+        False,
+        False,
+        str(tmp_path),
+        False,
+        False,
+        "l2",
+        "unit",
+        2.0,
+        0.0,
+        False,
+        "linear",
+        allow_broken_time_reversal=True,
+    )
+
+
+def _impurity_block(path, n):
+    terms = _read_terms(path)
+    h = np.zeros((n, n), dtype=complex)
+    for (i, j), v in terms.items():
+        if i < n and j < n:
+            h[i, j] = v
+    return h
+
+
+def _non_cubic_h():
+    # A trigonal-looking splitting: not Oh, so the old cubic fingerprint check would reject it.
+    d = np.array([0.30, 0.35, 0.50, 0.60, 0.70])
+    return np.diag(np.concatenate([d, d])).astype(complex)
+
+
+def test_basis_three_works_without_cubic_symmetry(tmp_path, monkeypatch):
+    h = _non_cubic_h()
+    _write_d_shell_dir(tmp_path, h, "cluster\n 1 Idcl\n 1 2 1 1 3\n")
+    monkeypatch.chdir(tmp_path)
+    _run_zero_hyb(tmp_path)
+
+    T = cluster_rotation([(2, 3)])
+    header = json.loads((tmp_path / "cl.h0").read_text().splitlines()[1])
+    assert header["rotation_applied"] is True
+    assert header["rspt_shells"] == [[2, 3]]
+    assert header["impurity_l"] == 2
+    assert np.allclose(_impurity_block(tmp_path, 10), T @ h @ T.conj().T, atol=1e-6)
+
+
+def test_printed_cf_matrix_is_ignored_without_the_cf_flag(tmp_path, monkeypatch):
+    h = _non_cubic_h()
+    perm = np.eye(10)[[1, 0, 2, 3, 4, 5, 6, 7, 8, 9]].astype(complex)
+    d1, d2 = tmp_path / "plain", tmp_path / "with_qs"
+    d1.mkdir()
+    d2.mkdir()
+    inp = "cluster\n 1 Idcl\n 1 2 1 1 3\n"
+    _write_d_shell_dir(d1, h, inp)
+    _write_d_shell_dir(d2, h, inp, alocal=perm, with_qs=True)
+    for d in (d1, d2):
+        monkeypatch.chdir(d)
+        _run_zero_hyb(d)
+    assert np.allclose(_impurity_block(d1, 10), _impurity_block(d2, 10), atol=1e-9)
+
+
+def test_cf_flag_composes_the_basis_rotation_with_the_printed_matrix(tmp_path, monkeypatch):
+    h = _non_cubic_h()
+    alocal = np.eye(10)[[1, 0, 2, 3, 4, 5, 6, 7, 8, 9]].astype(complex)  # swap two orbitals
+    _write_d_shell_dir(tmp_path, h, "cluster\n 1 Cf Idcl\n 1 2 1 1 3\n", alocal=alocal, with_qs=True)
+    monkeypatch.chdir(tmp_path)
+    _run_zero_hyb(tmp_path)
+
+    T = cluster_rotation([(2, 3)]) @ alocal
+    assert np.allclose(_impurity_block(tmp_path, 10), T @ h @ T.conj().T, atol=1e-6)
+
+
+def test_cf_flag_without_a_printed_matrix_raises(tmp_path, monkeypatch):
+    _write_d_shell_dir(tmp_path, _non_cubic_h(), "cluster\n 1 Cf Idcl\n 1 2 1 1 3\n")
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(RuntimeError, match="Projection"):
+        _run_zero_hyb(tmp_path)
+
+
+def test_layout_mismatch_between_green_inp_and_out_raises(tmp_path, monkeypatch):
+    _write_d_shell_dir(tmp_path, _non_cubic_h(), "cluster\n 2 Idcl\n 1 2 1 1 3\n 1 1 1 1 0\n")
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(RuntimeError, match="16"):
+        _run_zero_hyb(tmp_path)
+
+
+def _write_proj_file(path, T, name="proj-cl-IrrD.inp"):
+    n = T.shape[1]
+    lines = [f"1 {n} {np.count_nonzero(T)}"]
+    lines += [f"{i + 1} {j + 1} {T[i, j].real:.15e} {T[i, j].imag:.15e}" for i, j in zip(*np.nonzero(T))]
+    (path / name).write_text("\n".join(lines) + "\n")
+
+
+def test_irr_projector_file_replaces_the_basis_index(tmp_path, monkeypatch):
+    h = _non_cubic_h()
+    T = cluster_rotation([(2, 3)])
+    _write_d_shell_dir(tmp_path, h, "cluster\n 1 Idcl IrrD\n 1 2 1 1 0\n")
+    _write_proj_file(tmp_path, T)
+    monkeypatch.chdir(tmp_path)
+    _run_zero_hyb(tmp_path)
+
+    header = json.loads((tmp_path / "cl.h0").read_text().splitlines()[1])
+    assert header["rotation_applied"] is True
+    assert header["rspt_projection_files"] == ["proj-cl-IrrD.inp"]
+    assert np.allclose(_impurity_block(tmp_path, 10), T @ h @ T.conj().T, atol=1e-6)
+
+
+def test_irr_projector_composes_with_the_cf_flag(tmp_path, monkeypatch):
+    h = _non_cubic_h()
+    T = cluster_rotation([(2, 3)])
+    alocal = np.eye(10)[[1, 0, 2, 3, 4, 5, 6, 7, 8, 9]].astype(complex)
+    _write_d_shell_dir(tmp_path, h, "cluster\n 1 Cf Idcl IrrD\n 1 2 1 1 0\n", alocal=alocal, with_qs=True)
+    _write_proj_file(tmp_path, T)
+    monkeypatch.chdir(tmp_path)
+    _run_zero_hyb(tmp_path)
+
+    full = T @ alocal
+    assert np.allclose(_impurity_block(tmp_path, 10), full @ h @ full.conj().T, atol=1e-6)
+
+
+def test_missing_irr_projector_file_raises(tmp_path, monkeypatch):
+    _write_d_shell_dir(tmp_path, _non_cubic_h(), "cluster\n 1 Idcl IrrD\n 1 2 1 1 0\n")
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(RuntimeError, match=r"proj-cl-IrrD\.inp"):
+        _run_zero_hyb(tmp_path)
+
+
+def test_irr_projector_with_too_few_orbitals_raises(tmp_path, monkeypatch):
+    _write_d_shell_dir(tmp_path, _non_cubic_h(), "cluster\n 1 Idcl IrrEg\n 1 2 1 1 0\n")
+    eg = cluster_rotation([(2, 3)])[:, [0, 1, 5, 6]]
+    _write_proj_file(tmp_path, eg, name="proj-cl-IrrEg.inp")
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(RuntimeError, match="4 orbitals"):
+        _run_zero_hyb(tmp_path)

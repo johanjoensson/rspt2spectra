@@ -19,7 +19,13 @@ import logging
 
 import numpy as np
 
-from rspt2spectra.block_structure import build_block_structure, print_block_structure
+from rspt2spectra.block_structure import (
+    _mat_scale_with_hyb,
+    build_block_structure,
+    get_blocks,
+    print_block_structure,
+    project_to_blocks,
+)
 from rspt2spectra.edchain import build_full_bath, build_H_bath_v, build_imp_bath_blocks
 from rspt2spectra.utils import block_diagonalize_hyb, matrix_print, rotate_matrix
 
@@ -40,17 +46,50 @@ logger = logging.getLogger(__name__)
 BLOCK_EQUIVALENCE_TOL = 1e-6
 
 
-def prepare_hyb_fit(hyb, H_local, tol=BLOCK_EQUIVALENCE_TOL, verbose=True, w=None):
+#: Identifies how the fitting basis and the block partition are decided.  Anything stored that
+#: depends on them (a reusable bath fit) must be keyed on it: a changed rotation changes the basis
+#: even where the partition does not change.
+BLOCKING_VERSION = "joint-jacobi-v2;h-weight=0.1;h-scale=max(spread,min-broadening)"
+
+
+def _print_neglected(hyb, H, blocks, tol):
+    """Print the size of the couplings between blocks that are about to be neglected."""
+    n = H.shape[0]
+    mask = np.ones((n, n), dtype=bool)
+    for block in blocks:
+        mask[np.ix_(block, block)] = False
+    if not mask.any():
+        return
+    g_scale = max(float(np.max(np.abs(np.einsum("wii->wi", hyb)))), 1e-300)
+    hyb_off = float(np.max(np.abs(hyb[:, mask])))
+    l2_off = float(np.sqrt(np.sum(np.abs(hyb[:, mask]) ** 2)))
+    l2_all = float(np.sqrt(np.sum(np.abs(hyb) ** 2)))
+    h_off = float(np.max(np.abs(H[mask])))
+    h_scale = _mat_scale_with_hyb(H, hyb)
+    print(
+        f"Neglected couplings between blocks (symm_prec {tol:g}):\n"
+        f"  hybridization: max {hyb_off / g_scale:.3g} of the strongest diagonal "
+        f"({hyb_off:.3g} Ry), L2 fraction {l2_off / max(l2_all, 1e-300):.3g}\n"
+        f"  local H      : max {h_off:.3g} Ry = {h_off / h_scale:.3g} of its scale "
+        f"({h_scale:.3g} Ry; crystal-field spread or smallest hybridization width)"
+    )
+
+
+def prepare_hyb_fit(
+    hyb, H_local, tol=BLOCK_EQUIVALENCE_TOL, verbose=True, w=None, x_lim=None, equiv_tol=None, report=None
+):
     """Prepare the fitting basis and block partition for a hybridization fit.
 
-    The hybridization function is rotated into a basis where each block is
-    (hopefully) close to diagonal, ``phase_hyb = Q^dagger hyb Q``. The local
-    Hamiltonian is rotated into the same basis. The block partition is built
-    from the union of the connectivity of both: the bath geometries (in
-    particular the linked double chain) are anchored on the local-Hamiltonian
-    block of each hybridization block, so every orbital pair coupled by
-    either must end up in the same block. Block equivalence
-    (identical/transposed/particle-hole) is likewise tested against both.
+    The hybridization function and the local Hamiltonian are jointly rotated to a basis
+    that is as diagonal as possible, ``phase_hyb = Q^dagger hyb Q`` (see
+    :func:`rspt2spectra.utils.block_diagonalize_hyb`).  The block partition is the
+    connectivity of both in that basis, keeping only couplings above ``tol`` relative
+    to the strongest diagonal hybridization and to the crystal-field spread of
+    ``H_local``.  Weaker couplings are *neglected*: ``phase_hyb`` and ``H_local_Q``
+    are returned exactly block diagonal, so everything built from them (bath, impurity
+    block) carries no coupling between blocks.  The bath geometries are anchored on
+    the local-Hamiltonian block of each hybridization block, so an orbital pair coupled
+    by either must end up in the same block.
 
     Parameters
     ----------
@@ -61,37 +100,52 @@ def prepare_hyb_fit(hyb, H_local, tol=BLOCK_EQUIVALENCE_TOL, verbose=True, w=Non
         including any double-counting contribution the caller wants the
         geometry construction to see.
     tol : float, default 1e-6
-        Connectivity/equivalence tolerance.
+        Relative connectivity threshold; raise it to neglect weak couplings.
     verbose : bool, default True
         Print the resulting block structure.
     w : np.ndarray of shape (n_w,), optional
         Frequency mesh of ``hyb``. Needed to test particle-hole equivalence
         between blocks, which relates ``omega`` to ``-omega``; without it those
-        relations are skipped.
+        relations are skipped, and to apply ``x_lim``.
+    x_lim : tuple of float, optional
+        ``(lo, hi)`` fit window.  Rotation and connectivity only look at ``hyb``
+        inside it.
+    equiv_tol : float, optional
+        Absolute tolerance for identical/transposed/particle-hole equivalence of
+        blocks.  Defaults to ``BLOCK_EQUIVALENCE_TOL`` and is deliberately
+        independent of ``tol``: raising ``tol`` must not merge inequivalent blocks.
 
     Returns
     -------
     Q : np.ndarray of shape (n_orb, n_orb)
         Rotation to the fitting basis.
     phase_hyb : np.ndarray of shape (n_w, n_orb, n_orb)
-        The hybridization function in the fitting basis.
+        The hybridization function in the fitting basis, exactly block diagonal.
     H_local_Q : np.ndarray of shape (n_orb, n_orb)
-        The local Hamiltonian in the fitting basis.
+        The local Hamiltonian in the fitting basis, exactly block diagonal.
     block_structure : BlockStructure
         Partition and equivalence information on the combined connectivity.
     """
-    phase_hyb, Q = block_diagonalize_hyb(hyb, tol=tol)
-    H_local_Q = rotate_matrix(H_local, Q)
-    block_structure = build_block_structure(phase_hyb, mat=H_local_Q, tol=tol, w=w)
-    # Guaranteed by the union connectivity above; guard against regressions.
-    off_block = np.abs(H_local_Q.copy())
-    for orbs in block_structure.blocks:
-        off_block[np.ix_(orbs, orbs)] = 0
-    if np.max(off_block) > tol:
-        raise RuntimeError(
-            "The local hamiltonian is not block diagonal on the combined "
-            f"block partition. Max off-block element: {np.max(off_block):.3e}"
-        )
+    if equiv_tol is None:
+        equiv_tol = BLOCK_EQUIVALENCE_TOL
+    phase_hyb, Q = block_diagonalize_hyb(hyb, mat=H_local, w=w, x_lim=x_lim)
+    H_local_rot = rotate_matrix(H_local, Q)
+    window = slice(None)
+    if x_lim is not None:
+        assert w is not None, "x_lim needs the frequency mesh w"
+        in_window = (w >= x_lim[0]) & (w <= x_lim[1])
+        if np.any(in_window):
+            window = in_window
+    blocks = get_blocks(phase_hyb[window], H_local_rot, tol=tol)
+    if verbose if report is None else report:
+        _print_neglected(phase_hyb[window], H_local_rot, blocks, tol)
+    phase_hyb = project_to_blocks(phase_hyb, blocks)
+    H_local_Q = project_to_blocks(H_local_rot, blocks)
+    # The partition was decided on the fit window; the equivalences between the blocks are
+    # tested on the whole mesh (particle-hole relates omega to -omega) without deciding it again.
+    block_structure = build_block_structure(
+        phase_hyb, mat=H_local_Q, tol=tol, w=w, equiv_tol=equiv_tol, blocks=blocks
+    )
     if verbose:
         print_block_structure(block_structure)
     return Q, phase_hyb, H_local_Q, block_structure
@@ -197,7 +251,8 @@ def assemble_h0(
         Constant Hermitian shift fitted per inequivalent block (the third
         return value of :func:`rspt2spectra.hyb_fit.fit_hyb`).
     H_imp : np.ndarray of shape (n_orb, n_orb)
-        Impurity block of the Hamiltonian, in the caller's input basis.
+        Impurity block of the Hamiltonian, in the caller's input basis.  Couplings
+        between blocks are neglected (zeroed) before use.
     H_local_Q : np.ndarray of shape (n_orb, n_orb)
         Local Hamiltonian in the fitting basis (from
         :func:`prepare_hyb_fit`); anchors the chain constructions.
@@ -240,12 +295,16 @@ def assemble_h0(
     H_bath : np.ndarray
         The bath block of ``H``.
     H_imp : np.ndarray
-        The effective impurity block ``H[:n_orb, :n_orb]`` -- the DFT block with the fitted
+        The (block-projected) effective impurity block ``H[:n_orb, :n_orb]`` -- the DFT block with the fitted
         constant hybridization offset folded in (``E_imp = H_imp + C``). Returned explicitly so
         callers can hand the ``(H_imp, V, H_bath)`` blocks straight to a solver without
         re-slicing ``H``.
     """
     n_orb = H_imp.shape[0]
+    # Couplings between blocks were neglected in the fit (see prepare_hyb_fit), so the
+    # impurity block must not carry them either.  Project in the fitting basis and rotate
+    # back; this is a plain projection of H_imp when Q is block diagonal.
+    H_imp = rotate_matrix(project_to_blocks(rotate_matrix(H_imp, Q), block_structure.blocks), np.conj(Q.T))
     H_shift = np.zeros_like(H_imp)
     # The constant offset is part of the fitted hybridization, so it follows the
     # same equivalence relations as the bath: a transposed block gets C^T and a

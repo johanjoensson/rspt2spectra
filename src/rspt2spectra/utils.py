@@ -4,8 +4,7 @@ from typing import Any, Callable, Iterable, List, Optional, Tuple
 
 import numpy as np
 from scipy.linalg import block_diag
-
-from rspt2spectra.block_structure import get_blocks
+from scipy.optimize import linear_sum_assignment
 
 
 def rotate_matrix(M, T):
@@ -249,43 +248,153 @@ def rotate_4index_U(U4, T):
     return np.einsum("ij,kl, jlmo, mn, op", np.conj(T.T), np.conj(T.T), U4, T, T)
 
 
-def block_diagonalize_hyb(hyb, tol=1e-6):
+_JD_MAX_FREQ = 50
+_JD_MAX_SWEEPS = 100
+_JD_SKIP = 1e-8  # relative to the O(1) scaled matrices; couplings below are numerical noise
+_JD_REL_DECREASE = 1e-10  # stop when a sweep removes less than this fraction of the off-diagonal weight
+_JD_MAT_WEIGHT = 0.1  # weight of H relative to the whole hyb set: H breaks hyb degeneracies, hyb sets the basis
+_JD_MAT_FLOOR = 1e-3  # Ry; crystal-field spread below this is noise when weighting H against hyb
+
+
+def _joint_diagonalize(mats, max_sweeps=_JD_MAX_SWEEPS, skip=_JD_SKIP):
+    """Approximately diagonalize a set of Hermitian matrices with one unitary.
+
+    Complex Jacobi iteration after Cardoso and Souloumiac: every sweep rotates each
+    orbital pair by the angle that minimises the summed squared off-diagonal weight of
+    all matrices.  The start is the identity and every rotation is non-increasing, so
+    the result is never less diagonal than the input.  A pair whose couplings vanish in
+    every matrix is skipped, which keeps decoupled orbitals (spin up/down, separate
+    blocks) from being mixed.
+
+    Parameters
+    ----------
+    mats : ndarray of shape (n_mat, n, n)
+        Hermitian matrices, already scaled to be of order one.
+    max_sweeps : int
+        Maximum number of Jacobi sweeps.
+    skip : float
+        Pairs with total coupling weight below this are left alone.
+
+    Returns
+    -------
+    Q : ndarray of shape (n, n)
+        Unitary with ``Q^dagger mats[m] Q`` as diagonal as possible.
     """
-    Block diagonalize the hybridization function matrix.
+    A = np.array(mats, dtype=complex)
+    n = A.shape[-1]
+    Q = np.eye(n, dtype=complex)
+    def off_weight():
+        return float(np.sum(np.abs(A) ** 2) - np.sum(np.abs(np.einsum("mii->mi", A)) ** 2))
+
+    previous = off_weight()
+    for _ in range(max_sweeps):
+        rotated = False
+        for p in range(n - 1):
+            for q in range(p + 1, n):
+                a_pq = A[:, p, q]
+                if np.sum(np.abs(a_pq) ** 2) < skip**2:
+                    continue
+                h = np.stack(
+                    [
+                        (A[:, p, p] - A[:, q, q]).real,
+                        2 * a_pq.real,
+                        2 * a_pq.imag,
+                    ]
+                )
+                # h[2] = i(a_qp - a_pq) = 2 Im(a_pq) for Hermitian a_qp = conj(a_pq)
+                _, eigvecs = np.linalg.eigh(h @ h.T)
+                x, y, z = eigvecs[:, -1]
+                if x < 0:
+                    x, y, z = -x, -y, -z
+                r = np.sqrt(x * x + y * y + z * z)
+                c = np.sqrt((x + r) / (2 * r))
+                sn = (y - 1j * z) / np.sqrt(2 * r * (x + r)) if (x + r) > 0 else 0.0
+                if abs(sn) < 1e-15:
+                    continue
+                rotated = True
+                # A <- J^H A J and Q <- Q J, with J = [[c, -conj(sn)], [sn, c]] on (p, q)
+                for M in (A, Q[None]):
+                    cp = M[:, :, p].copy()
+                    cq = M[:, :, q].copy()
+                    M[:, :, p] = c * cp + sn * cq
+                    M[:, :, q] = -np.conj(sn) * cp + c * cq
+                rp = A[:, p, :].copy()
+                rq = A[:, q, :].copy()
+                A[:, p, :] = c * rp + np.conj(sn) * rq
+                A[:, q, :] = -sn * rp + c * rq
+        if not rotated:
+            break
+        current = off_weight()
+        if previous - current <= _JD_REL_DECREASE * previous:
+            break
+        previous = current
+    return Q
+
+
+def block_diagonalize_hyb(hyb, mat=None, w=None, x_lim=None):
+    """Rotate the hybridization function (and optionally a matrix) to a near-diagonal basis.
+
+    The unitary ``Q`` jointly and approximately diagonalizes the Hermitian and
+    anti-Hermitian parts of the hybridization function at (up to 50) frequencies in the
+    fit window together with ``mat`` (typically the local Hamiltonian).  Off-diagonal
+    couplings that no common rotation can remove stay in the result; they are small
+    when the system is close to symmetric and are what the block threshold then
+    decides about.
 
     Parameters
     ----------
     hyb : ndarray of shape (n_freq, n_orb, n_orb)
         The hybridization matrix.
-    tol : float, default 1e-6
-        Tolerance threshold for the block partitioning.
+    mat : ndarray of shape (n_orb, n_orb), optional
+        Matrix to diagonalize together with ``hyb``, e.g. the local Hamiltonian.
+    w : ndarray of shape (n_freq,), optional
+        Frequency mesh of ``hyb``; needed for ``x_lim``.
+    x_lim : tuple of float, optional
+        ``(lo, hi)`` window; only frequencies inside it are used.
 
     Returns
     -------
     phase_hyb : ndarray of shape (n_freq, n_orb, n_orb)
-        The block-diagonalized hybridization function.
+        The hybridization function in the rotated basis.
     Q_full : ndarray of shape (n_orb, n_orb)
-        The transformation matrix.
+        The transformation matrix.  Column ``j`` is the orbital that overlaps most with
+        the input orbital ``j``, so orbital labels are stable between calls.
     """
-    hyb_herm = 1 / 2 * (hyb + np.conj(np.transpose(hyb, (0, 2, 1))))
-    blocks = get_blocks(hyb_herm, tol=tol)
-    Q_full = np.zeros((hyb.shape[1], hyb.shape[2]), dtype=complex)
-    treated_orbitals = 0
-    for block in blocks:
-        block_idx = np.ix_(range(hyb.shape[0]), block, block)
-        if len(block) == 1:
-            Q_full[block_idx[1:], treated_orbitals] = 1
-            treated_orbitals += 1
-            continue
-        block_hyb = hyb_herm[block_idx]
-        upper_triangular_hyb = np.triu(hyb_herm, k=1)
-        ind_max_offdiag = np.unravel_index(np.argmax(np.abs(upper_triangular_hyb)), upper_triangular_hyb.shape)
-        eigvals, Q = np.linalg.eigh(block_hyb[ind_max_offdiag[0], :, :])
-        sorted_indices = np.argsort(eigvals)
-        Q = Q[:, sorted_indices]
-        for column in range(Q.shape[1]):
-            j = np.argmax(np.abs(Q[:, column]))
-            Q_full[block, treated_orbitals + column] = Q[:, column] * abs(Q[j, column]) / Q[j, column]
-        treated_orbitals += Q.shape[1]
+    n_freq, n_orb, _ = hyb.shape
+    idx = np.arange(n_freq)
+    if x_lim is not None:
+        assert w is not None, "x_lim needs the frequency mesh w"
+        in_window = np.flatnonzero((w >= x_lim[0]) & (w <= x_lim[1]))
+        if len(in_window) > 0:
+            idx = in_window
+    if len(idx) > _JD_MAX_FREQ:
+        idx = idx[np.unique(np.linspace(0, len(idx) - 1, _JD_MAX_FREQ).astype(int))]
+    h = hyb[idx]
+    herm = 0.5 * (h + np.conj(np.transpose(h, (0, 2, 1))))
+    anti = (h - np.conj(np.transpose(h, (0, 2, 1)))) / 2j
+    scale = max(float(np.max(np.sqrt(np.mean(np.abs(np.einsum("wii->wi", h)) ** 2, axis=0)))), 1e-10)
+    mats = [herm / scale, anti / scale]
+    mats = np.concatenate(mats, axis=0)
+    if mat is not None:
+        mat = 0.5 * (mat + np.conj(mat.T))
+        ev = np.linalg.eigvalsh(mat)
+        mat_scale = max(float(ev[-1] - ev[0]), _JD_MAT_FLOOR)
+        # H gets a tenth of the weight of the whole set of frequencies: it breaks degeneracies of the
+        # hybridization and tie-breaks the basis, but must not drag it away from the hybridization's.
+        # Weight 0 would leave the rotation arbitrary wherever the hybridization is degenerate.
+        weight = _JD_MAT_WEIGHT * np.sqrt(len(mats))
+        mats = np.concatenate([mats, (weight * mat / mat_scale)[None]], axis=0)
+    Q = _joint_diagonalize(mats)
+
+    # Label stability: column j is the rotated orbital closest to input orbital j.
+    # Overlaps are rounded so that round-off cannot decide a tie (a 45 degree mixing of two
+    # degenerate orbitals has equal overlaps); ties then resolve by orbital index, always.
+    overlap = np.round(np.abs(Q) ** 2, 6)
+    rows, cols = linear_sum_assignment(-overlap)
+    Q = Q[:, cols[np.argsort(rows)]]
+    Q_full = np.zeros_like(Q)
+    for column in range(n_orb):
+        j = np.argmax(np.round(np.abs(Q[:, column]), 6))
+        Q_full[:, column] = Q[:, column] * abs(Q[j, column]) / Q[j, column]
     phase_hyb = np.conj(Q_full.T)[np.newaxis, :, :] @ hyb @ Q_full[np.newaxis, :, :]
     return phase_hyb, Q_full

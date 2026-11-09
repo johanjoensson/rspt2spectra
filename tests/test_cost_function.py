@@ -529,20 +529,22 @@ def test_state_distribution_prioritizes_strong_hybridization():
     bs = _fake_block_structure([[0], [1, 2, 3]])
     hyb = _diag_hyb(w, [6.0, 1.0, 1.0, 1.0])
     states = get_state_per_inequivalent_block(bs, 4, hyb, w, np.ones_like, delta=0.5)
-    # pool = 4*2 = 8; shares 6/7 and 1/7 -> round(6.857143)=7, round(1.142857)=1 < 3 (block size) so 3
-    assert list(states) == [7, 3]
+    # pool = 4*2 = 8; shares 6/7 and 1/7 -> round(6.857143)=7, round(1.142857)=1,
+    # which already meets the floor of one pole level
+    # (a pole level of the 3-orbital block is a full-rank residue = 3 bath orbitals)
+    assert list(states) == [7, 1]
 
 
 def test_state_distribution_coverage_and_cap():
     w = np.linspace(-1.0, 1.0, 201)
     bs = _fake_block_structure([[0], [1, 2, 3]])
     # Block 0 dominant, block 1 (3 orbitals) tiny but nonzero -> block 1 must
-    # still get at least one state per orbital (>= 3).
+    # still get at least one pole level.
     hyb = _diag_hyb(w, [100.0, 0.001, 0.001, 0.001])
     delta = 0.2
     n_max = _max_bath_states(w[0], w[-1], delta)  # 11
     states = get_state_per_inequivalent_block(bs, 8, hyb, w, np.ones_like, delta=delta)
-    assert states[1] >= 3  # coverage: one bath state per orbital
+    assert states[1] >= 1  # coverage: one pole level (= n_block bath orbitals)
     assert np.all(states <= n_max)  # window cap
     # A zero-weight block gets zero states (nothing to fit).
     hyb0 = _diag_hyb(w, [1.0, 0.0, 0.0, 0.0])
@@ -551,11 +553,11 @@ def test_state_distribution_coverage_and_cap():
     )
     assert states0[1] == 0
 
-    # The per-orbital floor is capped by the window: a narrow window cannot host
-    # one state per orbital, and the count is capped, not fitted out of range.
+    # The count is capped by the window: a narrow window cannot host the share,
+    # and the count is capped, not fitted out of range.
     w_narrow = np.linspace(0.0, 0.3, 50)
     n_max_narrow = _max_bath_states(w_narrow[0], w_narrow[-1], delta)  # 2
-    hyb_n = _diag_hyb(w_narrow, [0.001, 0.001, 0.001, 0.001])  # 4-orbital block wants 4
+    hyb_n = _diag_hyb(w_narrow, [0.001, 0.001, 0.001, 0.001])  # 4-orbital block, share of the pool exceeds the window
     states_n = get_state_per_inequivalent_block(
         _fake_block_structure([[0, 1, 2, 3]]),
         8,
@@ -564,7 +566,7 @@ def test_state_distribution_coverage_and_cap():
         np.ones_like,
         delta=delta,
     )
-    assert states_n[0] == n_max_narrow  # floor of 4 capped down to what fits (2)
+    assert states_n[0] == n_max_narrow  # share capped down to what fits (2)
 
 
 def test_max_bath_states_counts_what_fits():

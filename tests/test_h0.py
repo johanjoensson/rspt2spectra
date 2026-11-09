@@ -58,8 +58,7 @@ def test_combined_partition_merges_local_coupling():
     # Hybridization alone is diagonal, but H_loc couples the orbitals: the
     # union connectivity must put both orbitals in a single block.
     assert sorted(map(sorted, block_structure.blocks)) == [[0, 1]]
-    # And the rotated local Hamiltonian must be block diagonal (trivially so
-    # for a single block, but the guard in prepare_hyb_fit must not raise).
+    # And the rotated local Hamiltonian is returned in the same (single) block.
     assert H_local_Q.shape == (2, 2)
 
 
