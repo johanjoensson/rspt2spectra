@@ -49,7 +49,7 @@ BLOCK_EQUIVALENCE_TOL = 1e-6
 #: Identifies how the fitting basis and the block partition are decided.  Anything stored that
 #: depends on them (a reusable bath fit) must be keyed on it: a changed rotation changes the basis
 #: even where the partition does not change.
-BLOCKING_VERSION = "joint-jacobi-v2;h-weight=0.1;h-scale=max(spread,min-broadening)"
+BLOCKING_VERSION = "joint-jacobi-v3;h-weight=0.1;h-scale=max(spread,min-broadening);u-aware-shapes-partition-v2"
 
 
 def _partition(hyb, H, tol):
@@ -124,7 +124,17 @@ def _print_neglected(hyb, H, blocks, tol):
 
 
 def prepare_hyb_fit(
-    hyb, H_local, tol=BLOCK_EQUIVALENCE_TOL, verbose=True, w=None, x_lim=None, equiv_tol=None, report=None
+    hyb,
+    H_local,
+    tol=BLOCK_EQUIVALENCE_TOL,
+    verbose=True,
+    w=None,
+    x_lim=None,
+    equiv_tol=None,
+    report=None,
+    u4=None,
+    to_spherical=None,
+    max_u_densify=2.0,
 ):
     """Prepare the fitting basis and block partition for a hybridization fit.
 
@@ -162,6 +172,15 @@ def prepare_hyb_fit(
         Absolute tolerance for identical/transposed/particle-hole equivalence of
         blocks.  Defaults to ``BLOCK_EQUIVALENCE_TOL`` and is deliberately
         independent of ``tol``: raising ``tol`` must not merge inequivalent blocks.
+    u4 : np.ndarray of shape (n_orb,) * 4, optional
+        Coulomb tensor in the input basis.  If given, the fitting basis is chosen so that it does
+        not densify ``u4`` by more than ``max_u_densify``: a rigid (SO(3)) rotation of the shell
+        when that separates the orbitals as well as a free rotation, else a free rotation within
+        the budget (see :func:`rspt2spectra.utils.block_diagonalize_hyb`).
+    to_spherical : np.ndarray of shape (n_orb, n_sph), optional
+        Input orbitals -> complex spherical harmonics; enables the SO(3) choice for a full shell.
+    max_u_densify : float, default 2.0
+        Allowed growth of the number of Coulomb-tensor terms; ``inf`` disables the constraint.
 
     Returns
     -------
@@ -176,7 +195,24 @@ def prepare_hyb_fit(
     """
     if equiv_tol is None:
         equiv_tol = BLOCK_EQUIVALENCE_TOL
-    phase_hyb, Q = block_diagonalize_hyb(hyb, mat=H_local, w=w, x_lim=x_lim)
+    basis_info = {}
+    phase_hyb, Q = block_diagonalize_hyb(
+        hyb,
+        mat=H_local,
+        w=w,
+        x_lim=x_lim,
+        u4=u4,
+        to_spherical=to_spherical,
+        max_u_densify=max_u_densify,
+        tol=tol,
+        info=basis_info,
+    )
+    if verbose and basis_info:
+        n_in, n_out = basis_info["u_terms_input"], basis_info["u_terms"]
+        print(
+            f"Fitting basis: {basis_info['tier']}{', ' + basis_info['shape'] if basis_info.get('shape') else ''}; Coulomb tensor terms {n_in} -> {n_out} "
+            f"(x{n_out / max(n_in, 1):.2f}, allowed x{max_u_densify:g})."
+        )
     H_local_rot = rotate_matrix(H_local, Q)
     window = slice(None)
     if x_lim is not None:

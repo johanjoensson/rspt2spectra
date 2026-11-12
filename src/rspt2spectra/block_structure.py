@@ -281,6 +281,43 @@ def _mat_scale_with_hyb(mat, G):
     return max(_mat_scale(mat), _min_broadening(G))
 
 
+def _relative(values, scale, tol):
+    """``|values| / scale`` with the absolute noise floor of :func:`_threshold` folded into ``scale``.
+
+    ``_relative(x, s, tol) > tol`` is ``|x| > _threshold(tol, s)`` up to rounding (about 1 ulp at the threshold).
+    """
+    effective = max(scale, min(tol, ABS_COUPLING_FLOOR) / tol) if tol > 0 else scale
+    magnitude = np.abs(values)
+    if effective > 0:
+        return magnitude / effective
+    return np.where(magnitude > 0, np.inf, 0.0)
+
+
+def relative_couplings(G=None, mat=None, tol=1e-6):
+    """Orbital-pair couplings in units of the blocking threshold.
+
+    Returns a symmetric ``(n, n)`` array ``c`` such that the block partition at ``tol`` is the set
+    of connected components of ``c > tol``.  The couplings of ``G`` (largest over frequencies) are
+    measured against the largest diagonal element of ``G``; those of ``mat`` against the larger of
+    its eigenvalue spread and the weakest orbital hybridization width (the spread alone without
+    ``G``).  Having the numbers rather than just the partition lets a search ask how far a basis is
+    from the next coarser or finer partition.
+    """
+    assert G is not None or mat is not None
+    parts = []
+    if G is not None:
+        G = np.asarray(G)
+        if G.ndim == 2:
+            G = G[None]
+        parts.append(_relative(np.max(np.abs(G), axis=0), _g_scale(G), tol))
+        if mat is not None:
+            parts.append(_relative(mat, _mat_scale_with_hyb(mat, G), tol))
+    else:
+        parts.append(_relative(mat, _mat_scale(mat), tol))
+    c = np.maximum.reduce(parts)
+    return np.maximum(c, c.T)
+
+
 def project_to_blocks(arr, blocks):
     """Zero every element of ``arr`` that couples two different blocks.
 
@@ -320,7 +357,7 @@ def get_n_blocks_block_indices_mask_matrix(mat: np.ndarray, tol=1e-6):
     labels : np.ndarray of int
         An array of component labels for each orbital.
     """
-    mask = np.abs(mat) > _threshold(tol, _mat_scale(mat))
+    mask = relative_couplings(None, mat, tol) > tol
     return sp.sparse.csgraph.connected_components(mask, directed=False, return_labels=True)
 
 
@@ -349,11 +386,9 @@ def get_n_blocks_block_indices_mask(G: np.ndarray = None, mat: np.ndarray = None
     if G is not None:
         if len(G.shape) == 2:
             G = G.reshape((1, G.shape[0], G.shape[1]))
-        mask = np.any(np.abs(G) > _threshold(tol, _g_scale(G)), axis=0)
-        if mat is not None:
-            mask = np.logical_or(mask, np.abs(mat) > _threshold(tol, _mat_scale_with_hyb(mat, G)))
+        mask = relative_couplings(G, mat, tol) > tol
     else:
-        mask = np.abs(mat) > _threshold(tol, _mat_scale(mat))
+        mask = relative_couplings(None, mat, tol) > tol
 
     return sp.sparse.csgraph.connected_components(mask, directed=False, return_labels=True)
 
