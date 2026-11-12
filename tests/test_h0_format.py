@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from rspt2spectra.op_printer import write_h0_file
+from rspt2spectra.h0_file import write_h0_file
 
 GOLDEN = Path(__file__).parent / "golden_h0_v1_index.h0"
 

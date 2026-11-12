@@ -27,7 +27,7 @@ from rspt2spectra.dat import extract_dat
 from rspt2spectra.h0 import assemble_h0, flatten_star_levels, prepare_hyb_fit
 from rspt2spectra.hyb_fit import fit_hyb
 from rspt2spectra.natural_orbitals import fit_hyb_natural_orbitals
-from rspt2spectra.op_printer import write_h0_file
+from rspt2spectra.h0_file import write_h0_file
 from rspt2spectra.readfile import (
     list_cluster_labels,
     parse_cluster_basis,

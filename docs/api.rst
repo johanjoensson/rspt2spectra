@@ -26,7 +26,7 @@ Interfaces and utilities
    :toctree: generated
    :recursive:
 
-   rspt2spectra.op_printer
+   rspt2spectra.h0_file
    rspt2spectra.utils
 
 Command-line entry point
