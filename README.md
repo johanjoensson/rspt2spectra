@@ -48,7 +48,7 @@ build_h0 <cluster> <bath_states_per_orbital>
 ```
 
 e.g. `build_h0 0102010100 10`. This fits the hybridization function and writes the
-non-interacting Hamiltonian in operator format to `<cluster>_h0_op.dict`. With
+non-interacting Hamiltonian in operator format to `<cluster>.h0`. With
 `mpi4py` installed, run under MPI to parallelize over initial guesses:
 
 ```bash
