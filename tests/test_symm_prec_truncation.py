@@ -24,10 +24,11 @@ def _system(coupling):
 
 def test_weak_coupling_joins_blocks_by_default_and_is_neglected_above_tol():
     w, hyb, H = _system(1e-3)
-    _, _, _, bs_strict = prepare_hyb_fit(hyb, H, tol=1e-6, verbose=False, w=w)
+    bs_strict = prepare_hyb_fit(hyb, H, tol=1e-6, verbose=False, w=w).block_structure
     assert len(bs_strict.blocks) == 1
 
-    Q, phase_hyb, H_Q, bs = prepare_hyb_fit(hyb, H, tol=1e-2, verbose=False, w=w)
+    fb = prepare_hyb_fit(hyb, H, tol=1e-2, verbose=False, w=w)
+    Q, phase_hyb, H_Q, bs = fb.Q, fb.phase_hyb, fb.H_local_Q, fb.block_structure
     assert len(bs.blocks) == 2
     for blk_a, blk_b in [(bs.blocks[0], bs.blocks[1]), (bs.blocks[1], bs.blocks[0])]:
         assert np.all(H_Q[np.ix_(blk_a, blk_b)] == 0)
@@ -53,7 +54,7 @@ def test_strong_peak_outside_the_window_does_not_split_a_block_after_the_fact():
     # scale of the whole mesh and must not make the equivalence pass disagree with the window.
     w = np.linspace(-2, 2, 400)
     hyb = _two_orbital_hyb(w, 0.01, 10.0, 5.0)
-    _Q, _phase, _H_Q, bs = prepare_hyb_fit(hyb, np.diag([0.0, 0.1]), tol=0.05, w=w, x_lim=(-1, 0), verbose=False)
+    bs = prepare_hyb_fit(hyb, np.diag([0.0, 0.1]), tol=0.05, w=w, x_lim=(-1, 0), verbose=False).block_structure
     assert bs.blocks == [[0, 1]]
 
 

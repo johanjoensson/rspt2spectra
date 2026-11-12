@@ -202,7 +202,7 @@ def test_choice_is_stable_under_tiny_perturbations():
 
 def test_prepare_hyb_fit_reports_and_keeps_its_contract(capsys):
     S, H, hyb, U, w, _ = _scrambled_problem()
-    Q, phase_hyb, H_Q, bs = prepare_hyb_fit(hyb, H, tol=1e-6, verbose=True, w=w, u4=U, to_spherical=S)
+    bs = prepare_hyb_fit(hyb, H, tol=1e-6, verbose=True, w=w, u4=U, to_spherical=S).block_structure
     out = capsys.readouterr().out
     assert "Fitting basis: axis rotation" in out
     assert len(bs.blocks) == H.shape[0]

@@ -5,9 +5,12 @@ The pipeline is split in three steps so callers can cache or persist the
 
 1. :func:`prepare_hyb_fit` -- block-diagonalize the hybridization function,
    rotate the local Hamiltonian into the fitting basis and build the block
-   partition from the *union* of both connectivities.
-2. :func:`rspt2spectra.hyb_fit.fit_hyb` -- fit star bath energies and
-   hoppings per inequivalent block (callers may reuse a stored fit instead).
+   partition from the *union* of both connectivities.  Returns a :class:`FitBasis`,
+   which also carries a fingerprint of the inputs for deciding whether a stored
+   fit can be reused.
+2. :func:`fit_bath` -- fit star bath energies and hoppings per inequivalent block
+   (callers may hand in a stored fit instead, or the previous fit's energies to
+   start from).  Storing fits is the caller's business.
 3. :func:`assemble_h0` -- turn the (flattened) star fit into the requested
    bath geometry and assemble the full one-particle Hamiltonian.
 
@@ -15,7 +18,9 @@ Everything operates on plain numpy arrays; the energy unit follows the
 inputs (e.g. Ry when the data comes from RSPt).
 """
 
+import hashlib
 import logging
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -27,7 +32,10 @@ from rspt2spectra.block_structure import (
     project_to_blocks,
 )
 from rspt2spectra.edchain import build_full_bath, build_H_bath_v, build_imp_bath_blocks
+from rspt2spectra.fit_options import DEFAULT_SYMM_PREC
+from rspt2spectra.hyb_fit import fit_hyb
 from rspt2spectra.utils import block_diagonalize_hyb, matrix_print, rotate_matrix
+from rspt2spectra.weight_functions import weight_functions
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +131,98 @@ def _print_neglected(hyb, H, blocks, tol):
     )
 
 
+def fit_window(w, hyb, valence_bath_only):
+    """Return the ``(lo, hi)`` frequency window the bath fit uses.
+
+    From the first to the last frequency at which the trace of the hybridization function exceeds
+    1e-6, cut at the Fermi level when only the valence bath is fitted.  The trace is invariant under
+    the unitary rotation to the fitting basis and under dropping off-block couplings, so the window
+    is the same for ``hyb`` in any basis.
+    """
+    trace = np.abs(np.trace(hyb, axis1=1, axis2=2))
+    w_min = w[np.argmax(trace > 1e-6)]
+    w_max = w[-(np.argmax(trace[::-1] > 1e-6) + 1)]
+    return (w_min, min(0, w_max) if valence_bath_only else w_max)
+
+
+def fit_fingerprint(hyb, H_local, u4, to_spherical, symm_prec, u_densify, x_lim):
+    """Return a hex digest of what the fit is made from.
+
+    A caller that stores fits compares it to decide whether a stored fit can be reused (identical
+    input) or has to be redone (a new DMFT iteration).  Only inputs are hashed, never the output of
+    the rotation, so the decision does not depend on BLAS details.
+    """
+    u_aware = u4 is not None and np.isfinite(u_densify)
+    return hashlib.sha256(
+        np.ascontiguousarray(hyb).tobytes()
+        + np.ascontiguousarray(H_local).tobytes()
+        # the Coulomb tensor and shell rotation steer the basis choice, but only when the choice looks at them
+        + (np.ascontiguousarray(u4).tobytes() + repr(float(u_densify)).encode() if u_aware else b"")
+        + (np.ascontiguousarray(to_spherical).tobytes() if u_aware and to_spherical is not None else b"")
+        + repr(
+            (
+                float(symm_prec),
+                None if x_lim is None else tuple(float(x) for x in x_lim),
+                # how the basis is chosen: a changed rotation must not reuse a fit made in the old one
+                BLOCKING_VERSION,
+            )
+        ).encode()
+    ).hexdigest()
+
+
+def bath_hybridization(w, eim, H_bath, v):
+    r"""Return the hybridization function of a bath, :math:`V^\dagger (z - H_{bath})^{-1} V`.
+
+    ``z = w + i*eim``; ``H_bath`` is (n_bath, n_bath), ``v`` is (n_bath, n_imp); the result has
+    shape (n_w, n_imp, n_imp).
+    """
+    z = (w + 1j * eim)[:, None, None]
+    identity = np.identity(H_bath.shape[0], dtype=complex)[None, :, :]
+    return np.conj(v).T @ np.linalg.solve(z * identity - H_bath, v)
+
+
+@dataclass
+class FitBasis:
+    """The fitting basis and block partition :func:`prepare_hyb_fit` decided on.
+
+    Everything is in the fitting basis ``Q`` (columns: fitting orbitals expressed in the input
+    orbitals), where ``phase_hyb`` and ``H_local_Q`` are exactly block diagonal.
+    """
+
+    Q: np.ndarray
+    phase_hyb: np.ndarray
+    H_local_Q: np.ndarray
+    block_structure: object
+    #: The ``(lo, hi)`` window the decision looked at (``None``: the whole mesh).
+    x_lim: tuple
+    #: Whether ``tol`` neglected a coupling that the default threshold would have kept.
+    neglected_couplings: bool
+    #: See :func:`fit_fingerprint`.
+    fingerprint: str
+
+
+def _decide_on_root(comm, decide):
+    """Run ``decide()`` on rank 0 and give every rank its result.
+
+    The rotation and the partition come out of iterative floating-point work whose last bits can
+    differ between ranks on mixed hardware; a different partition would give ranks different numbers
+    of collective calls in the fit.  A failure on rank 0 is broadcast and re-raised everywhere, so no
+    rank is left waiting in the broadcast.
+    """
+    if comm is None:
+        return decide()
+    outcome = None
+    if comm.rank == 0:
+        try:
+            outcome = (None, decide())
+        except Exception as exc:  # re-raised on every rank below
+            outcome = (f"{type(exc).__name__}: {exc}", None)
+    outcome = comm.bcast(outcome, root=0)
+    if outcome[0] is not None:
+        raise RuntimeError(f"Fit-basis search failed on rank 0: {outcome[0]}")
+    return outcome[1]
+
+
 def prepare_hyb_fit(
     hyb,
     H_local,
@@ -135,6 +235,7 @@ def prepare_hyb_fit(
     u4=None,
     to_spherical=None,
     max_u_densify=2.0,
+    comm=None,
 ):
     """Prepare the fitting basis and block partition for a hybridization fit.
 
@@ -181,18 +282,23 @@ def prepare_hyb_fit(
         Input orbitals -> complex spherical harmonics; enables the SO(3) choice for a full shell.
     max_u_densify : float, default 2.0
         Allowed growth of the number of Coulomb-tensor terms; ``inf`` disables the constraint.
+    comm : mpi4py communicator, optional
+        Rank 0 decides the basis and the partition and the other ranks receive them (see
+        :func:`_decide_on_root`).
 
     Returns
     -------
-    Q : np.ndarray of shape (n_orb, n_orb)
-        Rotation to the fitting basis.
-    phase_hyb : np.ndarray of shape (n_w, n_orb, n_orb)
-        The hybridization function in the fitting basis, exactly block diagonal.
-    H_local_Q : np.ndarray of shape (n_orb, n_orb)
-        The local Hamiltonian in the fitting basis, exactly block diagonal.
-    block_structure : BlockStructure
-        Partition and equivalence information on the combined connectivity.
+    FitBasis
+        The rotation ``Q`` to the fitting basis, the hybridization function ``phase_hyb`` and the
+        local Hamiltonian ``H_local_Q`` in it (both exactly block diagonal), the partition and
+        equivalence information ``block_structure`` on the combined connectivity, and whether
+        ``tol`` neglected anything.
     """
+    args = (hyb, H_local, tol, verbose, w, x_lim, equiv_tol, report, u4, to_spherical, max_u_densify)
+    return _decide_on_root(comm, lambda: _prepare_hyb_fit(*args))
+
+
+def _prepare_hyb_fit(hyb, H_local, tol, verbose, w, x_lim, equiv_tol, report, u4, to_spherical, max_u_densify):
     if equiv_tol is None:
         equiv_tol = BLOCK_EQUIVALENCE_TOL
     basis_info = {}
@@ -221,6 +327,9 @@ def prepare_hyb_fit(
         if np.any(in_window):
             window = in_window
     blocks = get_blocks(phase_hyb[window], H_local_rot, tol=tol)
+    # Compared in the fitting basis, the one the partition lives in: the same data in the input
+    # basis is denser and would give fewer blocks whatever was neglected.
+    neglected = len(blocks) > len(get_blocks(phase_hyb[window], H_local_rot, tol=DEFAULT_SYMM_PREC))
     if verbose if report is None else report:
         _print_neglected(phase_hyb[window], H_local_rot, blocks, tol)
         _print_split_margin(phase_hyb[window], H_local_rot, tol)
@@ -233,7 +342,15 @@ def prepare_hyb_fit(
     )
     if verbose:
         print_block_structure(block_structure)
-    return Q, phase_hyb, H_local_Q, block_structure
+    return FitBasis(
+        Q=Q,
+        phase_hyb=phase_hyb,
+        H_local_Q=H_local_Q,
+        block_structure=block_structure,
+        x_lim=x_lim,
+        neglected_couplings=neglected,
+        fingerprint=fit_fingerprint(hyb, H_local, u4, to_spherical, tol, max_u_densify, x_lim),
+    )
 
 
 def flatten_star_levels(ebs, vs, coupling_tol=1e-6, verbose=False):
@@ -292,6 +409,114 @@ def flatten_star_levels(ebs, vs, coupling_tol=1e-6, verbose=False):
         np.array(flat_e, dtype=float),
         np.array(flat_v, dtype=complex).reshape((len(flat_e), 1, n_imp)),
     )
+
+
+@dataclass
+class BathFit:
+    """A star bath fit: one entry per inequivalent block, levels sorted and flattened."""
+
+    #: Bath energies, one array of shape (N,) per block.
+    ebs_star: list
+    #: Hopping rows, one array of shape (N, 1, n_block) per block.
+    vs_star: list
+    #: Constant Hermitian shift, one per block.
+    shifts: list
+    #: One entry per block, ``{"status": ..., "cost warm": ..., "cost global": ...}``, describing
+    #: how a warm start was decided; ``None`` when a stored fit was used and nothing was fitted.
+    warm_start_info: list = None
+
+
+def fit_bath(
+    basis,
+    w,
+    eim,
+    n_baths,
+    options,
+    *,
+    stored_fit=None,
+    previous_energies=None,
+    verbose=True,
+    comm=None,
+):
+    """Fit star bath states to the hybridization function of a :class:`FitBasis`.
+
+    Parameters
+    ----------
+    basis : FitBasis
+        From :func:`prepare_hyb_fit`.
+    w : np.ndarray of shape (n_w,)
+        Real-frequency mesh of ``basis.phase_hyb``.
+    eim : float
+        Imaginary offset of the evaluation.
+    n_baths : int
+        Bath states to fit per impurity orbital.
+    options : FitOptions
+        ``gamma``, the weight function, ``fit_unocc``, ``freeze_bath_energies`` and ``warm_tol``
+        are used here.
+    stored_fit : tuple of (ebs_star, vs_star, shifts), optional
+        A fit stored earlier from the same ``basis.fingerprint`` and block structure.  If given,
+        nothing is fitted; the levels are only sorted and flattened.
+    previous_energies : list of np.ndarray, optional
+        The previous fit's bath energies per inequivalent block.  With
+        ``options.freeze_bath_energies`` they are held fixed and only the hoppings are re-solved;
+        otherwise the fit starts from them and keeps that warm fit unless a global search beats
+        its cost by more than ``options.warm_tol``.
+    verbose : bool
+        Print the fitted levels.
+    comm : mpi4py communicator, optional
+        The fit is collective.
+
+    Returns
+    -------
+    BathFit
+    """
+    block_structure = basis.block_structure
+    warm_start_info = None
+    if stored_fit is not None:
+        ebs_star, vs_star, shifts = (list(part) for part in stored_fit)
+    else:
+        warm_start_info = []
+        x_lim = basis.x_lim
+        if x_lim is None:
+            x_lim = fit_window(w, basis.phase_hyb, not options.fit_unocc)
+        ebs_star, vs_star, shifts = fit_hyb(
+            w,
+            eim,
+            basis.phase_hyb,
+            n_baths,
+            block_structure,
+            gamma=options.gamma,
+            x_lim=x_lim,
+            verbose=verbose,
+            comm=comm,
+            weight_fun=weight_functions[options.weight_function](options.weight_w0, options.weight),
+            ebs_guess=previous_energies,
+            optimize_bath_energies=not (options.freeze_bath_energies and previous_energies is not None),
+            warm_accept_tol=options.warm_tol,
+            warm_start_info=warm_start_info,
+        )
+    for i in range(len(ebs_star)):
+        if len(ebs_star[i]) == 0:
+            continue
+        order = np.argsort(ebs_star[i], kind="stable")
+        ebs_star[i], vs_star[i] = flatten_star_levels(ebs_star[i][order], vs_star[i][order], verbose=verbose)
+    assert len(vs_star) == len(block_structure.inequivalent_blocks), "Number of inequivalent blocks is inconsistent"
+    if verbose:
+        _print_star_fit(block_structure, ebs_star, vs_star)
+    return BathFit(ebs_star, vs_star, shifts, warm_start_info)
+
+
+def _print_star_fit(block_structure, ebs_star, vs_star):
+    print("Star bath energies and hopping parameters:")
+    for bi, (eb, vb) in enumerate(zip(ebs_star, vs_star)):
+        print(
+            f"Energy   :  Hopping  (impurity orbitals "
+            f"{block_structure.blocks[block_structure.inequivalent_blocks[bi]]})"
+        )
+        for eb_i, vb_i in zip(eb, vb):
+            print(f"{eb_i: 9.6f}:  ", "  ".join(f"{val: 9.6f}" for vb_row in vb_i for val in vb_row))
+        print("")
+    print("=" * 80)
 
 
 def assemble_h0(

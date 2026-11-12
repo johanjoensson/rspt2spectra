@@ -497,8 +497,12 @@ def test_assemble_h0_shares_one_fit_across_the_full_equivalence_class():
         hyb[:, i, i] = base + noise[i]
         H_local[i, i] = -0.2 + noise[i]
 
-    Q, phase_hyb, H_local_Q, block_structure = prepare_hyb_fit(
-        hyb, H_local, tol=BLOCK_EQUIVALENCE_TOL, verbose=False, w=w
+    fit_basis = prepare_hyb_fit(hyb, H_local, tol=BLOCK_EQUIVALENCE_TOL, verbose=False, w=w)
+    Q, phase_hyb, H_local_Q, block_structure = (
+        fit_basis.Q,
+        fit_basis.phase_hyb,
+        fit_basis.H_local_Q,
+        fit_basis.block_structure,
     )
     assert len(block_structure.inequivalent_blocks) == 1
 

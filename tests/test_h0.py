@@ -39,7 +39,8 @@ def analytic_g0(z):
 
 def prepared():
     hyb = analytic_hyb(W + 1j * EIM)
-    return prepare_hyb_fit(hyb, H_LOC, tol=1e-6, verbose=False, w=W)
+    fb = prepare_hyb_fit(hyb, H_LOC, tol=1e-6, verbose=False, w=W)
+    return fb.Q, fb.phase_hyb, fb.H_local_Q, fb.block_structure
 
 
 def exact_fit(Q, block_structure):
