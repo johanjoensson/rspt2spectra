@@ -474,7 +474,9 @@ def fit_star_bath(
     # BLOCK_EQUIVALENCE_TOL -- real RSPt data has a ~1.4e-10 noise floor between
     # symmetry-equivalent orbitals that machine epsilon would fracture into several
     # independently-seeded fits, while a loose `symm_prec` would merge inequivalent blocks.
-    fit_basis = prepare_hyb_fit(hyb_sph, H_dft_sph, tol=symm_prec, verbose=False, w=w, x_lim=x_lim, report=verbose)
+    fit_basis = prepare_hyb_fit(
+        hyb_sph, H_dft_sph, tol=symm_prec, verbose=False, w=w, x_lim=x_lim, report=verbose, comm=comm
+    )
     Q, phase_hyb, H_local_Q, block_structure = (
         fit_basis.Q,
         fit_basis.phase_hyb,
