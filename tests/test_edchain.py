@@ -320,3 +320,29 @@ def test_peeled_linked_chain_small_remainder_falls_back_to_star():
     v, hb = edchain.peeled_linked_chain(H_imp, vs, es, peel_weight=0.05, verbose=False, extremely_verbose=False)
     assert np.allclose(hb, np.diag(es))
     assert np.allclose(v, vs)
+
+
+def test_few_bath_states_stay_a_star_for_a_block_of_equivalent_orbitals():
+    # Two equivalent orbitals share one inequivalent block, so ``v`` is 1x1 while the block has two
+    # orbitals; the star fallback must size itself by ``v``, not by the block.
+    H_dft = np.zeros((2, 2), dtype=complex)
+    block_structure = BlockStructure(
+        blocks=[[0, 1]],
+        identical_blocks=[],
+        transposed_blocks=[],
+        particle_hole_blocks=[],
+        particle_hole_transposed_blocks=[],
+        inequivalent_blocks=[0],
+    )
+    for geom in ("linked_chain", "peeled_linked_chain"):
+        H_baths, vs = edchain.build_H_bath_v(
+            H_dft,
+            [np.array([-1.0, 1.0])],
+            [np.full((2, 1, 1), 0.3, dtype=complex)],
+            geom,
+            block_structure,
+            verbose=False,
+            extra_verbose=False,
+        )
+        assert H_baths[0].shape == (2, 2)
+        assert vs[0].shape == (2, 1)

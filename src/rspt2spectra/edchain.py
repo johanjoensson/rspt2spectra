@@ -138,8 +138,8 @@ def build_H_bath_v(
             # For the linked double chains to make sense we need at least 3 bath states,
             # otherwise we might as well just use a star geometry
             if len(ebs) <= 2:
-                H_baths.append(np.diag(np.repeat(ebs, len(block_orbs))))
-                vs.append(v.reshape(v.shape[0] * len(block_orbs), len(block_orbs)))
+                H_baths.append(np.diag(np.repeat(ebs, v.shape[1])))
+                vs.append(v.reshape(v.shape[0] * v.shape[1], v.shape[2]))
                 continue
 
             vh, Hh = linked_double_chain(H_dft[b_ix], v, ebs, verbose=verbose, extremely_verbose=extra_verbose)
@@ -155,8 +155,8 @@ def build_H_bath_v(
             # Same minimum as "linked_chain": fewer than 3 bath states might as
             # well stay in star form.
             if len(ebs) <= 2:
-                H_baths.append(np.diag(np.repeat(ebs, len(block_orbs))))
-                vs.append(v.reshape(v.shape[0] * len(block_orbs), len(block_orbs)))
+                H_baths.append(np.diag(np.repeat(ebs, v.shape[1])))
+                vs.append(v.reshape(v.shape[0] * v.shape[1], v.shape[2]))
                 continue
 
             vp, Hp = peeled_linked_chain(
