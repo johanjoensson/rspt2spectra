@@ -25,16 +25,16 @@ from dataclasses import dataclass
 import numpy as np
 
 from rspt2spectra.block_structure import (
-    mat_scale_with_hyb,
     build_block_structure,
     get_blocks,
+    mat_scale_with_hyb,
     print_block_structure,
     project_to_blocks,
 )
 from rspt2spectra.edchain import build_full_bath, build_H_bath_v, build_imp_bath_blocks
+from rspt2spectra.fit_basis import block_diagonalize_hyb
 from rspt2spectra.fit_options import DEFAULT_SYMM_PREC
 from rspt2spectra.hyb_fit import fit_hyb
-from rspt2spectra.fit_basis import block_diagonalize_hyb
 from rspt2spectra.utils import matrix_print, rotate_matrix
 from rspt2spectra.weight_functions import weight_functions
 
@@ -166,6 +166,32 @@ def fit_fingerprint(hyb, H_local, u4, to_spherical, symm_prec, u_densify, x_lim)
                 None if x_lim is None else tuple(float(x) for x in x_lim),
                 # how the basis is chosen: a changed rotation must not reuse a fit made in the old one
                 BLOCKING_VERSION,
+            )
+        ).encode()
+    ).hexdigest()
+
+
+def bath_fit_fingerprint(basis, w, eim, n_baths, options):
+    """Return a hex digest of everything a stored star fit depends on.
+
+    ``basis.fingerprint`` covers the hybridization and the basis choice; this adds what
+    :func:`fit_bath` itself is told: the number of bath states, the real-axis mesh and its
+    broadening, the regularisation, the weight function and the fit window.  A caller that reuses a
+    stored fit compares this one, so a changed ``nBaths`` or ``gamma`` is never answered with the
+    old fit.
+    """
+    return hashlib.sha256(
+        basis.fingerprint.encode()
+        + np.ascontiguousarray(w, dtype=float).tobytes()
+        + repr(
+            (
+                int(n_baths),
+                float(eim),
+                float(options.gamma),
+                options.weight_function,
+                float(options.weight),
+                float(options.weight_w0),
+                bool(options.fit_unocc),
             )
         ).encode()
     ).hexdigest()
