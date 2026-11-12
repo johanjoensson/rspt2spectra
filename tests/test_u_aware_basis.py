@@ -3,13 +3,14 @@
 import numpy as np
 import pytest
 
-from rspt2spectra import utils
-from rspt2spectra.h0 import prepare_hyb_fit
-from rspt2spectra.utils import (
-    _joint_diagonalize,
-    _rotate_u4,
+from rspt2spectra import fit_basis
+from rspt2spectra.fit_basis import (
     _so3_rotation,
     block_diagonalize_hyb,
+)
+from rspt2spectra.h0 import prepare_hyb_fit
+from rspt2spectra.utils import (
+    _rotate_u4,
     count_u_terms,
     rotate_4index_U,
     rotate_Greens_function,
@@ -137,12 +138,19 @@ def _sparse_u_and_dense_hyb(n=6, seed=1):
     U = np.zeros((n,) * 4, dtype=complex)
     for i in range(n):
         for j in range(n):
-            U[i, j, i, j] = 1.0 + i * j  # density-density with orbital-dependent weights: sparse, not rotation invariant
+            U[i, j, i, j] = (
+                1.0 + i * j
+            )  # density-density with orbital-dependent weights: sparse, not rotation invariant
     Q0 = np.linalg.qr(rng.normal(size=(n, n)) + 1j * rng.normal(size=(n, n)))[0]
     eps = np.linspace(-0.3, 0.3, n)
     w = np.linspace(-1.5, 0.5, 40)
     hyb_d = np.array([np.diag(0.1 / (x + 0.05j + 0.8 + eps)) for x in w]).astype(complex)
-    return U, rotate_matrix(np.diag(eps).astype(complex), np.conj(Q0.T)), rotate_Greens_function(hyb_d, np.conj(Q0.T)), w
+    return (
+        U,
+        rotate_matrix(np.diag(eps).astype(complex), np.conj(Q0.T)),
+        rotate_Greens_function(hyb_d, np.conj(Q0.T)),
+        w,
+    )
 
 
 def test_free_rotation_respects_the_budget():
@@ -158,7 +166,7 @@ def test_free_rotation_respects_the_budget():
     assert info["u_terms"] == count_u_terms(_rotate_u4(U, Q))
     # a budgeted rotation is never less diagonal than the identity
     mats = np.concatenate([hyb, H[None]], axis=0)
-    assert utils._off_diagonal_weight(mats, Q) <= utils._off_diagonal_weight(mats, np.eye(len(Q))) + 1e-12
+    assert fit_basis._off_diagonal_weight(mats, Q) <= fit_basis._off_diagonal_weight(mats, np.eye(len(Q))) + 1e-12
 
 
 def test_budgeted_rotation_keeps_the_spins_identical():
@@ -210,7 +218,7 @@ def test_prepare_hyb_fit_reports_and_keeps_its_contract(capsys):
 
 def _l_dot_l_u4(l):
     """A sparse, non-trivial, SO(3)-invariant (but not U(n)-invariant) two-body tensor: sum_a L_a (x) L_a."""
-    ops = utils._angular_momentum_ops(l)
+    ops = fit_basis._angular_momentum_ops(l)
     n = 2 * (2 * l + 1)
     U = np.zeros((n,) * 4, dtype=complex)
     for L_a in ops:
@@ -263,7 +271,7 @@ def test_relative_couplings_reproduce_the_block_partition():
     for tol in (1e-6, 1e-3, 0.02, 0.1, 0.3):
         c = relative_couplings(G, H, tol)
         assert np.allclose(c, c.T)
-        n_comp, labels = utils._components(c > tol)
+        n_comp, labels = fit_basis._components(c > tol)
         ref = get_blocks(G, H, tol=tol)
         assert sorted(np.bincount(labels)) == sorted(len(b) for b in ref)
 
@@ -273,33 +281,33 @@ def test_block_threshold_is_the_tolerance_at_which_blocks_get_small_enough():
     c[0, 1] = c[1, 0] = 0.5
     c[1, 2] = c[2, 1] = 0.3
     c[2, 3] = c[3, 2] = 0.1
-    assert utils._block_threshold(c, 4) == 0.0
-    assert utils._block_threshold(c, 3) == pytest.approx(0.1)
-    assert utils._block_threshold(c, 2) == pytest.approx(0.3)
-    assert utils._block_threshold(c, 1) == pytest.approx(0.5)
+    assert fit_basis._block_threshold(c, 4) == 0.0
+    assert fit_basis._block_threshold(c, 3) == pytest.approx(0.1)
+    assert fit_basis._block_threshold(c, 2) == pytest.approx(0.3)
+    assert fit_basis._block_threshold(c, 1) == pytest.approx(0.5)
 
 
 def test_real_harmonics_follow_the_condon_shortley_convention():
     for l in (1, 2, 3):
-        W = utils._real_harmonics(l)
+        W = fit_basis._real_harmonics(l)
         assert np.allclose(np.conj(W.T) @ W, np.eye(2 * l + 1))
-        Lx, Ly, Lz = utils._angular_momentum_ops(l)
+        Lx, Ly, Lz = fit_basis._angular_momentum_ops(l)
         # even operators are real in a real basis; Lx Ly + Ly Lx is one of them
         for op in (Lx @ Lx, Lz @ Lz, Lx @ Ly + Ly @ Lx, Ly @ Lz + Lz @ Ly):
             assert np.max(np.abs(np.imag(np.conj(W.T) @ op @ W))) < 1e-12
 
 
 def test_real_p_harmonics_are_px_py_pz_with_condon_shortley_phases():
-    W = utils._real_harmonics(1)
-    Lx, Ly, Lz = utils._angular_momentum_ops(1)
+    W = fit_basis._real_harmonics(1)
+    Lx, Ly, Lz = fit_basis._angular_momentum_ops(1)
     assert np.allclose(Ly @ W[:, 0], 0) and np.allclose(Lz @ W[:, 1], 0) and np.allclose(Lx @ W[:, 2], 0)
     assert np.allclose(W[:, 2], np.array([1, 0, -1]) / np.sqrt(2))
 
 
 def test_cubic_f_harmonics_diagonalise_the_cubic_field():
-    W = utils._cubic_f_harmonics()
+    W = fit_basis._cubic_f_harmonics()
     assert np.allclose(np.conj(W.T) @ W, np.eye(7))
-    Lx, Ly, Lz = utils._angular_momentum_ops(3)
+    Lx, Ly, Lz = fit_basis._angular_momentum_ops(3)
     Lp, Lm = Lx + 1j * Ly, Lx - 1j * Ly
     Lz2 = Lz @ Lz
     O40 = 35 * Lz2 @ Lz2 - (30 * 12 - 25) * Lz2 + (3 * 144 - 72) * np.eye(7)
@@ -318,8 +326,8 @@ def test_cubic_f_harmonics_diagonalise_the_cubic_field():
 
 def test_coupled_j_basis_diagonalises_spin_orbit_coupling():
     l = 1
-    W = utils._coupled_j_basis(l)
-    Lops = utils._angular_momentum_ops(l)
+    W = fit_basis._coupled_j_basis(l)
+    Lops = fit_basis._angular_momentum_ops(l)
     sig = [np.array([[0, 1], [1, 0]]), np.array([[0, 1j], [-1j, 0]]), np.diag([-1.0, 1.0])]
     LS = sum(np.kron(s / 2, Lc) for s, Lc in zip(sig, Lops))
     D = np.conj(W.T) @ LS @ W
@@ -330,7 +338,7 @@ def test_coupled_j_basis_diagonalises_spin_orbit_coupling():
 def test_real_harmonic_field_in_a_scrambled_frame_selects_the_real_shape():
     l = 2
     n = 2 * (2 * l + 1)
-    Wr = np.kron(np.eye(2), utils._real_harmonics(l))
+    Wr = np.kron(np.eye(2), fit_basis._real_harmonics(l))
     rng = np.random.default_rng(4)
     eps = rng.uniform(-0.3, 0.3, size=n)
     w = np.linspace(-1.5, 0.5, 60)
@@ -346,7 +354,9 @@ def test_real_harmonic_field_in_a_scrambled_frame_selects_the_real_shape():
     S = np.eye(n, dtype=complex)
 
     info = {}
-    _, Q = block_diagonalize_hyb(hyb, mat=H, w=w, u4=U, to_spherical=S, max_u_densify=ratio * 1.01 + 1, tol=1e-6, info=info)
+    _, Q = block_diagonalize_hyb(
+        hyb, mat=H, w=w, u4=U, to_spherical=S, max_u_densify=ratio * 1.01 + 1, tol=1e-6, info=info
+    )
     assert info["tier"] == "axis rotation" and info["shape"] == "real harmonics"
     d = rotate_matrix(H, Q)
     assert np.max(np.abs(d - np.diag(np.diag(d)))) < 1e-7
@@ -372,8 +382,10 @@ def test_axial_field_keeps_the_sparser_complex_harmonics():
     R = _random_rotation(l, 5, spin=False)
     H, hyb = rotate_matrix(H, R), rotate_Greens_function(hyb, R)
     info = {}
-    _, info_Q = block_diagonalize_hyb(hyb, mat=H, w=w, u4=U, to_spherical=np.eye(n, dtype=complex), max_u_densify=50, tol=1e-6, info=info)
-    Wr = np.kron(np.eye(2), utils._real_harmonics(l))
+    _, info_Q = block_diagonalize_hyb(
+        hyb, mat=H, w=w, u4=U, to_spherical=np.eye(n, dtype=complex), max_u_densify=50, tol=1e-6, info=info
+    )
+    Wr = np.kron(np.eye(2), fit_basis._real_harmonics(l))
     assert count_u_terms(_rotate_u4(U, Wr)) > count_u_terms(U)  # real harmonics also separate +-m, but cost more
     assert _sizes(info_Q, hyb, H, 1e-6) == [1] * n
     assert info["tier"] == "axis rotation"
@@ -399,7 +411,7 @@ def _two_plus_three_problem(weak=0.02, seed=2):
         mask[np.ix_(g, g)] = False
     B = B / np.max(np.abs(np.diag(B))) + weak * np.where(mask, cross, 0) / np.max(np.abs(cross))
     hyb_real = np.array([np.kron(np.eye(2), B) * (0.3 / (x + 1.3 + 0.1j)) for x in w])
-    Wr = np.kron(np.eye(2), utils._real_harmonics(l))
+    Wr = np.kron(np.eye(2), fit_basis._real_harmonics(l))
     H_real = np.kron(np.eye(2), np.diag([0.02, -0.01, 0.03, 0.0, 0.015])).astype(complex)
     R = _random_rotation(l, 9)
     H = rotate_matrix(Wr @ H_real @ np.conj(Wr.T), R)
@@ -427,14 +439,14 @@ def test_a_larger_budget_never_gives_a_coarser_partition():
         info = {}
         _, Q = block_diagonalize_hyb(hyb, mat=H, w=w, u4=U, to_spherical=S, max_u_densify=budget, tol=tol, info=info)
         assert info["u_terms"] <= budget * count_u_terms(U)
-        keys.append(utils._partition_key(_sizes(Q, hyb, H, tol)))
+        keys.append(fit_basis._partition_key(_sizes(Q, hyb, H, tol)))
     assert keys == sorted(keys, reverse=True)
 
 
 def test_shapes_beyond_the_budget_are_not_used():
     S, H, hyb, w = _two_plus_three_problem()
     U = _l_dot_l_u4(2)
-    Wr = np.kron(np.eye(2), utils._real_harmonics(2))
+    Wr = np.kron(np.eye(2), fit_basis._real_harmonics(2))
     assert count_u_terms(_rotate_u4(U, Wr)) > count_u_terms(U)
     info = {}
     block_diagonalize_hyb(hyb, mat=H, w=w, u4=U, to_spherical=S, max_u_densify=1.0, tol=0.05, info=info)
@@ -445,7 +457,7 @@ def test_shapes_beyond_the_budget_are_not_used():
 def test_strong_spin_orbit_selects_the_coupled_j_basis_when_affordable():
     l = 2
     n = 2 * (2 * l + 1)
-    Wj = utils._coupled_j_basis(l)
+    Wj = fit_basis._coupled_j_basis(l)
     eps = np.repeat(np.linspace(-0.3, 0.3, n // 2), 2)[:n]
     eps = eps + 0.01 * np.arange(n)
     w = np.linspace(-1.5, 0.5, 60)
@@ -487,7 +499,7 @@ def test_spin_coupling_is_judged_in_the_spherical_frame():
     """Spin-diagonal matrices, but an input basis that mixes spins (j-j): not spin coupled."""
     l = 2
     n = 2 * (2 * l + 1)
-    Wj = utils._coupled_j_basis(l)
+    Wj = fit_basis._coupled_j_basis(l)
     S = np.conj(Wj.T)  # <input|spherical>
     rng = np.random.default_rng(3)
     eps = rng.uniform(-0.3, 0.3, n)
@@ -497,8 +509,7 @@ def test_spin_coupling_is_judged_in_the_spherical_frame():
     hyb, H = S[None] @ hyb_sph @ np.conj(S.T)[None], S @ H_sph @ np.conj(S.T)
     U_sph = _l_dot_l_u4(l)
     for U in (_rotate_u4(U_sph, S), _rotate_u4(U_sph, np.conj(S.T))):
-        labels = [lab for lab, _ in utils._tier1_candidates(
-            hyb, hyb, H, U, S, 10**9, 1e-6)]
+        labels = [lab for lab, _ in fit_basis._tier1_candidates(hyb, hyb, H, U, S, 10**9, 1e-6)]
         if labels:
             break
     assert labels, "invariance probe rejected both conventions"

@@ -34,7 +34,8 @@ from rspt2spectra.block_structure import (
 from rspt2spectra.edchain import build_full_bath, build_H_bath_v, build_imp_bath_blocks
 from rspt2spectra.fit_options import DEFAULT_SYMM_PREC
 from rspt2spectra.hyb_fit import fit_hyb
-from rspt2spectra.utils import block_diagonalize_hyb, matrix_print, rotate_matrix
+from rspt2spectra.fit_basis import block_diagonalize_hyb
+from rspt2spectra.utils import matrix_print, rotate_matrix
 from rspt2spectra.weight_functions import weight_functions
 
 logger = logging.getLogger(__name__)
@@ -241,7 +242,7 @@ def prepare_hyb_fit(
 
     The hybridization function and the local Hamiltonian are jointly rotated to a basis
     that is as diagonal as possible, ``phase_hyb = Q^dagger hyb Q`` (see
-    :func:`rspt2spectra.utils.block_diagonalize_hyb`).  The block partition is the
+    :func:`rspt2spectra.fit_basis.block_diagonalize_hyb`).  The block partition is the
     connectivity of both in that basis, keeping only couplings above ``tol`` relative
     to the strongest diagonal hybridization and to the crystal-field spread of
     ``H_local``.  Weaker couplings are *neglected*: ``phase_hyb`` and ``H_local_Q``
@@ -277,7 +278,7 @@ def prepare_hyb_fit(
         Coulomb tensor in the input basis.  If given, the fitting basis is chosen so that it does
         not densify ``u4`` by more than ``max_u_densify``: a rigid (SO(3)) rotation of the shell
         when that separates the orbitals as well as a free rotation, else a free rotation within
-        the budget (see :func:`rspt2spectra.utils.block_diagonalize_hyb`).
+        the budget (see :func:`rspt2spectra.fit_basis.block_diagonalize_hyb`).
     to_spherical : np.ndarray of shape (n_orb, n_sph), optional
         Input orbitals -> complex spherical harmonics; enables the SO(3) choice for a full shell.
     max_u_densify : float, default 2.0
@@ -337,9 +338,7 @@ def _prepare_hyb_fit(hyb, H_local, tol, verbose, w, x_lim, equiv_tol, report, u4
     H_local_Q = project_to_blocks(H_local_rot, blocks)
     # The partition was decided on the fit window; the equivalences between the blocks are
     # tested on the whole mesh (particle-hole relates omega to -omega) without deciding it again.
-    block_structure = build_block_structure(
-        phase_hyb, mat=H_local_Q, tol=tol, w=w, equiv_tol=equiv_tol, blocks=blocks
-    )
+    block_structure = build_block_structure(phase_hyb, mat=H_local_Q, tol=tol, w=w, equiv_tol=equiv_tol, blocks=blocks)
     if verbose:
         print_block_structure(block_structure)
     return FitBasis(

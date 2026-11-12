@@ -4,7 +4,7 @@ import numpy as np
 
 from rspt2spectra.block_structure import get_blocks
 from rspt2spectra.h0 import prepare_hyb_fit
-from rspt2spectra.utils import block_diagonalize_hyb
+from rspt2spectra.fit_basis import block_diagonalize_hyb
 
 
 def _system(coupling):

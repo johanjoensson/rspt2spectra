@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from rspt2spectra.utils import block_diagonalize_hyb
+from rspt2spectra.fit_basis import block_diagonalize_hyb
 
 
 def test_block_diagonalize_hyb():
