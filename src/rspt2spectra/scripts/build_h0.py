@@ -1,11 +1,12 @@
 """Console script ``build_h0``; see ``build_h0 --help``.
 
 Reads RSPt output in the current directory, fits the hybridization function,
-and writes the non-interacting impurity Hamiltonian (h0) as an operator file.
+and writes the non-interacting impurity Hamiltonian (h0) as an ``.h0`` file.
 """
 
 from argparse import ArgumentParser
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Callable
 
 import numpy as np
@@ -25,9 +26,9 @@ from rspt2spectra.block_structure import (
 )
 from rspt2spectra.dat import extract_dat
 from rspt2spectra.h0 import assemble_h0, flatten_star_levels, prepare_hyb_fit
+from rspt2spectra.h0_file import write_h0_file
 from rspt2spectra.hyb_fit import fit_hyb
 from rspt2spectra.natural_orbitals import fit_hyb_natural_orbitals
-from rspt2spectra.h0_file import write_h0_file
 from rspt2spectra.readfile import (
     list_cluster_labels,
     parse_cluster_basis,
@@ -263,41 +264,29 @@ def filter_and_shift(
     return build_matrix(shifts, block_structure), filtered_ebs_star, filtered_vs_star
 
 
-def run(
-    cluster: str,
-    bath_geometry: str,
-    eim: float,
-    bath_states_per_orbital: int,
-    gamma: float,
-    fit_unocc: bool,
-    fit_imag: bool,
-    prefix: str,
-    verbose: bool,
-    plot: bool,
-    regularization: str,
-    weight_function: str,
-    weight_factor: float,
-    fit_center: float,
-    natural_orbitals: bool,
-    grid_type: str,
-    peel_weight: float = 0.05,
-    allow_broken_time_reversal: bool = False,
-    enforce_symmetry: bool = True,
-    symmetry_tol: float = DEFAULT_SYMMETRY_TOL,
-    symm_prec: float = DEFAULT_SYMM_PREC,
-    *kwargs,
-) -> None:
-    """Execute the full non-interacting Hamiltonian (h0) building workflow.
+@dataclass(frozen=True)
+class RsptCluster:
+    """What RSPt wrote for one cluster, rotated to the spherical-harmonics basis."""
 
-    Extracts hybridization and Hamiltonian data, runs fitters to obtain bath states,
-    transforms bath geometry (e.g. star to chain), builds the full bath/hopping matrices,
-    and writes the resulting Hamiltonian parameters (h0) to an ``.h0`` file.
-    """
-    comm = MPI.COMM_WORLD if MPI is not None else None
-    rank = comm.rank if comm is not None else 0
+    #: Real-frequency mesh, zero at the Fermi level.
+    w: np.ndarray
+    #: Hybridization function ``(n_w, n_orb, n_orb)`` in spherical harmonics.
+    hyb: np.ndarray
+    #: Local Hamiltonian in spherical harmonics, measured from the Fermi level.
+    H: np.ndarray
+    e_fermi: float
+    #: ``(l, basis index)`` of every shell of the cluster.
+    shells: list
+    spin_resolved: bool
+    #: Custom projector files, empty when RSPt's own basis indices were used.
+    proj_files: list
+    rotation_applied: bool
+    #: Whether the impurity block already contains spin-orbit coupling (``None``: undetermined).
+    contains_soc: object
 
-    verbose = verbose and rank == 0
 
+def read_rspt_cluster(cluster: str, prefix: str, verbose: bool) -> RsptCluster:
+    """Read RSPt's output for ``cluster`` and rotate it to spherical harmonics."""
     hyb_dat = extract_dat("hyb", cluster, prefix)
     hs = parse_matrices(out_file="out", search_phrase="Local hamiltonian", prefix=prefix)
     qs = parse_matrices(
@@ -427,6 +416,54 @@ def run(
     if verbose:
         print(f"Impurity block already contains spin-orbit coupling: {contains_soc}.")
 
+    return RsptCluster(
+        w=w,
+        hyb=hyb_sph,
+        H=H_dft_sph,
+        e_fermi=e_fermi,
+        shells=shells,
+        spin_resolved=spin_resolved,
+        proj_files=proj_files,
+        rotation_applied=rotation_applied,
+        contains_soc=contains_soc,
+    )
+
+
+@dataclass(frozen=True)
+class StarFit:
+    """The star bath fitted to a hybridization function, in the fitting basis."""
+
+    Q: np.ndarray
+    phase_hyb: np.ndarray
+    H_local_Q: np.ndarray
+    block_structure: object
+    ebs_star: list
+    vs_star: list
+    cs_star: list
+
+
+def fit_star_bath(
+    w,
+    hyb_sph,
+    H_dft_sph,
+    *,
+    eim,
+    bath_states_per_orbital,
+    gamma,
+    fit_unocc,
+    regularization,
+    weight_function,
+    weight_factor,
+    fit_center,
+    natural_orbitals,
+    grid_type,
+    enforce_symmetry,
+    symmetry_tol,
+    symm_prec,
+    verbose,
+    comm,
+) -> StarFit:
+    """Choose the fitting basis and block partition, then fit the star bath in it."""
     # The fit window: occupied states only unless --fit-unocc.  Rotation and block
     # connectivity look at the hybridization inside it, as the fit itself does.
     x_lim = (w[0], 0) if not fit_unocc else None
@@ -453,8 +490,6 @@ def run(
         )
         print()
         print_block_structure(block_structure)
-
-    H_imp = H_dft_sph
 
     if natural_orbitals:
         H_imp_blocks = [
@@ -516,6 +551,73 @@ def run(
             if len(ebs_star[i]) == 0:
                 continue
             ebs_star[i], vs_star[i] = flatten_star_levels(ebs_star[i], vs_star[i], verbose=False)
+    return StarFit(Q, phase_hyb, H_local_Q, block_structure, ebs_star, vs_star, cs_star)
+
+
+def run(
+    cluster: str,
+    bath_geometry: str,
+    eim: float,
+    bath_states_per_orbital: int,
+    gamma: float,
+    fit_unocc: bool,
+    fit_imag: bool,
+    prefix: str,
+    verbose: bool,
+    plot: bool,
+    regularization: str,
+    weight_function: str,
+    weight_factor: float,
+    fit_center: float,
+    natural_orbitals: bool,
+    grid_type: str,
+    peel_weight: float = 0.05,
+    allow_broken_time_reversal: bool = False,
+    enforce_symmetry: bool = True,
+    symmetry_tol: float = DEFAULT_SYMMETRY_TOL,
+    symm_prec: float = DEFAULT_SYMM_PREC,
+    *kwargs,
+) -> None:
+    """Execute the full non-interacting Hamiltonian (h0) building workflow.
+
+    Extracts hybridization and Hamiltonian data, runs fitters to obtain bath states,
+    transforms bath geometry (e.g. star to chain), builds the full bath/hopping matrices,
+    and writes the resulting Hamiltonian parameters (h0) to an ``.h0`` file.
+    """
+    comm = MPI.COMM_WORLD if MPI is not None else None
+    rank = comm.rank if comm is not None else 0
+
+    verbose = verbose and rank == 0
+
+    data = read_rspt_cluster(cluster, prefix, verbose)
+    w, hyb_sph, H_dft_sph = data.w, data.hyb, data.H
+    e_fermi, shells, spin_resolved = data.e_fermi, data.shells, data.spin_resolved
+    proj_files, rotation_applied, contains_soc = data.proj_files, data.rotation_applied, data.contains_soc
+    n_orb = H_dft_sph.shape[0]
+
+    star = fit_star_bath(
+        w,
+        hyb_sph,
+        H_dft_sph,
+        eim=eim,
+        bath_states_per_orbital=bath_states_per_orbital,
+        gamma=gamma,
+        fit_unocc=fit_unocc,
+        regularization=regularization,
+        weight_function=weight_function,
+        weight_factor=weight_factor,
+        fit_center=fit_center,
+        natural_orbitals=natural_orbitals,
+        grid_type=grid_type,
+        enforce_symmetry=enforce_symmetry,
+        symmetry_tol=symmetry_tol,
+        symm_prec=symm_prec,
+        verbose=verbose,
+        comm=comm,
+    )
+    Q, phase_hyb, H_local_Q, block_structure = star.Q, star.phase_hyb, star.H_local_Q, star.block_structure
+    ebs_star, vs_star, cs_star = star.ebs_star, star.vs_star, star.cs_star
+
     (
         H,
         _H_star,
@@ -529,7 +631,7 @@ def run(
         ebs_star,
         vs_star,
         cs_star,
-        H_imp,
+        H_dft_sph,
         H_local_Q,
         Q,
         block_structure,
