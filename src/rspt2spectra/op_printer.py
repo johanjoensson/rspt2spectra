@@ -3,9 +3,7 @@ Write the non-interacting impurity Hamiltonian to text files read by impurityMod
 
 :func:`write_h0_file` produces the versioned, self-describing ``.h0`` format
 (a JSON header plus ``i j re im`` terms) specified in impurityModel's
-``doc/h0_file_format.md``. :func:`write_operator_to_file` writes the legacy
-bare-integer form, which records no units, energy reference, basis or orbital
-layout and is kept only so stored workloads stay readable.
+``doc/h0_file_format.md``.
 """
 
 import json
@@ -20,43 +18,6 @@ DEFAULT_DROP_TOLERANCE = 1e-12
 
 #: Tolerance for the writer's own hermiticity check, relative to max|H|.
 HERMITICITY_RTOL = 1e-10
-
-
-def key_to_string(key):
-    """Format an operator key ``((i, "c"), (j, "a"))`` as ``"  i   j"``."""
-    (state1, _), (state2, _) = key
-    return f"{state1:3d} {state2:3d}"
-
-
-def value_to_string(value):
-    """Format a complex amplitude as ``"re im"`` with 15 decimals."""
-    return f"{value.real: .15f} {value.imag: .15f}"
-
-
-def key_value_to_string(key, value):
-    """Format one operator element as a full output line."""
-    return key_to_string(key) + " " + value_to_string(value) + "\n"
-
-
-def write_operator_to_file(operator, filename):
-    """Write a sequence of operators to ``filename``, one block per operator.
-
-    Parameters
-    ----------
-    operator : iterable of dict
-        Operators in the ``{((i, "c"), (j, "a")): amplitude}`` format.
-    filename : str
-        Output file; overwritten if it exists. Operator blocks are separated
-        by blank lines.
-    """
-    strings = []
-    for op in operator:
-        s = ""
-        for key, value in op.items():
-            s += key_value_to_string(key, value)
-        strings.append(s)
-    with open(filename, "w") as f:
-        f.write("\n".join(strings))
 
 
 def _hermitian_part(h_matrix):
@@ -118,7 +79,7 @@ def write_h0_file(
     by a shared dependency.
 
     Amplitudes are written with ``repr``, which round-trips exactly. The fixed-point
-    ``%.15f`` of :func:`write_operator_to_file` is an absolute 1e-15 grid and so is lossless
+    ``%.15f`` of the retired bare-integer writer was an absolute 1e-15 grid and so was lossless
     only for ``|x| >= 8``; on real f-shell data it wrote genuine 1e-12 elements with four
     significant digits and flushed sub-1e-16 elements to zero outright.
 

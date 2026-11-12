@@ -137,11 +137,6 @@ truth for both implementations.
 Values are written in whatever unit RSPt used (Rydberg by default) and the
 header says which, so the consumer converts.
 
-``--legacy-dict`` additionally writes the old ``<cluster>_h0_op.dict``, a bare
-list of ``i j re im`` lines with no header. It records no unit, energy
-reference, basis or orbital layout, and its fixed-point amplitudes are lossy
-below ``|x| ~ 1``; use it only for tooling not yet updated.
-
 Interacting parameters (Slater-Condon integrals, SOC) are not part of h0;
 extract them from RSPt as described below.
 

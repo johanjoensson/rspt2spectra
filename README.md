@@ -10,8 +10,7 @@ including bath orbitals. It owns the full pipeline: RSPt files → Δ(ω) analys
 partition (`block_structure`) → bath fit (`hyb_fit`, `natural_orbitals`) → bath geometry
 — star, chains, or linked double chain (`edchain`) → h0 assembly (`h0`). The resulting
 h0 can be consumed by any many-body impurity solver, e.g. the
-[impurityModel](https://github.com/johanjoensson/impurityModel) software (see `h2imp`
-for writing files in its operator format); this package does not depend on any solver.
+[impurityModel](https://github.com/johanjoensson/impurityModel) software, through the self-describing `.h0` file; this package does not depend on any solver.
 
 ## Installation
 

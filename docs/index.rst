@@ -13,8 +13,7 @@ The package owns the full pipeline::
 
 The resulting h0 can be consumed by any many-body impurity solver, e.g. the
 `impurityModel <https://github.com/johanjoensson/impurityModel>`_ software
-(see :mod:`rspt2spectra.h2imp` for writing files in its operator format);
-this package does not depend on any solver.
+through the self-describing ``.h0`` file; this package does not depend on any solver.
 
 .. toctree::
    :maxdepth: 2

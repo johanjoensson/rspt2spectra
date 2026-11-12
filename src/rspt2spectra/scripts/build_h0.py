@@ -25,7 +25,6 @@ from rspt2spectra.block_structure import (
 )
 from rspt2spectra.dat import extract_dat
 from rspt2spectra.h0 import assemble_h0, flatten_star_levels, prepare_hyb_fit
-from rspt2spectra.h2imp import matrixToIOp, write_to_file
 from rspt2spectra.hyb_fit import fit_hyb
 from rspt2spectra.natural_orbitals import fit_hyb_natural_orbitals
 from rspt2spectra.op_printer import write_h0_file
@@ -282,7 +281,6 @@ def run(
     natural_orbitals: bool,
     grid_type: str,
     peel_weight: float = 0.05,
-    legacy_dict: bool = False,
     allow_broken_time_reversal: bool = False,
     enforce_symmetry: bool = True,
     symmetry_tol: float = DEFAULT_SYMMETRY_TOL,
@@ -293,7 +291,7 @@ def run(
 
     Extracts hybridization and Hamiltonian data, runs fitters to obtain bath states,
     transforms bath geometry (e.g. star to chain), builds the full bath/hopping matrices,
-    and writes the resulting Hamiltonian parameters (h0) to a pickle file.
+    and writes the resulting Hamiltonian parameters (h0) to an ``.h0`` file.
     """
     comm = MPI.COMM_WORLD if MPI is not None else None
     rank = comm.rank if comm is not None else 0
@@ -611,9 +609,6 @@ def run(
         producer={"name": "rspt2spectra", "cluster": cluster},
     )
 
-    if legacy_dict:
-        write_to_file(matrixToIOp(H), f"{cluster}_h0_op", save_as_dict=True)
-
     if plot and rank == 0:
         try:
             # matplotlib is an optional dependency; import it only when plotting.
@@ -667,15 +662,6 @@ def main() -> None:
     parser.add_argument("-d", "--directory", type=str, default=".", dest="prefix")
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-p", "--plot", action="store_true")
-    parser.add_argument(
-        "--legacy-dict",
-        dest="legacy_dict",
-        action="store_true",
-        help=(
-            "Also write the legacy <cluster>_h0_op.dict, which records no unit, energy "
-            "reference, basis or orbital layout. Only for tooling not yet updated to .h0."
-        ),
-    )
     parser.add_argument(
         "--allow-broken-time-reversal",
         dest="allow_broken_time_reversal",

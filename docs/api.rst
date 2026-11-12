@@ -26,7 +26,6 @@ Interfaces and utilities
    :toctree: generated
    :recursive:
 
-   rspt2spectra.h2imp
    rspt2spectra.op_printer
    rspt2spectra.utils
 
