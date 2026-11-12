@@ -13,7 +13,7 @@ from rspt2spectra.block_structure import (
 from rspt2spectra.edchain import build_full_bath
 from rspt2spectra.h0 import assemble_h0
 from rspt2spectra.hyb_fit import fit_hyb, get_state_per_inequivalent_block
-from rspt2spectra.offdiagonal import (
+from rspt2spectra.bath_optimizer import (
     _c_basis,
     _varpro_cost_and_full_grad,
     _varpro_cost_and_grad,

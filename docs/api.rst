@@ -13,7 +13,7 @@ Core pipeline
    rspt2spectra.block_structure
    rspt2spectra.symmetries
    rspt2spectra.hyb_fit
-   rspt2spectra.offdiagonal
+   rspt2spectra.bath_optimizer
    rspt2spectra.natural_orbitals
    rspt2spectra.weight_functions
    rspt2spectra.edchain

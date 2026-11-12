@@ -32,7 +32,7 @@ returned as an orthonormal basis :math:`\{S_p\}` with
 Hermitian).  Restricting the residues to :math:`S` keeps the inner
 variable-projection solve linear, and because :math:`\mathrm{Tr}(S_p S_q)` is a
 real Kronecker delta the resulting normal equations decouple across ``p`` -- see
-:func:`rspt2spectra.offdiagonal.constrained_inner_solve`.
+:func:`rspt2spectra.bath_optimizer.constrained_inner_solve`.
 
 Particle-hole symmetry additionally pairs the poles.  It is handled by splitting
 :math:`S` by transpose parity, :math:`S_p^{T} = \sigma_p S_p`, since a mirror

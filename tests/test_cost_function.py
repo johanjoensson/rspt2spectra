@@ -5,7 +5,7 @@ import pytest
 from scipy.optimize import check_grad
 
 from rspt2spectra.hyb_fit import get_state_per_inequivalent_block
-from rspt2spectra.offdiagonal import (
+from rspt2spectra.bath_optimizer import (
     _eb_to_gaps,
     _gap_bounds,
     _gaps_grad,

@@ -5,7 +5,7 @@ import pytest
 
 from rspt2spectra.block_structure import build_block_structure
 from rspt2spectra.hyb_fit import fit_block, fit_hyb
-from rspt2spectra.offdiagonal import get_hyb
+from rspt2spectra.bath_optimizer import get_hyb
 from rspt2spectra.symmetries import trivial_symmetry
 
 W = np.linspace(-5, 5, 351)

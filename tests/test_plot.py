@@ -10,7 +10,7 @@ import pytest
 
 from rspt2spectra.edchain import build_H_bath_v
 from rspt2spectra.h0 import flatten_star_levels, prepare_hyb_fit
-from rspt2spectra.offdiagonal import get_hyb_2
+from rspt2spectra.bath_optimizer import get_hyb_2
 from rspt2spectra.plot import (
     _chain_panels,
     _star_panels,

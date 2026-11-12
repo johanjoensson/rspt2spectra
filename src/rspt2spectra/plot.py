@@ -28,7 +28,7 @@ import numpy as np
 
 from rspt2spectra.block_structure import build_matrix
 from rspt2spectra.edchain import build_H_bath_v
-from rspt2spectra.offdiagonal import get_hyb_2
+from rspt2spectra.bath_optimizer import get_hyb_2
 
 # Fixed categorical hue order (validated palette); color follows the orbital.
 _ORBITAL_COLORS = [

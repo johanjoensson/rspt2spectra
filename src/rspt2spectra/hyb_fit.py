@@ -5,7 +5,7 @@ Fit a discrete bath to a real-frequency hybridization function.
 the hybridization function and fits each block with `fit_block`: bath-energy
 guesses are seeded from the peaks of the hybridization spectrum, then
 optimized with the VARPRO basin-hopping search in
-:mod:`rspt2spectra.offdiagonal`. When an MPI communicator is passed, each
+:mod:`rspt2spectra.bath_optimizer`. When an MPI communicator is passed, each
 rank fits from its own seeds and the lowest-cost fit is kept.
 """
 
@@ -23,7 +23,7 @@ import numpy as np
 import scipy as sp
 from scipy.signal import find_peaks, peak_widths
 
-from .offdiagonal import (
+from .bath_optimizer import (
     _max_bath_states,
     free_window,
     get_v_and_eb_varpro_basin_hopping,
@@ -527,7 +527,7 @@ def get_state_per_inequivalent_block(
       orbitals, so this floor is one state, not n.
     * **Window cap.** No block is asked to fit more states than can reasonably
       sit inside the frequency window separated by ``delta`` (see
-      `rspt2spectra.offdiagonal.max_bath_states`); an over-large share is capped,
+      `rspt2spectra.bath_optimizer.max_bath_states`); an over-large share is capped,
       not fitted out of the window.  A particle-hole symmetric block only varies
       the positive half of its bath, so its cap is set by the half-window.
 
