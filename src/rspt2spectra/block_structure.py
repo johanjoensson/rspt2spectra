@@ -270,7 +270,7 @@ def _min_broadening(G):
     return float(np.min(np.mean(np.abs(np.imag(np.einsum("wii->wi", G))), axis=0)))
 
 
-def _mat_scale_with_hyb(mat, G):
+def mat_scale_with_hyb(mat, G):
     """Scale for the couplings of ``mat`` when it is tested together with the hybridization ``G``.
 
     The crystal-field spread of ``mat`` alone is the wrong yardstick: the ligand field lives in
@@ -311,7 +311,7 @@ def relative_couplings(G=None, mat=None, tol=1e-6):
             G = G[None]
         parts.append(_relative(np.max(np.abs(G), axis=0), _g_scale(G), tol))
         if mat is not None:
-            parts.append(_relative(mat, _mat_scale_with_hyb(mat, G), tol))
+            parts.append(_relative(mat, mat_scale_with_hyb(mat, G), tol))
     else:
         parts.append(_relative(mat, _mat_scale(mat), tol))
     c = np.maximum.reduce(parts)

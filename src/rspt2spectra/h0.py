@@ -25,7 +25,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from rspt2spectra.block_structure import (
-    _mat_scale_with_hyb,
+    mat_scale_with_hyb,
     build_block_structure,
     get_blocks,
     print_block_structure,
@@ -122,7 +122,7 @@ def _print_neglected(hyb, H, blocks, tol):
     l2_off = float(np.sqrt(np.sum(np.abs(hyb[:, mask]) ** 2)))
     l2_all = float(np.sqrt(np.sum(np.abs(hyb) ** 2)))
     h_off = float(np.max(np.abs(H[mask])))
-    h_scale = _mat_scale_with_hyb(H, hyb)
+    h_scale = mat_scale_with_hyb(H, hyb)
     print(
         f"Neglected couplings between blocks (symm_prec {tol:g}):\n"
         f"  hybridization: max {hyb_off / g_scale:.3g} of the strongest diagonal "

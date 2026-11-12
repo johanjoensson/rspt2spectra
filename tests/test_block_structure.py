@@ -3,7 +3,7 @@ import pytest
 
 from rspt2spectra.block_structure import (
     BlockStructure,
-    _mat_scale_with_hyb,
+    mat_scale_with_hyb,
     build_block_structure,
     build_greens_function,
     build_matrix,
@@ -256,7 +256,7 @@ def test_h_coupling_is_measured_against_the_hybridization_width_when_larger():
     hyb = np.zeros((len(w), 2, 2), dtype=complex)
     hyb[:, 0, 0] = hyb[:, 1, 1] = -0.05j  # width 0.05, no hybridization coupling
     H = np.array([[0.0, 0.003], [0.003, 0.01]])
-    assert _mat_scale_with_hyb(H, hyb) == pytest.approx(0.05)
+    assert mat_scale_with_hyb(H, hyb) == pytest.approx(0.05)
     # spread alone: threshold 0.1 * 0.01 = 1e-3 < 3e-3, connected
     assert get_blocks(mat=H, tol=0.1) == [[0, 1]]
     # with the width: threshold 0.1 * 0.05 = 5e-3 > 3e-3, separate
