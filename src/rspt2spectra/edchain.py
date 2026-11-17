@@ -15,6 +15,9 @@ import scipy as sp
 from rspt2spectra.block_structure import BlockStructure
 from rspt2spectra.utils import matrix_connectivity_print, matrix_print
 
+#: Level-weight fraction at which ``peeled_linked_chain`` keeps a bath energy as star spokes.
+DEFAULT_PEEL_WEIGHT = 0.2
+
 
 def build_imp_bath_blocks(H: np.ndarray, n_orb: int) -> tuple[list[int], list[int], list[int]]:
     """Build impurity and bath index lists based on the structure of Hamiltonian H.
@@ -66,7 +69,7 @@ def build_H_bath_v(
     block_structure,
     verbose,
     extra_verbose,
-    peel_weight=0.05,
+    peel_weight=DEFAULT_PEEL_WEIGHT,
 ):
     """Transform bath parameters from star to chain or Haverkort linked chain geometry.
 
@@ -89,7 +92,7 @@ def build_H_bath_v(
         Whether to print verbose output.
     extra_verbose : bool
         Whether to print extremely verbose output.
-    peel_weight : float, default 0.05
+    peel_weight : float, default 0.2
         Weight-fraction threshold for "peeled_linked_chain" (see
         :func:`peel_resonant_modes`); ignored by the other geometries.
 
@@ -137,7 +140,7 @@ def build_H_bath_v(
             b_ix = np.ix_(block_orbs, block_orbs)
             # For the linked double chains to make sense we need at least 3 bath states,
             # otherwise we might as well just use a star geometry
-            if len(ebs) <= 2:
+            if count_bath_levels(ebs) <= 2:
                 H_baths.append(np.diag(np.repeat(ebs, v.shape[1])))
                 vs.append(v.reshape(v.shape[0] * v.shape[1], v.shape[2]))
                 continue
@@ -154,7 +157,7 @@ def build_H_bath_v(
             b_ix = np.ix_(block_orbs, block_orbs)
             # Same minimum as "linked_chain": fewer than 3 bath states might as
             # well stay in star form.
-            if len(ebs) <= 2:
+            if count_bath_levels(ebs) <= 2:
                 H_baths.append(np.diag(np.repeat(ebs, v.shape[1])))
                 vs.append(v.reshape(v.shape[0] * v.shape[1], v.shape[2]))
                 continue
@@ -875,15 +878,49 @@ def linked_double_chain(H_imp, vs, es, verbose=True, extremely_verbose=False):
     return H_linked_chains[n_imp:, :n_imp], H_linked_chains[n_imp:, n_imp:]
 
 
-def peel_resonant_modes(vs, es, peel_weight):
-    """Select the star modes that carry a dominant share of the hybridization weight.
+def bath_level_index(es):
+    """Label the star modes by the bath energy (level) they sit on.
 
-    A sharp peak in the hybridization function is a small group of star modes with
-    large individual weights ``|v_k|^2``. Keeping those modes as direct impurity
-    couplings ("spokes") instead of folding them into a chain keeps the sharp
-    spectral features localized on a few bath states next to the impurity, while
-    the chain only has to represent the smooth background (which a short chain
-    resolves well).
+    A block of ``n_imp`` orbitals is fitted with ``n_imp`` modes per bath energy, so the energies come in
+    ``n_imp``-fold degenerate groups. One level and its full ``n_imp x n_imp`` hopping block are the
+    unit that a geometry decision (peel or chain) must act on; splitting a level breaks the block structure
+    the linked double chain needs.
+
+    Parameters
+    ----------
+    es : np.ndarray
+        Bath energies, shape ``(N,)``.
+
+    Returns
+    -------
+    np.ndarray of int
+        ``labels[k]`` is the level index of mode ``k``, counted in ascending energy order.
+    """
+    es = np.asarray(es, dtype=float)
+    labels = np.zeros(es.shape[0], dtype=int)
+    if es.shape[0] == 0:
+        return labels
+    order = np.argsort(es, kind="stable")
+    tol = 1e-8 * max(1.0, float(np.max(np.abs(es))))
+    level = np.concatenate(([0], np.cumsum(np.diff(es[order]) > tol)))
+    labels[order] = level
+    return labels
+
+
+def count_bath_levels(es):
+    """Number of distinct bath energies in ``es`` (see :func:`bath_level_index`)."""
+    return int(bath_level_index(es).max()) + 1 if np.size(es) else 0
+
+
+def peel_resonant_modes(vs, es, peel_weight):
+    """Select the bath levels that carry a dominant share of the hybridization weight.
+
+    A sharp peak in the hybridization function is a bath energy with a large hopping block. Keeping
+    those levels as direct impurity couplings ("spokes") instead of folding them into a chain keeps the
+    sharp spectral features localized on a few bath states next to the impurity, while the chain only
+    has to represent the smooth background (which a short chain resolves well). The unit of selection
+    is a whole bath energy: every mode on a selected energy is peeled together, so each peeled level
+    keeps its full ``n_imp x n_imp`` block, and the chain is built from complete levels.
 
     Parameters
     ----------
@@ -892,21 +929,23 @@ def peel_resonant_modes(vs, es, peel_weight):
     es : np.ndarray
         Bath energies, shape ``(N,)``.
     peel_weight : float
-        Peel mode ``k`` when ``|v_k|^2 >= peel_weight * sum_j |v_j|^2``.
+        Peel a level when ``sum_{k in level} |v_k|^2 >= peel_weight * sum_j |v_j|^2``.
 
     Returns
     -------
     mask : np.ndarray of bool
-        True for modes to keep as direct spokes.
+        True for modes to keep as direct spokes (all modes of a peeled level).
     """
     w2 = np.sum(np.abs(vs.reshape(es.shape[0], -1)) ** 2, axis=1)
     total = np.sum(w2)
     if total == 0:
         return np.zeros(es.shape[0], dtype=bool)
-    return w2 >= peel_weight * total
+    labels = bath_level_index(es)
+    level_weight = np.bincount(labels, weights=w2)
+    return level_weight[labels] >= peel_weight * total
 
 
-def peeled_linked_chain(H_imp, vs, es, peel_weight=0.05, verbose=True, extremely_verbose=False):
+def peeled_linked_chain(H_imp, vs, es, peel_weight=DEFAULT_PEEL_WEIGHT, verbose=True, extremely_verbose=False):
     """Transform the bath from star to a linked double chain with peeled resonances.
 
     The star modes selected by :func:`peel_resonant_modes` stay in star form
@@ -926,8 +965,9 @@ def peeled_linked_chain(H_imp, vs, es, peel_weight=0.05, verbose=True, extremely
         Hopping parameters.
     es : np.ndarray
         Bath energies.
-    peel_weight : float, default 0.05
-        Weight-fraction threshold passed to :func:`peel_resonant_modes`.
+    peel_weight : float, default 0.2
+        Weight-fraction threshold passed to :func:`peel_resonant_modes`. Star spokes are for large peaks and the
+        chain is for a flat-ish background; a bath with at most two levels has no background and stays a star.
     verbose : bool, default True
         Whether to print verbose output.
     extremely_verbose : bool, default False
@@ -953,9 +993,11 @@ def peeled_linked_chain(H_imp, vs, es, peel_weight=0.05, verbose=True, extremely
         return np.empty((0, n_imp), dtype=H_imp.dtype), np.empty((0, 0), dtype=H_imp.dtype)
 
     mask = peel_resonant_modes(vs, es, peel_weight)
-    # The linked double chain needs at least 3 bath states to be meaningful;
-    # a smaller remainder stays in star form alongside the spokes.
-    if np.count_nonzero(~mask) <= 2:
+    # The linked double chain needs at least 3 bath levels to be meaningful, and complete
+    # n_imp x n_imp blocks to be buildable; any other remainder stays in star form.
+    n_levels_left = count_bath_levels(es[~mask])
+    n_per_mode = vs.size // (es.shape[0] * n_imp)
+    if n_levels_left <= 2 or (np.count_nonzero(~mask) * n_per_mode) % n_imp != 0:
         mask[:] = True
 
     v_spokes = vs[mask].reshape(-1, vs.shape[-1])
@@ -965,7 +1007,8 @@ def peeled_linked_chain(H_imp, vs, es, peel_weight=0.05, verbose=True, extremely
         w2 = np.sum(np.abs(vs.reshape(es.shape[0], -1)) ** 2, axis=1)
         total = np.sum(w2)
         print(
-            f"Peeled {np.count_nonzero(mask)} of {es.shape[0]} bath modes as direct "
+            f"Peeled {np.count_nonzero(mask)} of {es.shape[0]} bath modes ({count_bath_levels(es[mask])} of "
+            f"{count_bath_levels(es)} bath energies) as direct "
             f"spokes (weight threshold {peel_weight:.3g} of the block total):"
         )
         for e_k, w_k in zip(es[mask], w2[mask]):

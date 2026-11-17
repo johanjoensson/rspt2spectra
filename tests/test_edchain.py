@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 
 from rspt2spectra import edchain
@@ -346,3 +347,86 @@ def test_few_bath_states_stay_a_star_for_a_two_orbital_block():
         )
         assert H_baths[0].shape == (2, 2)
         assert vs[0].shape == (2, 2)
+
+
+def _hybridization(v, h_bath, z):
+    """Delta(z) = v^dagger (z - h_bath)^-1 v for hoppings ``v`` of shape (n_bath, n_imp)."""
+    return np.array([np.conj(v.T) @ np.linalg.solve(zi * np.eye(h_bath.shape[0]) - h_bath, v) for zi in z])
+
+
+def _degenerate_star(n_imp, level_weights, seed):
+    rng = np.random.default_rng(seed)
+    n_levels = len(level_weights)
+    es = np.repeat(np.linspace(-2.0, 2.0, n_levels) + 0.013 * np.arange(n_levels) ** 2, n_imp)
+    vs = np.empty((n_levels * n_imp, 1, n_imp), dtype=complex)
+    for lev, w in enumerate(level_weights):
+        block = rng.normal(size=(n_imp, n_imp)) + 1j * rng.normal(size=(n_imp, n_imp))
+        vs[lev * n_imp : (lev + 1) * n_imp, 0, :] = w * block / np.linalg.norm(block)
+    return vs, es
+
+
+@pytest.mark.parametrize("n_imp", [1, 3, 5])
+@pytest.mark.parametrize("level_weights", [(1.0,), (1.0, 1.0), (1.0, 0.1, 1.0), (1.0, 0.3, 0.3, 0.2, 1.0), (0.5,) * 4])
+@pytest.mark.parametrize("peel_weight", [0.0, 0.03, 0.06, 0.1, 0.2, 0.4, 2.0])
+@pytest.mark.parametrize("seed", [7, 8, 9])
+def test_peeled_linked_chain_keeps_the_hybridization_for_any_peeled_level_subset(
+    n_imp, level_weights, peel_weight, seed
+):
+    # Whatever subset of bath energies is peeled, the bath must stay a unitary image of the star bath.
+    vs, es = _degenerate_star(n_imp, level_weights, seed=seed)
+    rng = np.random.default_rng(3)
+    h = rng.normal(size=(n_imp, n_imp)) + 1j * rng.normal(size=(n_imp, n_imp))
+    H_imp = (h + np.conj(h.T)) / 2
+    v, hb = edchain.peeled_linked_chain(H_imp, vs, es, peel_weight=peel_weight, verbose=False)
+    assert v.shape == (es.shape[0], n_imp)
+    assert hb.shape == (es.shape[0], es.shape[0])
+    z = np.linspace(-3.0, 3.0, 7) + 0.05j
+    star = _hybridization(vs.reshape(-1, n_imp), np.diag(es), z)
+    assert np.allclose(_hybridization(v, hb, z), star, atol=1e-10)
+
+
+@pytest.mark.parametrize("n_imp", [3, 5])
+def test_a_peeled_energy_leaves_the_chain_a_whole_number_of_blocks(n_imp):
+    # Three levels, the middle one dominant: it is peeled as a full n_imp x n_imp block (never a
+    # fraction of one), and what is left is a chain of complete blocks.
+    vs, es = _degenerate_star(n_imp, (0.3, 1.0, 0.3, 0.3), seed=11)
+    mask = edchain.peel_resonant_modes(vs, es, peel_weight=0.4)
+    assert mask.reshape(4, n_imp).all(axis=1).tolist() == [False, True, False, False]
+    assert mask.reshape(4, n_imp).any(axis=1).tolist() == [False, True, False, False]
+    assert np.count_nonzero(~mask) % n_imp == 0
+
+
+def test_a_dropped_mode_falls_back_to_a_star_instead_of_raising():
+    # hyb_fit may drop a mode: a level with fewer than n_imp modes leaves a remainder that is not a
+    # whole number of blocks, which the linked chain cannot be built from.
+    n_imp = 5
+    vs, es = _degenerate_star(n_imp, (0.3, 1.0, 0.3, 0.3), seed=5)
+    vs, es = np.delete(vs, 0, axis=0), np.delete(es, 0)
+    H_imp = np.zeros((n_imp, n_imp), dtype=complex)
+    z = np.linspace(-3.0, 3.0, 5) + 0.05j
+    for peel_weight in (0.05, 0.2, 0.4):
+        v, hb = edchain.peeled_linked_chain(H_imp, vs, es, peel_weight=peel_weight, verbose=False)
+        star = _hybridization(vs.reshape(-1, n_imp), np.diag(es), z)
+        assert np.allclose(_hybridization(v, hb, z), star, atol=1e-10)
+
+
+def test_two_levels_stay_a_star_for_a_five_orbital_block():
+    # 2 levels x 5 orbitals = 10 modes. Counting modes (not levels) sent this to the chain.
+    vs, es = _degenerate_star(5, (1.0, 1.0), seed=1)
+    H_baths, v = edchain.build_H_bath_v(
+        np.zeros((5, 5), dtype=complex),
+        [es],
+        [vs],
+        "linked_chain",
+        BlockStructure(
+            blocks=[[0, 1, 2, 3, 4]],
+            identical_blocks=[],
+            transposed_blocks=[],
+            particle_hole_blocks=[],
+            particle_hole_transposed_blocks=[],
+            inequivalent_blocks=[0],
+        ),
+        verbose=False,
+        extra_verbose=False,
+    )
+    assert np.allclose(H_baths[0], np.diag(es))

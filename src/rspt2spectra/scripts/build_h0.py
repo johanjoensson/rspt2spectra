@@ -573,7 +573,7 @@ def run(
     fit_center: float,
     natural_orbitals: bool,
     grid_type: str,
-    peel_weight: float = 0.05,
+    peel_weight: float = 0.2,
     allow_broken_time_reversal: bool = False,
     enforce_symmetry: bool = True,
     symmetry_tol: float = DEFAULT_SYMMETRY_TOL,
@@ -752,9 +752,9 @@ def main() -> None:
     parser.add_argument(
         "--peel-weight",
         type=float,
-        default=0.05,
+        default=0.2,
         help=(
-            "For --bath-geometry peeled_linked_chain: keep star modes carrying at "
+            "For --bath-geometry peeled_linked_chain: keep bath energies (whole n_imp x n_imp blocks) carrying at "
             "least this fraction of the block's total hybridization weight as "
             "direct impurity couplings; only the remainder is chained."
         ),
