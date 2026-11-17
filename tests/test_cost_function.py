@@ -4,7 +4,6 @@ import numpy as np
 import pytest
 from scipy.optimize import check_grad
 
-from rspt2spectra.hyb_fit import get_state_per_inequivalent_block
 from rspt2spectra.bath_optimizer import (
     _eb_to_gaps,
     _gap_bounds,
@@ -30,6 +29,7 @@ from rspt2spectra.bath_optimizer import (
     vectorized_cost_function,
     vectorized_jacobian,
 )
+from rspt2spectra.hyb_fit import get_state_per_inequivalent_block
 from rspt2spectra.symmetries import trivial_symmetry
 
 eb = np.array([-1, 0, 1], dtype=float)
@@ -95,10 +95,7 @@ def test_cost_function_no_regularization():
 
     exact = (
         1 / np.prod(diff.shape) * np.sum(0.5 * np.abs(diff) ** 2)
-        + 1
-        / np.prod(moment_diff.shape[-2:])
-        * np.sum(0.5 * np.abs(moment_diff) ** 2)
-        / moment_diff.shape[0]
+        + 1 / np.prod(moment_diff.shape[-2:]) * np.sum(0.5 * np.abs(moment_diff) ** 2) / moment_diff.shape[0]
     )
     assert np.allclose(c, exact)
 
@@ -109,9 +106,7 @@ def test_moment_weights():
     W_mn = moment_weights(w, max_moment)
 
     assert W_mn.shape == (len(w), max_moment)
-    assert (
-        np.max(np.abs(w / w_scale)) <= 1.0 + 1e-12
-    )  # normalised freq stays in [-1, 1]
+    assert np.max(np.abs(w / w_scale)) <= 1.0 + 1e-12  # normalised freq stays in [-1, 1]
 
     expected = np.pow(w[:, None] / w_scale, np.arange(max_moment)[None, :]) / len(w)
     assert np.allclose(W_mn, expected)
@@ -210,9 +205,9 @@ def test_cost_function_with_C():
     C_reconstructed = unroll_C(p_C, n_imp)
     diff = calc_diff(eb[None], vs[None], z, hyb, C=C_reconstructed)[0]
     moment_diff = calc_moment_diff(diff[None], W_mn)[0]
-    expected = np.sum(0.5 * np.abs(diff) ** 2) / diff.size + np.sum(
-        0.5 * np.abs(moment_diff) ** 2
-    ) / (n_imp * n_imp * moment_diff.shape[0])
+    expected = np.sum(0.5 * np.abs(diff) ** 2) / diff.size + np.sum(0.5 * np.abs(moment_diff) ** 2) / (
+        n_imp * n_imp * moment_diff.shape[0]
+    )
     assert np.allclose(c_with_C, expected)
 
 
@@ -356,15 +351,9 @@ def test_regularization_on_hoppings_only():
     weight_array = np.ones_like(w)
     W_mn = moment_weights(w, 4)
 
-    c_none = vectorized_cost_function(
-        p, n_b, z, hyb, 0.0, regularization="none", weight_array=weight_array, W_mn=W_mn
-    )
-    c_l1 = vectorized_cost_function(
-        p, n_b, z, hyb, gamma, regularization="l1", weight_array=weight_array, W_mn=W_mn
-    )
-    c_l2 = vectorized_cost_function(
-        p, n_b, z, hyb, gamma, regularization="l2", weight_array=weight_array, W_mn=W_mn
-    )
+    c_none = vectorized_cost_function(p, n_b, z, hyb, 0.0, regularization="none", weight_array=weight_array, W_mn=W_mn)
+    c_l1 = vectorized_cost_function(p, n_b, z, hyb, gamma, regularization="l1", weight_array=weight_array, W_mn=W_mn)
+    c_l2 = vectorized_cost_function(p, n_b, z, hyb, gamma, regularization="l2", weight_array=weight_array, W_mn=W_mn)
 
     v_params = p[n_b:]
     n_v = len(v_params)
@@ -372,18 +361,10 @@ def test_regularization_on_hoppings_only():
     assert np.isclose(c_l2, c_none + (gamma / n_v) * np.sum(v_params**2))
 
     # Gradient: bath-energy rows must be identical with and without regularization.
-    g_none = vectorized_jacobian(
-        p, n_b, z, hyb, 0.0, regularization="none", weight_array=weight_array, W_mn=W_mn
-    )
-    g_l1 = vectorized_jacobian(
-        p, n_b, z, hyb, gamma, regularization="l1", weight_array=weight_array, W_mn=W_mn
-    )
-    assert np.allclose(
-        g_l1[:n_b], g_none[:n_b]
-    ), "regularization must not affect eb gradient"
-    assert not np.allclose(
-        g_l1[n_b:], g_none[n_b:]
-    ), "regularization must change hopping gradient"
+    g_none = vectorized_jacobian(p, n_b, z, hyb, 0.0, regularization="none", weight_array=weight_array, W_mn=W_mn)
+    g_l1 = vectorized_jacobian(p, n_b, z, hyb, gamma, regularization="l1", weight_array=weight_array, W_mn=W_mn)
+    assert np.allclose(g_l1[:n_b], g_none[:n_b]), "regularization must not affect eb gradient"
+    assert not np.allclose(g_l1[n_b:], g_none[n_b:]), "regularization must change hopping gradient"
 
 
 def test_jacobian_complex():
@@ -470,7 +451,7 @@ def test_fit_enforces_min_separation_no_merge():
     rng = np.random.default_rng(0)
     wgrid = np.linspace(-5, 5, 301)
     d = 0.1
-    z = wgrid + 1j * (d * (1 + 0.5 * np.abs(wgrid) ** 2))
+    z = wgrid + 1j * d
     true_eb = np.array([-2.3, -0.4, 1.1, 2.6])
     true_v = np.array([0.6, 0.9, 0.5, 0.7]).reshape(-1, 1)
     hyb_syn = get_hyb(z, true_eb, true_v)
@@ -548,9 +529,7 @@ def test_state_distribution_coverage_and_cap():
     assert np.all(states <= n_max)  # window cap
     # A zero-weight block gets zero states (nothing to fit).
     hyb0 = _diag_hyb(w, [1.0, 0.0, 0.0, 0.0])
-    states0 = get_state_per_inequivalent_block(
-        bs, 8, hyb0, w, np.ones_like, delta=delta
-    )
+    states0 = get_state_per_inequivalent_block(bs, 8, hyb0, w, np.ones_like, delta=delta)
     assert states0[1] == 0
 
     # The count is capped by the window: a narrow window cannot host the share,
@@ -573,9 +552,7 @@ def test_max_bath_states_counts_what_fits():
     # n states fit when (n-1)*delta <= width, i.e. n <= width/delta + 1.
     assert _max_bath_states(-1.0, 1.0, 0.2) == 11  # 2.0/0.2 + 1
     assert _max_bath_states(-1.0, 1.0, 0.3) == 7  # floor(6.66) + 1
-    assert (
-        _max_bath_states(0.0, 0.05, 0.2) == 1
-    )  # window narrower than delta -> at least 1
+    assert _max_bath_states(0.0, 0.05, 0.2) == 1  # window narrower than delta -> at least 1
 
 
 def test_fit_caps_states_to_window_without_failing():
@@ -585,7 +562,7 @@ def test_fit_caps_states_to_window_without_failing():
     w_min, w_max, d = -1.0, 1.0, 0.2
     n_max = _max_bath_states(w_min, w_max, d)  # 11
     wgrid = np.linspace(w_min, w_max, 200)
-    z = wgrid + 1j * (d * (1 + 0.5 * np.abs(wgrid) ** 2))
+    z = wgrid + 1j * d
     true_eb = np.array([-0.4, 0.3, 0.7])
     true_v = rng.normal(size=(3, 1, 1))
     hyb_syn = get_hyb_2(z, true_eb[None], true_v[None])[0]
@@ -639,7 +616,7 @@ def test_fit_keeps_states_inside_window(optimizer):
     rng = np.random.default_rng(1)
     w_min, w_max, d = -1.0, 1.0, 0.2
     wgrid = np.linspace(w_min, w_max, 250)
-    z = wgrid + 1j * (d * (1 + 0.5 * np.abs(wgrid) ** 2))
+    z = wgrid + 1j * d
     true_eb = np.array([0.5, 0.7, 0.85])  # near the upper edge
     true_v = rng.normal(size=(3, 1, 1))
     hyb_syn = get_hyb_2(z, true_eb[None], true_v[None])[0]
@@ -669,7 +646,7 @@ def _synthetic_varpro_problem(n_imp, seed, complex_v=False):
     rng = np.random.default_rng(seed)
     wgrid = np.linspace(-5, 5, 351)
     d = 0.1
-    z = wgrid + 1j * (d * (1 + 0.5 * np.abs(wgrid) ** 2))
+    z = wgrid + 1j * d
     true_eb = np.sort(rng.uniform(-3, 3, size=4))
     Vt = rng.normal(size=(4, n_imp, n_imp))
     if complex_v:
@@ -685,37 +662,23 @@ def test_varpro_full_gradient_matches_finite_difference():
     # gradient of the reduced cost, and must beat the Kaufman approximation.
     for n_imp in (1, 2, 3):
         for complex_v in (False, True):
-            z, hyb_syn, wa, W_mn = _synthetic_varpro_problem(
-                n_imp, 10 * n_imp + int(complex_v), complex_v=complex_v
-            )
+            z, hyb_syn, wa, W_mn = _synthetic_varpro_problem(n_imp, 10 * n_imp + int(complex_v), complex_v=complex_v)
             sym = trivial_symmetry(n_imp)
             rng = np.random.default_rng(7)
-            eb = np.sort(
-                rng.uniform(-2.5, 2.5, size=4)
-            )  # positive residues -> smooth region
+            eb = np.sort(rng.uniform(-2.5, 2.5, size=4))  # positive residues -> smooth region
 
             def cost(e, z=z, hyb_syn=hyb_syn, wa=wa, W_mn=W_mn, sym=sym):
                 return _varpro_cost_and_full_grad(e, z, hyb_syn, wa, W_mn, sym)[0]
 
-            c_full, g_full, _, _ = _varpro_cost_and_full_grad(
-                eb, z, hyb_syn, wa, W_mn, sym
-            )
+            c_full, g_full, _, _ = _varpro_cost_and_full_grad(eb, z, hyb_syn, wa, W_mn, sym)
             c_kauf, _, _, _ = _varpro_cost_and_grad(eb, z, hyb_syn, wa, W_mn, sym)
 
             h = 1e-6
-            g_num = np.array(
-                [
-                    (cost(eb + h * np.eye(4)[i]) - cost(eb - h * np.eye(4)[i]))
-                    / (2 * h)
-                    for i in range(4)
-                ]
-            )
+            g_num = np.array([(cost(eb + h * np.eye(4)[i]) - cost(eb - h * np.eye(4)[i])) / (2 * h) for i in range(4)])
             # Cost is identical to the Kaufman routine (same forward model).
             assert np.isclose(c_full, c_kauf, rtol=0, atol=1e-9)
             rel = np.max(np.abs(g_full - g_num)) / (np.linalg.norm(g_num) + 1e-30)
-            assert (
-                rel < 1e-5
-            ), f"n_imp={n_imp} complex={complex_v}: full-grad rel err {rel:.2e}"
+            assert rel < 1e-5, f"n_imp={n_imp} complex={complex_v}: full-grad rel err {rel:.2e}"
 
 
 def test_basin_hopping_is_reproducible_with_an_rng():
@@ -725,7 +688,7 @@ def test_basin_hopping_is_reproducible_with_an_rng():
     rng = np.random.default_rng(0)
     wgrid = np.linspace(-5, 5, 301)
     d = 0.1
-    z = wgrid + 1j * (d * (1 + 0.5 * np.abs(wgrid) ** 2))
+    z = wgrid + 1j * d
     true_eb = np.array([-2.3, -0.4, 1.1, 2.6])
     true_v = np.array([0.6, 0.9, 0.5, 0.7]).reshape(-1, 1)
     hyb_syn = get_hyb(z, true_eb, true_v)
@@ -755,7 +718,7 @@ def test_freeze_bath_energies_solves_only_hoppings():
     # window) and solves the hoppings by least squares.
     wgrid = np.linspace(-5, 5, 401)
     d = 0.1
-    z = wgrid + 1j * (d * (1 + 0.5 * np.abs(wgrid) ** 2))
+    z = wgrid + 1j * d
     true_eb = np.array([-2.3, -0.4, 1.1, 2.6])
     true_v = np.array([0.6, 0.9, 0.5, 0.7]).reshape(-1, 1)
     hyb_syn = get_hyb(z, true_eb, true_v)

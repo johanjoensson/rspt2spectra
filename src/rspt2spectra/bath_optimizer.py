@@ -1023,13 +1023,8 @@ def _varpro_cost_and_full_grad(eb_free, z, hyb, weight_array, W_mn, sym):
 
 
 def _varpro_setup(w, delta, weight_function, max_moment):
-    """Build the broadened mesh, fit weights and moment weights shared by the VARPRO fitters.
-
-    The broadening grows with ``|w|`` to focus the fit near the Fermi energy.
-    """
-    delta_arr = delta * (1 + 0.5 * np.abs(w) ** 2)
-    z = w + 1j * delta_arr
-    return z, weight_function(w), moment_weights(w, max_moment)
+    """Build the broadened mesh, fit weights and moment weights shared by the VARPRO fitters."""
+    return w + 1j * delta, weight_function(w), moment_weights(w, max_moment)
 
 
 def _gap_cost_and_grad(grad_fun, z, hyb, weight_array, W_mn, sym):
