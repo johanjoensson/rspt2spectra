@@ -3,8 +3,8 @@
 import numpy as np
 
 from rspt2spectra.block_structure import get_blocks
-from rspt2spectra.h0 import prepare_hyb_fit
 from rspt2spectra.fit_basis import block_diagonalize_hyb
+from rspt2spectra.h0 import prepare_hyb_fit, split_margin
 
 
 def _system(coupling):
@@ -92,8 +92,6 @@ def test_joint_diagonalization_labels_survive_roundoff_ties():
 
 def test_split_margin_brackets_the_coupling():
     """A single H coupling of relative size c splits for tol > c and merges below it."""
-    from rspt2spectra.h0 import split_margin
-
     n = 4
     H = np.diag([0.0, 0.0, 1.0, 1.0]).astype(complex)
     H[0, 2] = H[2, 0] = 0.02

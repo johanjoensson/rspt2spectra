@@ -164,9 +164,7 @@ def build_block_structure(G, mat=None, tol=1e-6, w=None, equiv_tol=None, blocks=
     identical_blocks = get_identical_blocks(blocks, G, mat, tol=equiv_tol)
     transposed_blocks = get_transposed_blocks(blocks, G, mat, tol=equiv_tol)
     particle_hole_blocks = get_particle_hole_blocks(blocks, G, mat, tol=equiv_tol, w=w)
-    particle_hole_and_transposed_blocks = get_particle_hole_and_transpose_blocks(
-        blocks, G, mat, tol=equiv_tol, w=w
-    )
+    particle_hole_and_transposed_blocks = get_particle_hole_and_transpose_blocks(blocks, G, mat, tol=equiv_tol, w=w)
     inequivalent_blocks = get_inequivalent_blocks(
         identical_blocks,
         transposed_blocks,

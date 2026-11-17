@@ -3,13 +3,13 @@ import pytest
 
 from rspt2spectra.block_structure import (
     BlockStructure,
-    mat_scale_with_hyb,
     build_block_structure,
     build_greens_function,
     build_matrix,
     get_blocks,
     get_equivalent_blocks,
     get_equivalent_orbs,
+    mat_scale_with_hyb,
     print_block_structure,
     project_to_blocks,
 )

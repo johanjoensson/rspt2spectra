@@ -252,7 +252,7 @@ U_TERM_TOL = 1e-10
 
 
 def count_u_terms(u4, tol=U_TERM_TOL):
-    """Number of non-negligible elements of the Coulomb tensor: what the solver pays for per H application."""
+    """Count the non-negligible elements of the Coulomb tensor: what the solver pays for per H application."""
     return int(np.count_nonzero(np.abs(u4) > tol))
 
 

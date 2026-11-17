@@ -26,9 +26,9 @@ from collections import namedtuple
 
 import numpy as np
 
+from rspt2spectra.bath_optimizer import get_hyb_2
 from rspt2spectra.block_structure import build_matrix
 from rspt2spectra.edchain import build_H_bath_v
-from rspt2spectra.bath_optimizer import get_hyb_2
 
 # Fixed categorical hue order (validated palette); color follows the orbital.
 _ORBITAL_COLORS = [
@@ -310,7 +310,7 @@ def plot_hyb_fit(
     H_local_Q,
     block_structure,
     bath_geometry,
-    peel_weight=0.05,
+    peel_weight=0.2,
 ):
     """Plot the hybridization fit and per-bath-state contributions per block.
 
@@ -333,7 +333,7 @@ def plot_hyb_fit(
         Geometry the bath states are shown in; anything outside
         ``{"chain", "single_chain", "linked_chain", "peeled_linked_chain"}``
         is treated as star.
-    peel_weight : float, default 0.05
+    peel_weight : float, default 0.2
         Passed through to the peeled linked chain construction.
 
     Returns

@@ -58,7 +58,7 @@ BLOCK_EQUIVALENCE_TOL = 1e-6
 #: Identifies how the fitting basis and the block partition are decided.  Anything stored that
 #: depends on them (a reusable bath fit) must be keyed on it: a changed rotation changes the basis
 #: even where the partition does not change.
-BLOCKING_VERSION = "joint-jacobi-v3;h-weight=0.1;h-scale=max(spread,min-broadening);u-aware-shapes-partition-v2"
+BLOCKING_VERSION = "joint-jacobi-v3;h-weight=0.1;h-scale=max(spread,min-broadening);u-aware-zyz-blockiness-v4"
 
 
 def _partition(hyb, H, tol):
@@ -66,7 +66,7 @@ def _partition(hyb, H, tol):
 
 
 def split_margin(hyb, H, tol, limit=1e3, bisections=24):
-    """The range ``(lo, hi)`` of ``symm_prec`` over which the partition at ``tol`` does not change.
+    """Return the range ``(lo, hi)`` of ``symm_prec`` over which the partition at ``tol`` does not change.
 
     ``lo`` is ``None`` when lowering the threshold never changes it (below the absolute coupling
     floor the threshold stops falling); ``hi`` is ``None`` when raising it up to ``limit`` never
@@ -146,7 +146,7 @@ def fit_window(w, hyb, valence_bath_only):
     return (w_min, min(0, w_max) if valence_bath_only else w_max)
 
 
-def fit_fingerprint(hyb, H_local, u4, to_spherical, symm_prec, u_densify, x_lim):
+def fit_fingerprint(hyb, H_local, u4, to_spherical, symm_prec, u_densify, x_lim, custom_shapes=None):
     """Return a hex digest of what the fit is made from.
 
     A caller that stores fits compares it to decide whether a stored fit can be reused (identical
@@ -154,12 +154,18 @@ def fit_fingerprint(hyb, H_local, u4, to_spherical, symm_prec, u_densify, x_lim)
     the rotation, so the decision does not depend on BLAS details.
     """
     u_aware = u4 is not None and np.isfinite(u_densify)
+    shapes_bytes = b""
+    if u_aware and custom_shapes:
+        shapes_bytes = b"".join(
+            str(item[0]).encode() + np.ascontiguousarray(item[1]).tobytes() for item in custom_shapes
+        )
     return hashlib.sha256(
         np.ascontiguousarray(hyb).tobytes()
         + np.ascontiguousarray(H_local).tobytes()
         # the Coulomb tensor and shell rotation steer the basis choice, but only when the choice looks at them
         + (np.ascontiguousarray(u4).tobytes() + repr(float(u_densify)).encode() if u_aware else b"")
         + (np.ascontiguousarray(to_spherical).tobytes() if u_aware and to_spherical is not None else b"")
+        + shapes_bytes
         + repr(
             (
                 float(symm_prec),
@@ -263,6 +269,7 @@ def prepare_hyb_fit(
     to_spherical=None,
     max_u_densify=2.0,
     comm=None,
+    custom_shapes=None,
 ):
     """Prepare the fitting basis and block partition for a hybridization fit.
 
@@ -312,6 +319,8 @@ def prepare_hyb_fit(
     comm : mpi4py communicator, optional
         Rank 0 decides the basis and the partition and the other ranks receive them (see
         :func:`_decide_on_root`).
+    custom_shapes : sequence of tuple, optional
+        Additional localized orbital representations ``(label, W[, tied])`` to test in the SO(3) tier.
 
     Returns
     -------
@@ -321,11 +330,26 @@ def prepare_hyb_fit(
         equivalence information ``block_structure`` on the combined connectivity, and whether
         ``tol`` neglected anything.
     """
-    args = (hyb, H_local, tol, verbose, w, x_lim, equiv_tol, report, u4, to_spherical, max_u_densify)
+    args = (
+        hyb,
+        H_local,
+        tol,
+        verbose,
+        w,
+        x_lim,
+        equiv_tol,
+        report,
+        u4,
+        to_spherical,
+        max_u_densify,
+        custom_shapes,
+    )
     return _decide_on_root(comm, lambda: _prepare_hyb_fit(*args))
 
 
-def _prepare_hyb_fit(hyb, H_local, tol, verbose, w, x_lim, equiv_tol, report, u4, to_spherical, max_u_densify):
+def _prepare_hyb_fit(
+    hyb, H_local, tol, verbose, w, x_lim, equiv_tol, report, u4, to_spherical, max_u_densify, custom_shapes=None
+):
     if equiv_tol is None:
         equiv_tol = BLOCK_EQUIVALENCE_TOL
     basis_info = {}
@@ -339,13 +363,27 @@ def _prepare_hyb_fit(hyb, H_local, tol, verbose, w, x_lim, equiv_tol, report, u4
         max_u_densify=max_u_densify,
         tol=tol,
         info=basis_info,
+        custom_shapes=custom_shapes,
     )
     if verbose and basis_info:
         n_in, n_out = basis_info["u_terms_input"], basis_info["u_terms"]
+        extras = []
+        if "off_diag_ratio" in basis_info:
+            extras.append(f"off-diag weight x{basis_info['off_diag_ratio']:.2f}")
+        if basis_info.get("euler_angles") is not None:
+            ang = ", ".join(f"{a:.3f}" for a in basis_info["euler_angles"])
+            extras.append(f"Euler angles ({ang}) rad")
+        extra_txt = ("; " + "; ".join(extras)) if extras else ""
         print(
-            f"Fitting basis: {basis_info['tier']}{', ' + basis_info['shape'] if basis_info.get('shape') else ''}; Coulomb tensor terms {n_in} -> {n_out} "
-            f"(x{n_out / max(n_in, 1):.2f}, allowed x{max_u_densify:g})."
+            f"Fitting basis: {basis_info['tier']}{', ' + basis_info['shape'] if basis_info.get('shape') else ''}; "
+            f"Coulomb tensor terms {n_in} -> {n_out} "
+            f"(x{n_out / max(n_in, 1):.2f}, allowed x{max_u_densify:g}){extra_txt}."
         )
+        for label, terms, largest, n_blocks in basis_info.get("finer_beyond_budget", ()):
+            print(
+                f"  Beyond the Coulomb budget: {label} would give {n_blocks} blocks (largest {largest}) "
+                f"at x{terms / max(n_in, 1):.2f} Coulomb terms (u_densify)."
+            )
     H_local_rot = rotate_matrix(H_local, Q)
     window = slice(None)
     if x_lim is not None:
@@ -374,7 +412,7 @@ def _prepare_hyb_fit(hyb, H_local, tol, verbose, w, x_lim, equiv_tol, report, u4
         block_structure=block_structure,
         x_lim=x_lim,
         neglected_couplings=neglected,
-        fingerprint=fit_fingerprint(hyb, H_local, u4, to_spherical, tol, max_u_densify, x_lim),
+        fingerprint=fit_fingerprint(hyb, H_local, u4, to_spherical, tol, max_u_densify, x_lim, custom_shapes),
     )
 
 
@@ -559,7 +597,7 @@ def assemble_h0(
     verbose=True,
     extra_verbose=False,
     comm=None,
-    peel_weight=0.05,
+    peel_weight=0.2,
 ):
     """Assemble the full one-particle Hamiltonian from a star bath fit.
 
@@ -610,7 +648,7 @@ def assemble_h0(
         Diagnostic printing.
     comm : MPI communicator, optional
         If given, the bath Hamiltonian and couplings are broadcast from rank 0.
-    peel_weight : float, default 0.05
+    peel_weight : float, default 0.2
         Weight-fraction threshold for ``bath_geometry == "peeled_linked_chain"``
         (see :func:`rspt2spectra.edchain.peel_resonant_modes`); ignored by the
         other geometries.

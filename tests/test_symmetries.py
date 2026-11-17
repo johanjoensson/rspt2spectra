@@ -5,14 +5,6 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from rspt2spectra.block_structure import (
-    BlockStructure,
-    build_block_structure,
-    build_greens_function,
-)
-from rspt2spectra.edchain import build_full_bath
-from rspt2spectra.h0 import assemble_h0
-from rspt2spectra.hyb_fit import fit_hyb, get_state_per_inequivalent_block
 from rspt2spectra.bath_optimizer import (
     _c_basis,
     _varpro_cost_and_full_grad,
@@ -24,6 +16,14 @@ from rspt2spectra.bath_optimizer import (
     max_bath_states,
     moment_weights,
 )
+from rspt2spectra.block_structure import (
+    BlockStructure,
+    build_block_structure,
+    build_greens_function,
+)
+from rspt2spectra.edchain import build_full_bath
+from rspt2spectra.h0 import assemble_h0
+from rspt2spectra.hyb_fit import fit_hyb, get_state_per_inequivalent_block
 from rspt2spectra.symmetries import (
     BlockSymmetry,
     detect_block_symmetry,
@@ -37,7 +37,7 @@ from rspt2spectra.symmetries import (
 
 W = np.linspace(-5, 5, 351)
 DELTA = 0.1
-Z = W + 1j * (DELTA * (1 + 0.5 * np.abs(W) ** 2))
+Z = W + 1j * DELTA
 
 
 def _model(eb, A, z=Z):
@@ -579,8 +579,9 @@ def test_the_unpaired_pole_keeps_a_symmetric_residue_through_the_polish():
     # The joint SLSQP polish parametrizes a free V, so the restriction has to be
     # imposed there too; with an asymmetric window and weight the polish will
     # otherwise use the antisymmetric direction it is left.
-    w = np.linspace(-4, 2.5, 400)
-    z = w + 1j * (DELTA * (1 + 0.5 * np.abs(w) ** 2))
+    # an asymmetric window on a lattice through zero, so G(-w) is on the mesh and needs no interpolation
+    w = 0.0125 * np.arange(-320, 201)
+    z = w + 1j * DELTA
     rng = np.random.default_rng(5)
     half = np.sort(rng.uniform(0.6, 3.0, 4))
     A_pos = _psd(rng.normal(size=(4, 2, 2)) + 1j * rng.normal(size=(4, 2, 2)))

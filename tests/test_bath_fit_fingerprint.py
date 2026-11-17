@@ -13,7 +13,8 @@ W = np.linspace(-2, 2, 21)
 BASIS = SimpleNamespace(fingerprint="abc")
 
 
-def _key(w=W, eim=0.1, n_baths=3, options=FitOptions(), basis=BASIS):
+def _key(w=W, eim=0.1, n_baths=3, options=None, basis=BASIS):
+    options = FitOptions() if options is None else options
     return bath_fit_fingerprint(basis, w, eim, n_baths, options)
 
 

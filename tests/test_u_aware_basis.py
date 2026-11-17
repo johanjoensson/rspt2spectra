@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from scipy.linalg import expm
 
 from rspt2spectra import fit_basis
 from rspt2spectra.fit_basis import (
@@ -58,8 +59,6 @@ def test_so3_rotation_is_unitary_and_group_like():
 def _scrambled_problem(seed=3, l=2):
     """Diagonal CF Hamiltonian and hybridization, scrambled by a known SO(3) x SU(2) rotation,
     with a Slater-type (rotationally invariant) U in the diagonal basis."""
-    from scipy.linalg import expm  # noqa: F401
-
     n = 2 * (2 * l + 1)
     rng = np.random.default_rng(seed)
     S = np.eye(n, dtype=complex)  # input basis = spherical harmonics
@@ -124,7 +123,6 @@ def test_pauli_forbidden_elements_do_not_defeat_the_invariance_probe():
 
 def test_non_invariant_u_skips_the_axis_rotation():
     S, H, hyb, U, w, _ = _scrambled_problem()
-    rng = np.random.default_rng(5)
     U = U.copy()
     U[0, 1, 0, 1] += 0.7  # breaks rotational invariance
     info = {}
@@ -218,12 +216,26 @@ def test_prepare_hyb_fit_reports_and_keeps_its_contract(capsys):
 
 def _l_dot_l_u4(l):
     """A sparse, non-trivial, SO(3)-invariant (but not U(n)-invariant) two-body tensor: sum_a L_a (x) L_a."""
-    ops = fit_basis._angular_momentum_ops(l)
+    ops = fit_basis.build_angular_momentum_operators(l)
     n = 2 * (2 * l + 1)
     U = np.zeros((n,) * 4, dtype=complex)
     for L_a in ops:
         La = np.kron(np.eye(2), L_a)
         U += np.einsum("ik,jl->ijkl", La, La)
+    return U
+
+
+def _quadrupole_u4(l):
+    """SO(3)-invariant quadrupole-quadrupole tensor sum_ab Q_ab (x) Q_ab: like a Slater F2 term, denser in real
+    harmonics than in complex ones even within a single m = +-1 pair (unlike L.L)."""
+    ops = [np.kron(np.eye(2), L_a) for L_a in fit_basis.build_angular_momentum_operators(l)]
+    L2 = sum(L_a @ L_a for L_a in ops)
+    n = 2 * (2 * l + 1)
+    U = np.zeros((n,) * 4, dtype=complex)
+    for a in range(3):
+        for b in range(3):
+            Q = 0.5 * (ops[a] @ ops[b] + ops[b] @ ops[a]) - (a == b) * L2 / 3
+            U += np.einsum("ik,jl->ijkl", Q, Q)
     return U
 
 
@@ -271,7 +283,7 @@ def test_relative_couplings_reproduce_the_block_partition():
     for tol in (1e-6, 1e-3, 0.02, 0.1, 0.3):
         c = relative_couplings(G, H, tol)
         assert np.allclose(c, c.T)
-        n_comp, labels = fit_basis._components(c > tol)
+        _, labels = fit_basis._components(c > tol)
         ref = get_blocks(G, H, tol=tol)
         assert sorted(np.bincount(labels)) == sorted(len(b) for b in ref)
 
@@ -289,17 +301,17 @@ def test_block_threshold_is_the_tolerance_at_which_blocks_get_small_enough():
 
 def test_real_harmonics_follow_the_condon_shortley_convention():
     for l in (1, 2, 3):
-        W = fit_basis._real_harmonics(l)
+        W = fit_basis.complex_to_real_harmonics_unitary(l)
         assert np.allclose(np.conj(W.T) @ W, np.eye(2 * l + 1))
-        Lx, Ly, Lz = fit_basis._angular_momentum_ops(l)
+        Lx, Ly, Lz = fit_basis.build_angular_momentum_operators(l)
         # even operators are real in a real basis; Lx Ly + Ly Lx is one of them
         for op in (Lx @ Lx, Lz @ Lz, Lx @ Ly + Ly @ Lx, Ly @ Lz + Lz @ Ly):
             assert np.max(np.abs(np.imag(np.conj(W.T) @ op @ W))) < 1e-12
 
 
 def test_real_p_harmonics_are_px_py_pz_with_condon_shortley_phases():
-    W = fit_basis._real_harmonics(1)
-    Lx, Ly, Lz = fit_basis._angular_momentum_ops(1)
+    W = fit_basis.complex_to_real_harmonics_unitary(1)
+    Lx, Ly, Lz = fit_basis.build_angular_momentum_operators(1)
     assert np.allclose(Ly @ W[:, 0], 0) and np.allclose(Lz @ W[:, 1], 0) and np.allclose(Lx @ W[:, 2], 0)
     assert np.allclose(W[:, 2], np.array([1, 0, -1]) / np.sqrt(2))
 
@@ -307,7 +319,7 @@ def test_real_p_harmonics_are_px_py_pz_with_condon_shortley_phases():
 def test_cubic_f_harmonics_diagonalise_the_cubic_field():
     W = fit_basis._cubic_f_harmonics()
     assert np.allclose(np.conj(W.T) @ W, np.eye(7))
-    Lx, Ly, Lz = fit_basis._angular_momentum_ops(3)
+    Lx, Ly, Lz = fit_basis.build_angular_momentum_operators(3)
     Lp, Lm = Lx + 1j * Ly, Lx - 1j * Ly
     Lz2 = Lz @ Lz
     O40 = 35 * Lz2 @ Lz2 - (30 * 12 - 25) * Lz2 + (3 * 144 - 72) * np.eye(7)
@@ -315,8 +327,6 @@ def test_cubic_f_harmonics_diagonalise_the_cubic_field():
     D = np.conj(W.T) @ V @ W
     assert np.max(np.abs(D - np.diag(np.diag(D)))) < 1e-9
     # the sign of the O44 weight is fixed by invariance under a C4 rotation about x
-    from scipy.linalg import expm
-
     C4x = expm(-1j * np.pi / 2 * Lx)
     assert np.max(np.abs(V @ C4x - C4x @ V)) < 1e-9
     # a2u, t1u, t2u: levels of multiplicity 1, 3, 3
@@ -327,7 +337,7 @@ def test_cubic_f_harmonics_diagonalise_the_cubic_field():
 def test_coupled_j_basis_diagonalises_spin_orbit_coupling():
     l = 1
     W = fit_basis._coupled_j_basis(l)
-    Lops = fit_basis._angular_momentum_ops(l)
+    Lops = fit_basis.build_angular_momentum_operators(l)
     sig = [np.array([[0, 1], [1, 0]]), np.array([[0, 1j], [-1j, 0]]), np.diag([-1.0, 1.0])]
     LS = sum(np.kron(s / 2, Lc) for s, Lc in zip(sig, Lops))
     D = np.conj(W.T) @ LS @ W
@@ -338,7 +348,7 @@ def test_coupled_j_basis_diagonalises_spin_orbit_coupling():
 def test_real_harmonic_field_in_a_scrambled_frame_selects_the_real_shape():
     l = 2
     n = 2 * (2 * l + 1)
-    Wr = np.kron(np.eye(2), fit_basis._real_harmonics(l))
+    Wr = np.kron(np.eye(2), fit_basis.complex_to_real_harmonics_unitary(l))
     rng = np.random.default_rng(4)
     eps = rng.uniform(-0.3, 0.3, size=n)
     w = np.linspace(-1.5, 0.5, 60)
@@ -385,7 +395,7 @@ def test_axial_field_keeps_the_sparser_complex_harmonics():
     _, info_Q = block_diagonalize_hyb(
         hyb, mat=H, w=w, u4=U, to_spherical=np.eye(n, dtype=complex), max_u_densify=50, tol=1e-6, info=info
     )
-    Wr = np.kron(np.eye(2), fit_basis._real_harmonics(l))
+    Wr = np.kron(np.eye(2), fit_basis.complex_to_real_harmonics_unitary(l))
     assert count_u_terms(_rotate_u4(U, Wr)) > count_u_terms(U)  # real harmonics also separate +-m, but cost more
     assert _sizes(info_Q, hyb, H, 1e-6) == [1] * n
     assert info["tier"] == "axis rotation"
@@ -411,7 +421,7 @@ def _two_plus_three_problem(weak=0.02, seed=2):
         mask[np.ix_(g, g)] = False
     B = B / np.max(np.abs(np.diag(B))) + weak * np.where(mask, cross, 0) / np.max(np.abs(cross))
     hyb_real = np.array([np.kron(np.eye(2), B) * (0.3 / (x + 1.3 + 0.1j)) for x in w])
-    Wr = np.kron(np.eye(2), fit_basis._real_harmonics(l))
+    Wr = np.kron(np.eye(2), fit_basis.complex_to_real_harmonics_unitary(l))
     H_real = np.kron(np.eye(2), np.diag([0.02, -0.01, 0.03, 0.0, 0.015])).astype(complex)
     R = _random_rotation(l, 9)
     H = rotate_matrix(Wr @ H_real @ np.conj(Wr.T), R)
@@ -446,7 +456,7 @@ def test_a_larger_budget_never_gives_a_coarser_partition():
 def test_shapes_beyond_the_budget_are_not_used():
     S, H, hyb, w = _two_plus_three_problem()
     U = _l_dot_l_u4(2)
-    Wr = np.kron(np.eye(2), fit_basis._real_harmonics(2))
+    Wr = np.kron(np.eye(2), fit_basis.complex_to_real_harmonics_unitary(2))
     assert count_u_terms(_rotate_u4(U, Wr)) > count_u_terms(U)
     info = {}
     block_diagonalize_hyb(hyb, mat=H, w=w, u4=U, to_spherical=S, max_u_densify=1.0, tol=0.05, info=info)
@@ -482,7 +492,7 @@ def test_budget_below_one_falls_back_to_the_input_basis():
     S, H, hyb, w = _two_plus_three_problem()
     U = _l_dot_l_u4(2)
     info = {}
-    _, Q = block_diagonalize_hyb(hyb, mat=H, w=w, u4=U, to_spherical=S, max_u_densify=0.5, tol=0.05, info=info)
+    block_diagonalize_hyb(hyb, mat=H, w=w, u4=U, to_spherical=S, max_u_densify=0.5, tol=0.05, info=info)
     assert info["u_terms"] <= count_u_terms(U)
     assert info["tier"] in ("axis rotation", "input basis")
 
@@ -514,3 +524,133 @@ def test_spin_coupling_is_judged_in_the_spherical_frame():
             break
     assert labels, "invariance probe rejected both conventions"
     assert "j-j coupled" not in labels
+
+
+def test_distorted_real_harmonic_blocks_selected_at_strict_default_tol():
+    """When weak distortion couplings (0.02 > tol=1e-6) keep each spin block connected at tol,
+    the search still selects rotated real harmonics within the U-budget over complex harmonics
+    because it strongly reduces both the sub-block split threshold and off-diagonal weight. More
+    U-budget does not hand the choice to a free rotation that only refines inside the same blocks.
+    """
+    S, H, hyb, w = _two_plus_three_problem(weak=0.02, seed=2)
+    U = _l_dot_l_u4(2)
+    info = {}
+    block_diagonalize_hyb(hyb, mat=H, w=w, u4=U, to_spherical=S, max_u_densify=1.85, tol=1e-6, info=info)
+    assert info["tier"] == "axis rotation"
+    assert info["shape"] == "real harmonics"
+    assert info["off_diag_ratio"] < 0.15
+    assert info["sub_thresholds"][0] < 0.02
+    assert info["euler_angles"] is not None and len(info["euler_angles"]) == 3
+
+    info_refined = {}
+    block_diagonalize_hyb(hyb, mat=H, w=w, u4=U, to_spherical=S, max_u_densify=2.5, tol=1e-6, info=info_refined)
+    assert info_refined["tier"] == "axis rotation"
+    assert info_refined["shape"] == "real harmonics"
+
+
+def test_named_shape_beats_a_sparser_free_rotation_on_a_tied_partition():
+    """All blocks size 1 in both bases and the free rotation has fewer Coulomb terms: the named shape stays.
+
+    The field is diagonal in real d harmonics with xz and yz degenerate. Turning that pair back into the
+    complex m = +-1 orbitals keeps everything diagonal and makes U sparser, so on term count the free
+    rotation would win; a generic rotation inside degenerate levels costs determinants (CoO/FeO), so it
+    must not.
+    """
+    l = 2
+    n = 2 * (2 * l + 1)
+    Wr = np.kron(np.eye(2), fit_basis.complex_to_real_harmonics_unitary(l))
+    # columns 1 and 3 of each spin block are the real m = +-1 pair
+    eps = np.tile([0.1, -0.2, 0.25, -0.2, 0.3], 2)
+    w = np.linspace(-1.5, 0.5, 60)
+    hyb_d = np.array([np.diag(0.1 / (x + 0.05j + 0.8 + 0.1 * eps)) for x in w]).astype(complex)
+    H = Wr @ np.diag(eps).astype(complex) @ np.conj(Wr.T)
+    hyb = Wr[None] @ hyb_d @ np.conj(Wr.T)[None]
+    U = _quadrupole_u4(l)
+    Q_free = Wr.copy()
+    for s in (0, 5):
+        Q_free[:, [s + 1, s + 3]] = np.eye(n, dtype=complex)[:, [s + 1, s + 3]]
+    assert count_u_terms(_rotate_u4(U, Q_free)) < count_u_terms(_rotate_u4(U, Wr))
+    d = rotate_matrix(H, Q_free)
+    assert np.max(np.abs(d - np.diag(np.diag(d)))) < 1e-12
+
+    original = fit_basis._joint_diagonalize
+
+    def sparser_free(mats, *args, **kwargs):
+        return Q_free if kwargs.get("budget") is None else original(mats, *args, **kwargs)
+
+    info = {}
+    fit_basis._joint_diagonalize = sparser_free
+    try:
+        block_diagonalize_hyb(
+            hyb, mat=H, w=w, u4=U, to_spherical=np.eye(n, dtype=complex), max_u_densify=1e6, tol=1e-6, info=info
+        )
+    finally:
+        fit_basis._joint_diagonalize = original
+    assert info["tier"] == "axis rotation" and info["shape"] == "real harmonics"
+
+
+def test_cubic_jj_basis_selected_for_octahedral_spin_orbit_shell():
+    """Spin-coupled shell diagonal in rotated cubic j-j (Gamma_6/Gamma_7/Gamma_8) states."""
+    l = 2
+    n = 2 * (2 * l + 1)
+    W_cjj = fit_basis._cubic_jj_basis(l)
+    assert np.allclose(W_cjj.conj().T @ W_cjj, np.eye(n))
+    eps = np.linspace(-0.25, 0.25, n)
+    w = np.linspace(-1.5, 0.5, 50)
+    hyb_d = np.array([np.diag(0.12 / (x + 0.05j + 0.7 + eps)) for x in w]).astype(complex)
+    R = _so3_rotation(l, np.array([0.5, -0.7, 0.4]), np.array([0.5, -0.7, 0.4]))
+    H = rotate_matrix(W_cjj @ np.diag(eps).astype(complex) @ np.conj(W_cjj.T), R)
+    hyb = rotate_Greens_function(W_cjj[None] @ hyb_d @ np.conj(W_cjj.T)[None], R)
+    U = _l_dot_l_u4(l)
+    S = np.eye(n, dtype=complex)
+    info = {}
+    _, Q = block_diagonalize_hyb(hyb, mat=H, w=w, u4=U, to_spherical=S, max_u_densify=100.0, tol=1e-6, info=info)
+    assert info["tier"] == "axis rotation"
+    assert info["shape"] == "cubic j-j"
+    d = rotate_matrix(H, Q)
+    assert np.max(np.abs(d - np.diag(np.diag(d)))) < 1e-8
+
+
+def test_custom_shapes_supported_and_fingerprinted():
+    l = 1
+    n = 2 * (2 * l + 1)
+    rng = np.random.default_rng(17)
+    W_sp = np.linalg.qr(rng.normal(size=(2 * l + 1, 2 * l + 1)) + 1j * rng.normal(size=(2 * l + 1, 2 * l + 1)))[0]
+    W_custom = np.kron(np.eye(2), W_sp)
+    eps = np.linspace(-0.2, 0.2, n)
+    w = np.linspace(-1.0, 0.5, 30)
+    hyb_d = np.array([np.diag(0.1 / (x + 0.05j + 0.5 + eps)) for x in w]).astype(complex)
+    R = _so3_rotation(l, np.array([0.3, -0.6, 0.8]))
+    H = rotate_matrix(W_custom @ np.diag(eps).astype(complex) @ np.conj(W_custom.T), R)
+    hyb = rotate_Greens_function(W_custom[None] @ hyb_d @ np.conj(W_custom.T)[None], R)
+    U = _l_dot_l_u4(l)
+    S = np.eye(n, dtype=complex)
+    info = {}
+    _, Q = block_diagonalize_hyb(
+        hyb,
+        mat=H,
+        w=w,
+        u4=U,
+        to_spherical=S,
+        max_u_densify=100.0,
+        tol=1e-6,
+        info=info,
+        custom_shapes=[("my custom shape", W_custom)],
+    )
+    assert info["tier"] == "axis rotation"
+    assert info["shape"] == "my custom shape"
+    d = rotate_matrix(H, Q)
+    assert np.max(np.abs(d - np.diag(np.diag(d)))) < 1e-8
+    fb1 = prepare_hyb_fit(hyb, H, tol=1e-6, verbose=False, w=w, u4=U, to_spherical=S, max_u_densify=100.0)
+    fb2 = prepare_hyb_fit(
+        hyb,
+        H,
+        tol=1e-6,
+        verbose=False,
+        w=w,
+        u4=U,
+        to_spherical=S,
+        max_u_densify=100.0,
+        custom_shapes=[("my custom shape", W_custom)],
+    )
+    assert fb1.fingerprint != fb2.fingerprint
