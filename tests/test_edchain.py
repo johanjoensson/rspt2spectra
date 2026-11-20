@@ -79,7 +79,9 @@ def test_build_imp_bath_blocks():
     H[0, 4] = H[4, 0] = 0.1
     H[1, 5] = H[5, 1] = 0.1
 
-    impurity_indices, occupied_indices, unoccupied_indices = edchain.build_imp_bath_blocks(H, n_orb=2)
+    impurity_indices, occupied_indices, unoccupied_indices = (
+        edchain.build_imp_bath_blocks(H, n_orb=2)
+    )
 
     assert impurity_indices == [0, 1]
     assert occupied_indices == [
@@ -97,7 +99,9 @@ def test_linked_double_chain():
     H_imp = np.array([[0.0]]) + 0j
     vs = np.random.rand(4, 1) + 0j
     ebs = np.array([-2.0, -1.0, 1.0, 2.0])
-    v, hb = edchain.linked_double_chain(H_imp, vs, ebs, verbose=False, extremely_verbose=False)
+    v, hb = edchain.linked_double_chain(
+        H_imp, vs, ebs, verbose=False, extremely_verbose=False
+    )
     assert v.shape[1] == 1
     assert hb.shape == (4, 4)
 
@@ -114,11 +118,22 @@ def test_linked_double_chain_is_particle_hole_symmetric():
         half = np.sort(rng.uniform(0.1, 2.0, 5))
         ebs = np.concatenate((-half[::-1], [0.0], half))
         v_half = rng.uniform(0.1, 1.0, 5)
-        vs = np.concatenate((v_half[::-1], [rng.uniform(0.1, 1.0)], v_half)).reshape(-1, 1) + 0j
-        v, hb = edchain.linked_double_chain(H_imp, vs, ebs, verbose=False, extremely_verbose=False)
+        vs = (
+            np.concatenate((v_half[::-1], [rng.uniform(0.1, 1.0)], v_half)).reshape(
+                -1, 1
+            )
+            + 0j
+        )
+        v, hb = edchain.linked_double_chain(
+            H_imp, vs, ebs, verbose=False, extremely_verbose=False
+        )
         middle = len(ebs) // 2
         onsite = np.real(np.diag(hb))
-        assert np.flatnonzero(np.abs(v[:, 0]) > 1e-10).tolist() == [middle - 1, middle, middle + 1], seed
+        assert np.flatnonzero(np.abs(v[:, 0]) > 1e-10).tolist() == [
+            middle - 1,
+            middle,
+            middle + 1,
+        ], seed
         assert abs(onsite[middle]) < 1e-10, seed
         assert np.allclose(onsite, -onsite[::-1], atol=1e-10), seed
         assert np.allclose(np.abs(v[:, 0]), np.abs(v[::-1, 0]), atol=1e-10), seed
@@ -129,7 +144,9 @@ def test_double_chains():
     H_imp = np.array([[0.0]]) + 0j
     vs = np.random.rand(4, 1) + 0j
     ebs = np.array([-2.0, -1.0, 1.0, 2.0])
-    v, hb = edchain.double_chains(H_imp, vs, ebs, verbose=False, extremely_verbose=False)
+    v, hb = edchain.double_chains(
+        H_imp, vs, ebs, verbose=False, extremely_verbose=False
+    )
     assert v.shape[1] == 1
     assert hb.shape == (4, 4)
 
@@ -252,7 +269,9 @@ def test_build_full_bath():
         inequivalent_blocks=[0, 2],  # 0 and 2 are the templates
     )
 
-    H_bath_full, vs_full = edchain.build_full_bath(H_bath_inequiv, v_inequiv, block_structure)
+    H_bath_full, vs_full = edchain.build_full_bath(
+        H_bath_inequiv, v_inequiv, block_structure
+    )
 
     # 5 orbitals * 2 bath states per orbital = 10 total bath states
     assert H_bath_full.shape == (10, 10)
@@ -281,7 +300,9 @@ def test_peel_resonant_modes():
     # A threshold above every relative weight peels nothing.
     assert not edchain.peel_resonant_modes(vs, es, peel_weight=0.6).any()
     # Zero total weight peels nothing (no division blow-up).
-    assert not edchain.peel_resonant_modes(np.zeros_like(vs), es, peel_weight=0.05).any()
+    assert not edchain.peel_resonant_modes(
+        np.zeros_like(vs), es, peel_weight=0.05
+    ).any()
 
 
 def test_peeled_linked_chain():
@@ -292,7 +313,9 @@ def test_peeled_linked_chain():
     vs = np.full((12, 1), 0.05) + 0j
     vs[3, 0] = 1.0
     vs[8, 0] = 0.8
-    v, hb = edchain.peeled_linked_chain(H_imp, vs, es, peel_weight=0.05, verbose=False, extremely_verbose=False)
+    v, hb = edchain.peeled_linked_chain(
+        H_imp, vs, es, peel_weight=0.05, verbose=False, extremely_verbose=False
+    )
     assert v.shape == (12, 1)
     assert hb.shape == (12, 12)
     # The peeled modes sit at the end as decoupled diagonal spokes with their
@@ -307,7 +330,11 @@ def test_peeled_linked_chain():
     assert np.allclose(np.linalg.eigvalsh(H_full), np.linalg.eigvalsh(H_star))
     z = np.linspace(-3.0, 3.0, 61) + 0.01j
     # In star form the hybridization is an explicit sum over the fitted poles.
-    g_star = 1.0 / (z - H_imp[0, 0] - np.sum(np.abs(vs[:, 0]) ** 2 / (z[:, None] - es[None, :]), axis=1))
+    g_star = 1.0 / (
+        z
+        - H_imp[0, 0]
+        - np.sum(np.abs(vs[:, 0]) ** 2 / (z[:, None] - es[None, :]), axis=1)
+    )
     g_full = np.array([np.linalg.inv(zi * np.eye(13) - H_full)[0, 0] for zi in z])
     assert np.allclose(g_full, g_star, atol=1e-10)
 
@@ -318,7 +345,9 @@ def test_peeled_linked_chain_small_remainder_falls_back_to_star():
     vs = np.array([[1.0], [0.9], [0.8], [0.02]]) + 0j
     # Three of four modes peel; the 1-mode remainder cannot form a linked chain,
     # so everything stays in star form.
-    v, hb = edchain.peeled_linked_chain(H_imp, vs, es, peel_weight=0.05, verbose=False, extremely_verbose=False)
+    v, hb = edchain.peeled_linked_chain(
+        H_imp, vs, es, peel_weight=0.05, verbose=False, extremely_verbose=False
+    )
     assert np.allclose(hb, np.diag(es))
     assert np.allclose(v, vs)
 
@@ -351,13 +380,20 @@ def test_few_bath_states_stay_a_star_for_a_two_orbital_block():
 
 def _hybridization(v, h_bath, z):
     """Delta(z) = v^dagger (z - h_bath)^-1 v for hoppings ``v`` of shape (n_bath, n_imp)."""
-    return np.array([np.conj(v.T) @ np.linalg.solve(zi * np.eye(h_bath.shape[0]) - h_bath, v) for zi in z])
+    return np.array(
+        [
+            np.conj(v.T) @ np.linalg.solve(zi * np.eye(h_bath.shape[0]) - h_bath, v)
+            for zi in z
+        ]
+    )
 
 
 def _degenerate_star(n_imp, level_weights, seed):
     rng = np.random.default_rng(seed)
     n_levels = len(level_weights)
-    es = np.repeat(np.linspace(-2.0, 2.0, n_levels) + 0.013 * np.arange(n_levels) ** 2, n_imp)
+    es = np.repeat(
+        np.linspace(-2.0, 2.0, n_levels) + 0.013 * np.arange(n_levels) ** 2, n_imp
+    )
     vs = np.empty((n_levels * n_imp, 1, n_imp), dtype=complex)
     for lev, w in enumerate(level_weights):
         block = rng.normal(size=(n_imp, n_imp)) + 1j * rng.normal(size=(n_imp, n_imp))
@@ -366,7 +402,10 @@ def _degenerate_star(n_imp, level_weights, seed):
 
 
 @pytest.mark.parametrize("n_imp", [1, 3, 5])
-@pytest.mark.parametrize("level_weights", [(1.0,), (1.0, 1.0), (1.0, 0.1, 1.0), (1.0, 0.3, 0.3, 0.2, 1.0), (0.5,) * 4])
+@pytest.mark.parametrize(
+    "level_weights",
+    [(1.0,), (1.0, 1.0), (1.0, 0.1, 1.0), (1.0, 0.3, 0.3, 0.2, 1.0), (0.5,) * 4],
+)
 @pytest.mark.parametrize("peel_weight", [0.0, 0.03, 0.06, 0.1, 0.2, 0.4, 2.0])
 @pytest.mark.parametrize("seed", [7, 8, 9])
 def test_peeled_linked_chain_keeps_the_hybridization_for_any_peeled_level_subset(
@@ -377,7 +416,9 @@ def test_peeled_linked_chain_keeps_the_hybridization_for_any_peeled_level_subset
     rng = np.random.default_rng(3)
     h = rng.normal(size=(n_imp, n_imp)) + 1j * rng.normal(size=(n_imp, n_imp))
     H_imp = (h + np.conj(h.T)) / 2
-    v, hb = edchain.peeled_linked_chain(H_imp, vs, es, peel_weight=peel_weight, verbose=False)
+    v, hb = edchain.peeled_linked_chain(
+        H_imp, vs, es, peel_weight=peel_weight, verbose=False
+    )
     assert v.shape == (es.shape[0], n_imp)
     assert hb.shape == (es.shape[0], es.shape[0])
     z = np.linspace(-3.0, 3.0, 7) + 0.05j
@@ -405,7 +446,9 @@ def test_a_dropped_mode_falls_back_to_a_star_instead_of_raising():
     H_imp = np.zeros((n_imp, n_imp), dtype=complex)
     z = np.linspace(-3.0, 3.0, 5) + 0.05j
     for peel_weight in (0.05, 0.2, 0.4):
-        v, hb = edchain.peeled_linked_chain(H_imp, vs, es, peel_weight=peel_weight, verbose=False)
+        v, hb = edchain.peeled_linked_chain(
+            H_imp, vs, es, peel_weight=peel_weight, verbose=False
+        )
         star = _hybridization(vs.reshape(-1, n_imp), np.diag(es), z)
         assert np.allclose(_hybridization(v, hb, z), star, atol=1e-10)
 

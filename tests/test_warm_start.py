@@ -62,25 +62,40 @@ def test_cold_refit_jumps_basin_across_a_near_tie(previous):
 
 def test_warm_refit_holds_the_basin_across_a_near_tie(previous):
     eb, info = _fit(1.002, bath_guess=previous)
-    assert info["status"] == "kept"
-    np.testing.assert_allclose(np.sort(eb), np.sort(previous), atol=0.05)
+    assert info["status"] == "held"
+    np.testing.assert_allclose(np.sort(eb), np.sort(previous), atol=1e-12)
     # What was given up is within the margin.
-    assert info["cost warm"] <= info["cost global"] / (1 - 0.05)
+    assert info["cost held"] <= min(info["cost refined"], info["cost global"]) / (
+        1 - 0.05
+    )
 
 
 def test_a_clearly_better_minimum_replaces_the_warm_fit(previous):
     cold, _ = _fit(1.3)
     eb, info = _fit(1.3, bath_guess=previous)
     assert info["status"] == "replaced"
-    assert info["cost global"] < 0.95 * info["cost warm"]
+    assert info["cost global"] < 0.95 * min(info["cost held"], info["cost refined"])
     np.testing.assert_allclose(np.sort(eb), np.sort(cold), atol=1e-6)
 
 
-@pytest.mark.parametrize(("tol", "s", "status"), [(0.0, 1.002, "replaced"), (1.0, 1.3, "kept")])
+@pytest.mark.parametrize(
+    ("tol", "s", "status"), [(0.0, 1.002, "replaced"), (1.0, 1.3, "held")]
+)
 def test_the_margin_decides(previous, tol, s, status):
-    # tol=0: any strict improvement wins. tol=1: the warm fit is never replaced.
+    # tol=0: the cheapest candidate wins. tol=1: the previous energies are never moved.
     _, info = _fit(s, bath_guess=previous, warm_accept_tol=tol)
     assert info["status"] == status
+
+
+def test_held_keeps_the_energies_where_the_refinement_would_move_them(previous):
+    # A flat valley: the refined minimum drifts with the hybridization, the margin holds the bath.
+    eb_held, info = _fit(1.02, bath_guess=previous, warm_accept_tol=0.5)
+    assert info["status"] == "held"
+    np.testing.assert_allclose(np.sort(eb_held), np.sort(previous), atol=1e-12)
+    eb_moved, info_moved = _fit(1.02, bath_guess=previous, warm_accept_tol=0.0)
+    assert info_moved["cost held"] == pytest.approx(info["cost held"])
+    # The held cost is the cost of the same objective the other candidates are priced with.
+    assert info["cost held"] >= min(info["cost refined"], info["cost global"]) - 1e-12
 
 
 def test_a_guess_with_another_state_count_only_seeds_the_global_fit(previous):
@@ -107,5 +122,5 @@ def test_fit_hyb_reports_one_outcome_per_inequivalent_block(previous):
         warm_start_info=info,
     )
     assert len(info) == len(bs.inequivalent_blocks) == 1
-    assert info[0]["status"] == "kept"
-    np.testing.assert_allclose(np.sort(ebs[0]), np.sort(previous), atol=0.05)
+    assert info[0]["status"] == "held"
+    np.testing.assert_allclose(np.sort(ebs[0]), np.sort(previous), atol=1e-12)

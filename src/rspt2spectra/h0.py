@@ -146,7 +146,9 @@ def fit_window(w, hyb, valence_bath_only):
     return (w_min, min(0, w_max) if valence_bath_only else w_max)
 
 
-def fit_fingerprint(hyb, H_local, u4, to_spherical, symm_prec, u_densify, x_lim, custom_shapes=None):
+def fit_fingerprint(
+    hyb, H_local, u4, to_spherical, symm_prec, u_densify, x_lim, custom_shapes=None
+):
     """Return a hex digest of what the fit is made from.
 
     A caller that stores fits compares it to decide whether a stored fit can be reused (identical
@@ -157,14 +159,23 @@ def fit_fingerprint(hyb, H_local, u4, to_spherical, symm_prec, u_densify, x_lim,
     shapes_bytes = b""
     if u_aware and custom_shapes:
         shapes_bytes = b"".join(
-            str(item[0]).encode() + np.ascontiguousarray(item[1]).tobytes() for item in custom_shapes
+            str(item[0]).encode() + np.ascontiguousarray(item[1]).tobytes()
+            for item in custom_shapes
         )
     return hashlib.sha256(
         np.ascontiguousarray(hyb).tobytes()
         + np.ascontiguousarray(H_local).tobytes()
         # the Coulomb tensor and shell rotation steer the basis choice, but only when the choice looks at them
-        + (np.ascontiguousarray(u4).tobytes() + repr(float(u_densify)).encode() if u_aware else b"")
-        + (np.ascontiguousarray(to_spherical).tobytes() if u_aware and to_spherical is not None else b"")
+        + (
+            np.ascontiguousarray(u4).tobytes() + repr(float(u_densify)).encode()
+            if u_aware
+            else b""
+        )
+        + (
+            np.ascontiguousarray(to_spherical).tobytes()
+            if u_aware and to_spherical is not None
+            else b""
+        )
         + shapes_bytes
         + repr(
             (
@@ -348,7 +359,18 @@ def prepare_hyb_fit(
 
 
 def _prepare_hyb_fit(
-    hyb, H_local, tol, verbose, w, x_lim, equiv_tol, report, u4, to_spherical, max_u_densify, custom_shapes=None
+    hyb,
+    H_local,
+    tol,
+    verbose,
+    w,
+    x_lim,
+    equiv_tol,
+    report,
+    u4,
+    to_spherical,
+    max_u_densify,
+    custom_shapes=None,
 ):
     if equiv_tol is None:
         equiv_tol = BLOCK_EQUIVALENCE_TOL
@@ -379,7 +401,9 @@ def _prepare_hyb_fit(
             f"Coulomb tensor terms {n_in} -> {n_out} "
             f"(x{n_out / max(n_in, 1):.2f}, allowed x{max_u_densify:g}){extra_txt}."
         )
-        for label, terms, largest, n_blocks in basis_info.get("finer_beyond_budget", ()):
+        for label, terms, largest, n_blocks in basis_info.get(
+            "finer_beyond_budget", ()
+        ):
             print(
                 f"  Beyond the Coulomb budget: {label} would give {n_blocks} blocks (largest {largest}) "
                 f"at x{terms / max(n_in, 1):.2f} Coulomb terms (u_densify)."
@@ -394,7 +418,9 @@ def _prepare_hyb_fit(
     blocks = get_blocks(phase_hyb[window], H_local_rot, tol=tol)
     # Compared in the fitting basis, the one the partition lives in: the same data in the input
     # basis is denser and would give fewer blocks whatever was neglected.
-    neglected = len(blocks) > len(get_blocks(phase_hyb[window], H_local_rot, tol=DEFAULT_SYMM_PREC))
+    neglected = len(blocks) > len(
+        get_blocks(phase_hyb[window], H_local_rot, tol=DEFAULT_SYMM_PREC)
+    )
     if verbose if report is None else report:
         _print_neglected(phase_hyb[window], H_local_rot, blocks, tol)
         _print_split_margin(phase_hyb[window], H_local_rot, tol)
@@ -402,7 +428,9 @@ def _prepare_hyb_fit(
     H_local_Q = project_to_blocks(H_local_rot, blocks)
     # The partition was decided on the fit window; the equivalences between the blocks are
     # tested on the whole mesh (particle-hole relates omega to -omega) without deciding it again.
-    block_structure = build_block_structure(phase_hyb, mat=H_local_Q, tol=tol, w=w, equiv_tol=equiv_tol, blocks=blocks)
+    block_structure = build_block_structure(
+        phase_hyb, mat=H_local_Q, tol=tol, w=w, equiv_tol=equiv_tol, blocks=blocks
+    )
     if verbose:
         print_block_structure(block_structure)
     return FitBasis(
@@ -412,7 +440,9 @@ def _prepare_hyb_fit(
         block_structure=block_structure,
         x_lim=x_lim,
         neglected_couplings=neglected,
-        fingerprint=fit_fingerprint(hyb, H_local, u4, to_spherical, tol, max_u_densify, x_lim, custom_shapes),
+        fingerprint=fit_fingerprint(
+            hyb, H_local, u4, to_spherical, tol, max_u_densify, x_lim, custom_shapes
+        ),
     )
 
 
@@ -522,8 +552,8 @@ def fit_bath(
     previous_energies : list of np.ndarray, optional
         The previous fit's bath energies per inequivalent block.  With
         ``options.freeze_bath_energies`` they are held fixed and only the hoppings are re-solved;
-        otherwise the fit starts from them and keeps that warm fit unless a global search beats
-        its cost by more than ``options.warm_tol``.
+        otherwise the fit keeps them unless a refinement or a global search beats their
+        cost by more than ``options.warm_tol``.
     verbose : bool
         Print the fitted levels.
     comm : mpi4py communicator, optional
@@ -552,9 +582,13 @@ def fit_bath(
             x_lim=x_lim,
             verbose=verbose,
             comm=comm,
-            weight_fun=weight_functions[options.weight_function](options.weight_w0, options.weight),
+            weight_fun=weight_functions[options.weight_function](
+                options.weight_w0, options.weight
+            ),
             ebs_guess=previous_energies,
-            optimize_bath_energies=not (options.freeze_bath_energies and previous_energies is not None),
+            optimize_bath_energies=not (
+                options.freeze_bath_energies and previous_energies is not None
+            ),
             warm_accept_tol=options.warm_tol,
             warm_start_info=warm_start_info,
         )
@@ -562,8 +596,12 @@ def fit_bath(
         if len(ebs_star[i]) == 0:
             continue
         order = np.argsort(ebs_star[i], kind="stable")
-        ebs_star[i], vs_star[i] = flatten_star_levels(ebs_star[i][order], vs_star[i][order], verbose=verbose)
-    assert len(vs_star) == len(block_structure.inequivalent_blocks), "Number of inequivalent blocks is inconsistent"
+        ebs_star[i], vs_star[i] = flatten_star_levels(
+            ebs_star[i][order], vs_star[i][order], verbose=verbose
+        )
+    assert len(vs_star) == len(
+        block_structure.inequivalent_blocks
+    ), "Number of inequivalent blocks is inconsistent"
     if verbose:
         _print_star_fit(block_structure, ebs_star, vs_star)
     return BathFit(ebs_star, vs_star, shifts, warm_start_info)
@@ -577,7 +615,10 @@ def _print_star_fit(block_structure, ebs_star, vs_star):
             f"{block_structure.blocks[block_structure.inequivalent_blocks[bi]]})"
         )
         for eb_i, vb_i in zip(eb, vb):
-            print(f"{eb_i: 9.6f}:  ", "  ".join(f"{val: 9.6f}" for vb_row in vb_i for val in vb_row))
+            print(
+                f"{eb_i: 9.6f}:  ",
+                "  ".join(f"{val: 9.6f}" for vb_row in vb_i for val in vb_row),
+            )
         print("")
     print("=" * 80)
 
@@ -677,7 +718,9 @@ def assemble_h0(
     # Couplings between blocks were neglected in the fit (see prepare_hyb_fit), so the
     # impurity block must not carry them either.  Project in the fitting basis and rotate
     # back; this is a plain projection of H_imp when Q is block diagonal.
-    H_imp = rotate_matrix(project_to_blocks(rotate_matrix(H_imp, Q), block_structure.blocks), np.conj(Q.T))
+    H_imp = rotate_matrix(
+        project_to_blocks(rotate_matrix(H_imp, Q), block_structure.blocks), np.conj(Q.T)
+    )
     H_shift = np.zeros_like(H_imp)
     # The constant offset is part of the fitted hybridization, so it follows the
     # same equivalence relations as the bath: a transposed block gets C^T and a
@@ -746,8 +789,12 @@ def assemble_h0(
             verbose,
             extra_verbose,
         )
-        H_bath_star, v_star = build_full_bath(H_baths_star, vs_star_geom, block_structure)
-        H_star = np.zeros((n_orb + H_bath_star.shape[0], n_orb + H_bath_star.shape[0]), dtype=complex)
+        H_bath_star, v_star = build_full_bath(
+            H_baths_star, vs_star_geom, block_structure
+        )
+        H_star = np.zeros(
+            (n_orb + H_bath_star.shape[0], n_orb + H_bath_star.shape[0]), dtype=complex
+        )
         H_star[:n_orb, :n_orb] = H_imp + rotate_matrix(H_shift, np.conj(Q.T))
         H_star[n_orb:, n_orb:] = H_bath_star
         H_star[n_orb:, :n_orb] = v_star @ np.conj(Q.T)
@@ -766,10 +813,13 @@ def assemble_h0(
         # physics; compare the impurity-projected Green's functions.
         if w is not None:
             z_check = w[::10] + 1j * eim
-            G0 = np.linalg.inv(z_check[:, None, None] * np.identity(H.shape[0])[None] - H[None])[:, :n_orb, :n_orb]
-            G0_star = np.linalg.inv(z_check[:, None, None] * np.identity(H_star.shape[0])[None] - H_star[None])[
-                :, :n_orb, :n_orb
-            ]
+            G0 = np.linalg.inv(
+                z_check[:, None, None] * np.identity(H.shape[0])[None] - H[None]
+            )[:, :n_orb, :n_orb]
+            G0_star = np.linalg.inv(
+                z_check[:, None, None] * np.identity(H_star.shape[0])[None]
+                - H_star[None]
+            )[:, :n_orb, :n_orb]
             if not np.allclose(G0, G0_star, atol=1e-8):
                 warning = (
                     "WARNING: The bath geometry transformation changed the impurity "
@@ -793,8 +843,12 @@ def assemble_h0(
         with open(f"Ham-{label}.inp", "w") as f:
             for i in range(H_star.shape[0]):
                 for j in range(H_star.shape[1]):
-                    f.write(f" 0 0 0 {i + 1} {j + 1} {np.real(H_star[i, j])} {np.imag(H_star[i, j])}\n")
-    impurity_indices, valence_bath_indices, conduction_bath_indices = build_imp_bath_blocks(H_star, n_orb)
+                    f.write(
+                        f" 0 0 0 {i + 1} {j + 1} {np.real(H_star[i, j])} {np.imag(H_star[i, j])}\n"
+                    )
+    impurity_indices, valence_bath_indices, conduction_bath_indices = (
+        build_imp_bath_blocks(H_star, n_orb)
+    )
 
     return (
         H,

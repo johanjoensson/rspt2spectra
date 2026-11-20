@@ -3,14 +3,22 @@ import itertools
 import numpy as np
 import pytest
 
-from rspt2spectra.rspt_basis import cluster_rotation, projection_from_files, shell_rotation
+from rspt2spectra.rspt_basis import (
+    cluster_rotation,
+    projection_from_files,
+    shell_rotation,
+)
 
 
 def _is_unitary(T):
-    return T.shape[0] == T.shape[1] and np.allclose(T @ T.conj().T, np.eye(T.shape[0]), atol=1e-12)
+    return T.shape[0] == T.shape[1] and np.allclose(
+        T @ T.conj().T, np.eye(T.shape[0]), atol=1e-12
+    )
 
 
-@pytest.mark.parametrize("shell", [(0, 1), (1, 1), (2, 3), (2, 4), (2, 7), (3, 7), (3, 0), (2, 0)])
+@pytest.mark.parametrize(
+    "shell", [(0, 1), (1, 1), (2, 3), (2, 4), (2, 7), (3, 7), (3, 0), (2, 0)]
+)
 def test_full_orbital_sets_are_unitary(shell):
     assert _is_unitary(cluster_rotation([shell]))
 
@@ -89,7 +97,12 @@ def test_jj_basis_diagonalizes_spin_orbit_coupling(l):
 
 
 def _entries(T, rows, cols, col_offset=0):
-    return [(r + 1, c + 1 - col_offset, complex(T[r, c])) for r in rows for c in cols if T[r, c] != 0]
+    return [
+        (r + 1, c + 1 - col_offset, complex(T[r, c]))
+        for r in rows
+        for c in cols
+        if T[r, c] != 0
+    ]
 
 
 def test_projection_from_files_spin_polarized_round_trip():
@@ -106,7 +119,9 @@ def test_projection_from_files_spin_unpolarized_eg_t2g_files():
     t2g = _entries(spatial, range(5), range(2, 5), col_offset=2)
     T = projection_from_files([(2, 0)], [([4], eg), ([6], t2g)])
     # Column layout: eg_dn, eg_up, t2g_dn, t2g_up.
-    expected = np.hstack([full[:, [0, 1]], full[:, [5, 6]], full[:, [2, 3, 4]], full[:, [7, 8, 9]]])
+    expected = np.hstack(
+        [full[:, [0, 1]], full[:, [5, 6]], full[:, [2, 3, 4]], full[:, [7, 8, 9]]]
+    )
     assert T.shape == (10, 10)
     assert np.allclose(T, expected)
     assert _is_unitary(T)

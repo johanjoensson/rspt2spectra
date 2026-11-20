@@ -283,7 +283,11 @@ def read_projection_file(path):
         else:
             version = int(first[0])
             start = 2
-            set_sizes = [int(x) for x in _projection_values(lines[1])] if version in (0, 1) else []
+            set_sizes = (
+                [int(x) for x in _projection_values(lines[1])]
+                if version in (0, 1)
+                else []
+            )
     except (ValueError, IndexError) as exc:
         fail(1, f"cannot parse header: {exc}")
     if len(first) < 3 and version not in (0, 1):

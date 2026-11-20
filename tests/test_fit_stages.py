@@ -4,7 +4,13 @@ import numpy as np
 import pytest
 
 from rspt2spectra.fit_options import FitOptions
-from rspt2spectra.h0 import bath_hybridization, fit_bath, fit_fingerprint, fit_window, prepare_hyb_fit
+from rspt2spectra.h0 import (
+    bath_hybridization,
+    fit_bath,
+    fit_fingerprint,
+    fit_window,
+    prepare_hyb_fit,
+)
 
 
 def _system(coupling):
@@ -39,9 +45,24 @@ def test_the_fingerprint_follows_the_inputs_and_not_the_run():
     a = prepare_hyb_fit(hyb, H, tol=1e-2, verbose=False, w=w, x_lim=(-2, 2))
     b = prepare_hyb_fit(hyb, H, tol=1e-2, verbose=False, w=w, x_lim=(-2, 2))
     assert a.fingerprint == b.fingerprint
-    assert a.fingerprint != prepare_hyb_fit(hyb * 1.0001, H, tol=1e-2, verbose=False, w=w, x_lim=(-2, 2)).fingerprint
-    assert a.fingerprint != prepare_hyb_fit(hyb, H, tol=2e-2, verbose=False, w=w, x_lim=(-2, 2)).fingerprint
-    assert a.fingerprint != prepare_hyb_fit(hyb, H, tol=1e-2, verbose=False, w=w, x_lim=(-1, 2)).fingerprint
+    assert (
+        a.fingerprint
+        != prepare_hyb_fit(
+            hyb * 1.0001, H, tol=1e-2, verbose=False, w=w, x_lim=(-2, 2)
+        ).fingerprint
+    )
+    assert (
+        a.fingerprint
+        != prepare_hyb_fit(
+            hyb, H, tol=2e-2, verbose=False, w=w, x_lim=(-2, 2)
+        ).fingerprint
+    )
+    assert (
+        a.fingerprint
+        != prepare_hyb_fit(
+            hyb, H, tol=1e-2, verbose=False, w=w, x_lim=(-1, 2)
+        ).fingerprint
+    )
 
 
 def test_the_fingerprint_ignores_the_coulomb_tensor_when_the_basis_does():
@@ -79,10 +100,15 @@ def test_fit_bath_returns_a_stored_fit_sorted_and_flat_without_fitting(monkeypat
         [np.array([[[0.1] * n], [[0.2] * n]], dtype=complex) for n in sizes],
         [np.zeros((n, n), dtype=complex) for n in sizes],
     )
-    monkeypatch.setattr("rspt2spectra.h0.fit_hyb", lambda *a, **k: pytest.fail("fitted despite a stored fit"))
+    monkeypatch.setattr(
+        "rspt2spectra.h0.fit_hyb",
+        lambda *a, **k: pytest.fail("fitted despite a stored fit"),
+    )
     fit = fit_bath(basis, w, 0.05, 1, FitOptions(), stored_fit=stored, verbose=False)
     assert fit.warm_start_info is None
     for eb, vb, n in zip(fit.ebs_star, fit.vs_star, sizes):
         assert list(eb) == [-0.5, 0.5]  # sorted
         assert vb.shape == (2, 1, n)
-        assert np.allclose(vb[0], 0.2) and np.allclose(vb[1], 0.1)  # followed the energies
+        assert np.allclose(vb[0], 0.2) and np.allclose(
+            vb[1], 0.1
+        )  # followed the energies

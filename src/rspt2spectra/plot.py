@@ -232,7 +232,9 @@ def _star_panels(z, ebs, vs):
     order = np.argsort(ebs, kind="stable")
     panels = []
     for k in order:
-        contribution = get_hyb_2(z, ebs[k : k + 1][np.newaxis], vs[k : k + 1][np.newaxis])[0]
+        contribution = get_hyb_2(
+            z, ebs[k : k + 1][np.newaxis], vs[k : k + 1][np.newaxis]
+        )[0]
         panels.append((f"$\\varepsilon_b = {ebs[k]: .3f}$", [(contribution, None)]))
     return panels
 
@@ -286,7 +288,9 @@ def _annotate_shift(fig, C):
     if C.shape == (1, 1):
         text = f"C = {np.real(C[0, 0]): .4f}"
     else:
-        rows = ["  ".join(f"{np.real(x): .3f}{np.imag(x):+.3f}i" for x in row) for row in C]
+        rows = [
+            "  ".join(f"{np.real(x): .3f}{np.imag(x):+.3f}i" for x in row) for row in C
+        ]
         text = "C =\n" + "\n".join(rows)
     fig.text(
         0.99,
@@ -375,7 +379,9 @@ def plot_hyb_fit(
         else:
             panels, present_kinds = _star_panels(z, ebs, vs), []
 
-        total = C + np.sum([np.sum([c for c, _ in curves], axis=0) for _, curves in panels], axis=0)
+        total = C + np.sum(
+            [np.sum([c for c, _ in curves], axis=0) for _, curves in panels], axis=0
+        )
         if not np.allclose(total, fit, atol=1e-6):
             print(
                 f"WARNING: contributions of block {b} do not sum to the star "
@@ -401,7 +407,9 @@ def plot_hyb_fit(
     return figs
 
 
-def _draw_block_figure(plt, Line2D, Patch, w, orig, fit, panels, present_kinds, orbs, C, bath_geometry):
+def _draw_block_figure(
+    plt, Line2D, Patch, w, orig, fit, panels, present_kinds, orbs, C, bath_geometry
+):
     """Render one block figure: top fit panel plus one panel per bath entity."""
     n_orb = len(orbs)
     colors = [_ORBITAL_COLORS[i % len(_ORBITAL_COLORS)] for i in range(n_orb)]
@@ -442,12 +450,18 @@ def _draw_block_figure(plt, Line2D, Patch, w, orig, fit, panels, present_kinds, 
                     lw=1.2,
                     ls="--",
                 )
-        ax_im.text(0.02, 0.9, label, transform=ax_im.transAxes, ha="left", va="top", fontsize=8)
+        ax_im.text(
+            0.02, 0.9, label, transform=ax_im.transAxes, ha="left", va="top", fontsize=8
+        )
         ax_im.set_ylabel(r"$-\mathrm{Im}\,\Delta$")
         ax_re.set_ylabel(r"$\mathrm{Re}\,\Delta$")
 
-    handles = [Patch(facecolor=colors[i], alpha=0.3, label=f"orb {orbs[i]} (RSPt)") for i in range(n_orb)] + [
-        Line2D([], [], color=colors[i], lw=1.5, label=f"orb {orbs[i]} (fit)") for i in range(n_orb)
+    handles = [
+        Patch(facecolor=colors[i], alpha=0.3, label=f"orb {orbs[i]} (RSPt)")
+        for i in range(n_orb)
+    ] + [
+        Line2D([], [], color=colors[i], lw=1.5, label=f"orb {orbs[i]} (fit)")
+        for i in range(n_orb)
     ]
     if n_orb > 1:
         handles.append(
@@ -462,7 +476,11 @@ def _draw_block_figure(plt, Line2D, Patch, w, orig, fit, panels, present_kinds, 
         )
     for kind in present_kinds:
         if kind in _KIND_LABELS:
-            handles.append(Line2D([], [], color=_KIND_COLORS[kind], lw=1.5, label=_KIND_LABELS[kind]))
+            handles.append(
+                Line2D(
+                    [], [], color=_KIND_COLORS[kind], lw=1.5, label=_KIND_LABELS[kind]
+                )
+            )
     axes[0, 0].legend(handles=handles, fontsize=7, loc="best")
 
     for ax in axes[-1]:

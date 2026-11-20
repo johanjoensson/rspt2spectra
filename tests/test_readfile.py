@@ -15,9 +15,13 @@ def test_parse_matrices_single_block_at_eof(tmp_path):
     (tmp_path / "out").write_text(
         "Cluster cl Local hamiltonian\n real part\n -1.5  0.2\n  0.2 -0.7\n imag part\n  0.0  0.1\n -0.1  0.0\n"
     )
-    hs = parse_matrices(out_file="out", search_phrase="Local hamiltonian", prefix=str(tmp_path))
+    hs = parse_matrices(
+        out_file="out", search_phrase="Local hamiltonian", prefix=str(tmp_path)
+    )
     assert list(hs) == ["cl"]
-    expected = np.array([[-1.5, 0.2], [0.2, -0.7]]) + 1j * np.array([[0.0, 0.1], [-0.1, 0.0]])
+    expected = np.array([[-1.5, 0.2], [0.2, -0.7]]) + 1j * np.array(
+        [[0.0, 0.1], [-0.1, 0.0]]
+    )
     assert np.allclose(hs["cl"], expected)
 
 
@@ -35,13 +39,17 @@ def test_parse_matrices_multiple_blocks(tmp_path):
         "  0.5\n"
         "trailing text\n"
     )
-    hs = parse_matrices(out_file="out", search_phrase="Local hamiltonian", prefix=str(tmp_path))
+    hs = parse_matrices(
+        out_file="out", search_phrase="Local hamiltonian", prefix=str(tmp_path)
+    )
     assert np.allclose(hs["a"], [[1.0]])
     assert np.allclose(hs["b"], [[2.0 + 0.5j]])
 
 
 def test_parse_fermi_energy(tmp_path):
-    (tmp_path / "out").write_text(" some preamble\n fermi energy =  6.7596104733184E-01\n more output\n")
+    (tmp_path / "out").write_text(
+        " some preamble\n fermi energy =  6.7596104733184E-01\n more output\n"
+    )
     assert parse_fermi_energy(prefix=str(tmp_path)) == pytest.approx(0.67596104733184)
 
 
@@ -80,8 +88,16 @@ def test_parse_cluster_basis_matches_despite_obs_suffix(tmp_path):
     _write_fcc_ni_style_green_inp(tmp_path / "green.inp")
     # The unsuffixed label (what green.inp defines) and the "-obs" one (what "out" and the
     # hybridization filenames actually carry) must resolve to the same cluster.
-    assert parse_cluster_basis("0102010103", prefix=str(tmp_path)) == (False, [(2, 3)], [])
-    assert parse_cluster_basis("0102010103-obs", prefix=str(tmp_path)) == (False, [(2, 3)], [])
+    assert parse_cluster_basis("0102010103", prefix=str(tmp_path)) == (
+        False,
+        [(2, 3)],
+        [],
+    )
+    assert parse_cluster_basis("0102010103-obs", prefix=str(tmp_path)) == (
+        False,
+        [(2, 3)],
+        [],
+    )
 
 
 def test_parse_cluster_basis_lowercase_id_prefix_is_not_honored(tmp_path):
@@ -91,7 +107,11 @@ def test_parse_cluster_basis_lowercase_id_prefix_is_not_honored(tmp_path):
     # here would recognize a label RSPt itself does not and silently mismatch the real output.
     _write_fcc_ni_style_green_inp(tmp_path / "green.inp")
     assert parse_cluster_basis("Ni", prefix=str(tmp_path)) is None
-    assert parse_cluster_basis("0102010103-obs", prefix=str(tmp_path)) == (False, [(2, 3)], [])
+    assert parse_cluster_basis("0102010103-obs", prefix=str(tmp_path)) == (
+        False,
+        [(2, 3)],
+        [],
+    )
 
 
 def test_parse_cluster_basis_returns_every_shell_and_the_cf_flag(tmp_path):
@@ -117,7 +137,9 @@ def test_parse_cluster_basis_returns_none_when_file_missing(tmp_path):
 
 
 def test_list_cluster_labels(tmp_path):
-    (tmp_path / "green.inp").write_text("cluster\n 1 Ida\n 1 2 1 1 0\ncluster\n 1 Idb\n 1 2 1 1 3\n")
+    (tmp_path / "green.inp").write_text(
+        "cluster\n 1 Ida\n 1 2 1 1 0\ncluster\n 1 Idb\n 1 2 1 1 3\n"
+    )
     assert list_cluster_labels(prefix=str(tmp_path)) == ["a", "b"]
 
 
@@ -127,7 +149,11 @@ def test_list_cluster_labels_missing_file(tmp_path):
 
 def test_parse_cluster_basis_returns_irr_tokens_in_order(tmp_path):
     (tmp_path / "green.inp").write_text("cluster\n 1 IdNi IrrEg IrrT2g\n 1 2 1 1 0\n")
-    assert parse_cluster_basis("Ni", prefix=str(tmp_path)) == (False, [(2, 0)], ["IrrEg", "IrrT2g"])
+    assert parse_cluster_basis("Ni", prefix=str(tmp_path)) == (
+        False,
+        [(2, 0)],
+        ["IrrEg", "IrrT2g"],
+    )
 
 
 def test_read_projection_file_legacy_header(tmp_path):
@@ -150,7 +176,14 @@ def test_read_projection_file_stops_at_the_quantum_number_section(tmp_path):
 
 @pytest.mark.parametrize(
     "text",
-    ["2\n2\n", "0\n3\n", "0\n2\n1 1 abc 0.0\n", "0\n2\n1 3 1.0 0.0\n", "0\n2\n0 1 1.0 0.0\n", ""],
+    [
+        "2\n2\n",
+        "0\n3\n",
+        "0\n2\n1 1 abc 0.0\n",
+        "0\n2\n1 3 1.0 0.0\n",
+        "0\n2\n0 1 1.0 0.0\n",
+        "",
+    ],
 )
 def test_read_projection_file_rejects_malformed_files(tmp_path, text):
     f = tmp_path / "proj.inp"

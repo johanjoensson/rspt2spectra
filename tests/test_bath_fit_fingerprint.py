@@ -39,6 +39,9 @@ def test_a_changed_fit_input_changes_the_key(changed):
     assert _key(**changed) != _key()
 
 
-@pytest.mark.parametrize("changed", [{"warm_start": False}, {"freeze_bath_energies": True}, {"bath_geometry": "star"}])
+@pytest.mark.parametrize(
+    "changed",
+    [{"warm_start": False}, {"freeze_bath_energies": True}, {"bath_geometry": "star"}],
+)
 def test_how_the_fit_is_started_or_arranged_does_not(changed):
     assert _key(options=replace(FitOptions(), **changed)) == _key()

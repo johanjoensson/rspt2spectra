@@ -31,7 +31,12 @@ def one_orbital_model():
     for e, v in poles:
         hyb[:, 0, 0] += v**2 / (Z - e)
     fb = prepare_hyb_fit(hyb, H_loc, verbose=False, w=Z.real)
-    Q, phase_hyb, H_local_Q, block_structure = fb.Q, fb.phase_hyb, fb.H_local_Q, fb.block_structure
+    Q, phase_hyb, H_local_Q, block_structure = (
+        fb.Q,
+        fb.phase_hyb,
+        fb.H_local_Q,
+        fb.block_structure,
+    )
     ebs = np.array([e for e, _ in poles])
     vs = np.array([[[v * Q[0, 0]]] for _, v in poles], dtype=complex)
     ebs_flat, vs_flat = flatten_star_levels(ebs, vs)
@@ -53,7 +58,12 @@ def two_orbital_model():
     for e, v in poles:
         hyb += np.conj(v[None, :, None]) * v[None, None, :] / (Z - e)[:, None, None]
     fb = prepare_hyb_fit(hyb, H_loc, verbose=False, w=Z.real)
-    Q, phase_hyb, H_local_Q, block_structure = fb.Q, fb.phase_hyb, fb.H_local_Q, fb.block_structure
+    Q, phase_hyb, H_local_Q, block_structure = (
+        fb.Q,
+        fb.phase_hyb,
+        fb.H_local_Q,
+        fb.block_structure,
+    )
     ebs = np.array([e for e, _ in poles])
     vs = np.array([v @ Q for _, v in poles]).reshape((len(poles), 1, 2))
     ebs_flat, vs_flat = flatten_star_levels(ebs, vs)
@@ -81,7 +91,12 @@ def peel_model():
     for e, v in poles:
         hyb[:, 0, 0] += v**2 / (Z - e)
     fb = prepare_hyb_fit(hyb, H_loc, verbose=False, w=Z.real)
-    Q, phase_hyb, H_local_Q, block_structure = fb.Q, fb.phase_hyb, fb.H_local_Q, fb.block_structure
+    Q, phase_hyb, H_local_Q, block_structure = (
+        fb.Q,
+        fb.phase_hyb,
+        fb.H_local_Q,
+        fb.block_structure,
+    )
     ebs = np.array([e for e, _ in poles])
     vs = np.array([[[v * Q[0, 0]]] for _, v in poles], dtype=complex)
     ebs_flat, vs_flat = flatten_star_levels(ebs, vs)
@@ -177,18 +192,24 @@ def test_chain_contributions_sum_to_full_hyb(geometry, model):
     # The site contributions telescope exactly to the geometry's
     # hybridization, which in turn matches the star-model poles.
     assert np.allclose(total, block_hyb(Z, H_bath, v), atol=1e-10)
-    assert np.allclose(total, get_hyb_2(Z, ebs[np.newaxis], vs[np.newaxis])[0], atol=1e-8)
+    assert np.allclose(
+        total, get_hyb_2(Z, ebs[np.newaxis], vs[np.newaxis])[0], atol=1e-8
+    )
     # Each entity contribution carries non-negative spectral weight.
     for contribution in contributions:
         diag = np.diagonal(contribution, axis1=1, axis2=2)
         assert np.all(-diag.imag > -1e-12)
 
 
-@pytest.mark.parametrize("geometry", ["chain", "single_chain", "linked_chain", "peeled_linked_chain"])
+@pytest.mark.parametrize(
+    "geometry", ["chain", "single_chain", "linked_chain", "peeled_linked_chain"]
+)
 def test_chain_panels_sum_to_full_hyb(geometry):
     H_bath, v, _, _, n_orb = geometry_block(geometry, one_orbital_model)
     panels, _kinds = _chain_panels(Z, H_bath, v, n_orb)
-    total = np.sum([np.sum([c for c, _ in curves], axis=0) for _, curves in panels], axis=0)
+    total = np.sum(
+        [np.sum([c for c, _ in curves], axis=0) for _, curves in panels], axis=0
+    )
     assert np.allclose(total, block_hyb(Z, H_bath, v), atol=1e-10)
 
 
@@ -232,7 +253,9 @@ def test_star_panels_sum_to_fit():
         assert len(curves) == 1
         assert curves[0][1] is None
     total = C + np.sum([curves[0][0] for _, curves in panels], axis=0)
-    assert np.allclose(total, get_hyb_2(Z, ebs[np.newaxis], vs[np.newaxis], C)[0], atol=1e-12)
+    assert np.allclose(
+        total, get_hyb_2(Z, ebs[np.newaxis], vs[np.newaxis], C)[0], atol=1e-12
+    )
 
 
 @pytest.mark.parametrize(

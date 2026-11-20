@@ -26,14 +26,18 @@ def _offdiag_weight(mats):
 def _random_commuting(n, n_mat, seed=0):
     rng = np.random.default_rng(seed)
     U, _ = np.linalg.qr(rng.normal(size=(n, n)) + 1j * rng.normal(size=(n, n)))
-    return np.array([U @ np.diag(rng.normal(size=n)) @ U.conj().T for _ in range(n_mat)])
+    return np.array(
+        [U @ np.diag(rng.normal(size=n)) @ U.conj().T for _ in range(n_mat)]
+    )
 
 
 def test_joint_diagonalization_recovers_commuting_set():
     mats = _random_commuting(5, 6)
     phase, Q = block_diagonalize_hyb(mats.astype(complex))
     assert np.allclose(Q.conj().T @ Q, np.eye(5))
-    assert _offdiag_weight(phase) < 1e-15 * 6  # pairs below the 1e-8 relative skip are left alone
+    assert (
+        _offdiag_weight(phase) < 1e-15 * 6
+    )  # pairs below the 1e-8 relative skip are left alone
 
 
 def test_joint_diagonalization_is_never_worse_than_the_input_basis():

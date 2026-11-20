@@ -27,6 +27,7 @@ from .bath_optimizer import (
     _max_bath_states,
     free_window,
     get_v_and_eb_varpro_basin_hopping,
+    get_v_and_eb_varpro_held,
     get_v_and_eb_varpro_local,
     max_bath_states,
 )
@@ -37,8 +38,8 @@ from .symmetries import (
     trivial_symmetry,
 )
 
-# Default warm-start hysteresis for `fit_block`: a fit refined from the previous
-# bath is replaced only by a global minimum at least this much (relatively) cheaper.
+# Default warm-start hysteresis for `fit_block`: the previous bath energies are kept, and the
+# bath moved only by a refinement or a global minimum at least this much (relatively) cheaper.
 DEFAULT_WARM_ACCEPT_TOL = 0.05
 
 _LINE_WIDTH = 72
@@ -90,7 +91,10 @@ def _print_block_structure(block_structure):
 def _print_symmetries(block_structure, syms):
     """Print the symmetry detected for each inequivalent block."""
     print("Detected symmetries")
-    width = max(len(str(block_structure.blocks[ib])) for ib in block_structure.inequivalent_blocks)
+    width = max(
+        len(str(block_structure.blocks[ib]))
+        for ib in block_structure.inequivalent_blocks
+    )
     for sym, block_i in zip(syms, block_structure.inequivalent_blocks, strict=True):
         print(f"  {block_structure.blocks[block_i]!s:<{width}} : {describe(sym)}")
 
@@ -179,9 +183,9 @@ def fit_hyb(
         Relative tolerance for accepting a symmetry; see
         :data:`rspt2spectra.symmetries.DEFAULT_SYMMETRY_TOL`.
     warm_accept_tol : float, default DEFAULT_WARM_ACCEPT_TOL
-        Warm-start hysteresis. The fit refined locally from ``ebs_guess`` is kept
-        unless the global search finds a cost lower by more than this relative
-        margin, so that a slowly changing hybridization does not make the bath jump
+        Warm-start hysteresis. ``ebs_guess`` itself is kept unless a local refinement
+        or the global search finds a cost lower by more than this relative margin, so
+        that a slowly changing hybridization does not make the bath move or jump
         between near-degenerate minima. See :func:`fit_block`.
     warm_start_info : list, optional
         When given, one dict per inequivalent block is appended, in block order,
@@ -219,13 +223,19 @@ def fit_hyb(
                 for ib in block_structure.inequivalent_blocks
             ],
         )
-    mask = np.logical_and(x_lim[0] <= w, w < x_lim[1]) if x_lim is not None else np.ones(len(w), bool)
+    mask = (
+        np.logical_and(x_lim[0] <= w, w < x_lim[1])
+        if x_lim is not None
+        else np.ones(len(w), bool)
+    )
 
     if verbose:
         print(_rule("Hybridization fit"))
         _print_block_structure(block_structure)
 
-    ebs_star = [np.empty((0,), dtype=float) for _ in block_structure.inequivalent_blocks]
+    ebs_star = [
+        np.empty((0,), dtype=float) for _ in block_structure.inequivalent_blocks
+    ]
     vs_star = [
         np.empty(
             (0, len(block_structure.blocks[ib]), len(block_structure.blocks[ib])),
@@ -289,7 +299,9 @@ def fit_hyb(
 
         bath_guess = None
         if ebs_guess is not None:
-            bath_guess = np.unique(np.asarray(ebs_guess[inequivalent_block_i], dtype=float))
+            bath_guess = np.unique(
+                np.asarray(ebs_guess[inequivalent_block_i], dtype=float)
+            )
             if sym.particle_hole:
                 # Only the positive half of a mirrored bath is parametrized; an
                 # unpaired pole at E_F is carried by `sym.zero_pole`, not here.
@@ -382,7 +394,11 @@ def _detect_symmetries(
             ph_data=(w, block_hyb),
         )
         if sym.particle_hole and not optimize_bath_energies:
-            guess = np.asarray(ebs_guess[len(syms)], dtype=float) if ebs_guess is not None else None
+            guess = (
+                np.asarray(ebs_guess[len(syms)], dtype=float)
+                if ebs_guess is not None
+                else None
+            )
             mirrored, zero_pole = _frozen_bath_is_mirrored(guess, delta)
             if not mirrored:
                 sym = _skip_particle_hole(sym, "frozen bath is not mirror symmetric")
@@ -450,7 +466,9 @@ def _frozen_bath_is_mirrored(energies, delta):
         # Nothing but a pole at E_F: there is no pair to mirror, and the gap
         # parametrization has no free energy to work with.
         return False, False
-    rebuilt = np.concatenate([-half[::-1], np.zeros(1) if zero_pole else np.zeros(0), half])
+    rebuilt = np.concatenate(
+        [-half[::-1], np.zeros(1) if zero_pole else np.zeros(0), half]
+    )
     if rebuilt.shape != energies.shape:
         return False, False
     return bool(np.allclose(rebuilt, energies, atol=0.1 * delta)), zero_pole
@@ -539,7 +557,8 @@ def get_state_per_inequivalent_block(
         block_hyb = hyb[idx]
         average_weight_per_inequivalent_block[inequivalent_block_i] = (
             sp.integrate.simpson(
-                -np.imag(np.sum(np.diagonal(block_hyb, axis1=1, axis2=2), axis=1)) * weight_fun(w),
+                -np.imag(np.sum(np.diagonal(block_hyb, axis1=1, axis2=2), axis=1))
+                * weight_fun(w),
                 w,
             )
             * block_multiplicity
@@ -548,13 +567,17 @@ def get_state_per_inequivalent_block(
 
     # Negative integrated weight (numerical noise on an essentially empty block)
     # is not real hybridization; clamp it so it neither steals nor gets states.
-    average_weight_per_inequivalent_block = np.clip(average_weight_per_inequivalent_block, 0.0, None)
+    average_weight_per_inequivalent_block = np.clip(
+        average_weight_per_inequivalent_block, 0.0, None
+    )
     total_weight = np.sum(average_weight_per_inequivalent_block)
 
     # Pool of B states per block, shared out by hybridization strength.
     pool = bath_states_per_orbital * n_blocks
     if total_weight > 0:
-        states = np.round(pool * average_weight_per_inequivalent_block / total_weight).astype(int)
+        states = np.round(
+            pool * average_weight_per_inequivalent_block / total_weight
+        ).astype(int)
     else:
         states = np.zeros(n_blocks, dtype=int)
 
@@ -601,9 +624,12 @@ def fit_block(
     basin-hopping search over energies is skipped. ``bath_guess`` is then required.
 
     Warm start: with ``bath_guess`` given (e.g. the previous iteration's fit) and
-    ``optimize_bath_energies`` on, the fit is also refined *locally* from the guess,
-    and that warm fit is kept unless the global search beats its cost by more than
-    the relative margin ``warm_accept_tol``. Without this hysteresis the global
+    ``optimize_bath_energies`` on, two more candidates are priced next to the global
+    search: the guess itself ("held": energies unchanged, hoppings re-solved) and the guess
+    refined *locally* ("refined").  The first of held, refined and global whose cost is within
+    the relative margin ``warm_accept_tol`` of the cheapest one is returned, so the bath moves
+    only for an improvement larger than the margin (``warm_accept_tol = 1`` never moves it).
+    All three costs are the cost of the final polish, so they are comparable. Without this hysteresis the global
     minimum flips between near-degenerate basins as the hybridization drifts from
     one iteration to the next, and the bath -- and with it the self-energy -- jumps.
     Both costs are measured against *this* hybridization, so a poor or stale guess
@@ -611,8 +637,9 @@ def fit_block(
     fit's skips the hysteresis and only seeds the global search.
 
     ``warm_start_info``, when given, is a dict that receives the outcome: key
-    ``"status"`` (``"cold"``, ``"kept"``, ``"replaced"``, ``"state count changed"``
-    or ``"frozen"``) and, where computed, ``"cost warm"`` and ``"cost global"``.
+    ``"status"`` (``"cold"``, ``"held"``, ``"refined"``, ``"replaced"``,
+    ``"state count changed"`` or ``"frozen"``) and, where computed, ``"cost held"``,
+    ``"cost refined"`` and ``"cost global"`` (``"cost warm"`` for a frozen fit).
 
     ``sym`` is the block's :class:`rspt2spectra.symmetries.BlockSymmetry`.  When
     it carries particle-hole symmetry only the positive half of the bath is
@@ -657,7 +684,9 @@ def fit_block(
             optimize_bath_energies=False,
         )
         if comm is not None:
-            bath_energies, v, C, _ = comm.allreduce((bath_energies, v, C, min_cost), op=_get_v_opt_op())
+            bath_energies, v, C, _ = comm.allreduce(
+                (bath_energies, v, C, min_cost), op=_get_v_opt_op()
+            )
         if warm_start_info is not None:
             warm_start_info.update({"status": "frozen", "cost warm": abs(min_cost)})
         if verbose:
@@ -667,7 +696,9 @@ def fit_block(
 
     # Cap the requested count at what reasonably fits in the window (min
     # separation delta), so seeds are built at a feasible size from the start.
-    bath_states_per_orbital = min(bath_states_per_orbital, max_bath_states(w[0], w[-1], delta, sym))
+    bath_states_per_orbital = min(
+        bath_states_per_orbital, max_bath_states(w[0], w[-1], delta, sym)
+    )
     # A mirrored bath only parametrizes its positive half (plus, for an odd
     # count, one unpaired pole at E_F that carries no free energy).  The cap
     # above can change the parity of the count, so re-derive the unpaired pole
@@ -697,7 +728,9 @@ def fit_block(
 
     scores = weight_fun(w[peaks]) * hyb_trace[peaks]
     score_sum = np.sum(scores)
-    normalised_scores = scores / score_sum if score_sum > 0 else np.ones_like(scores) / len(scores)
+    normalised_scores = (
+        scores / score_sum if score_sum > 0 else np.ones_like(scores) / len(scores)
+    )
 
     if verbose:
         _print_peaks(
@@ -752,47 +785,61 @@ def fit_block(
         rng=rng,
     )
     if comm is not None:
-        bath_energies, v, C, min_cost = comm.allreduce((bath_energies, v, C, min_cost), op=_get_v_opt_op())
+        bath_energies, v, C, min_cost = comm.allreduce(
+            (bath_energies, v, C, min_cost), op=_get_v_opt_op()
+        )
 
     status = "cold" if bath_guess is None else "state count changed"
-    cost_warm = None
+    cost_held = cost_refined = None
     cost_global = abs(min_cost)
     if warm_seed is not None:
-        # Computed on the root and broadcast: the local refinement draws no random
-        # numbers, but floating-point noise across ranks must not split the decision.
-        warm = None
+        # Computed on the root and broadcast: the local steps draw no random numbers, but
+        # floating-point noise across ranks must not split the decision.
+        candidates = None
         if rank == 0:
-            v_w, eb_w, C_w, c_w = get_v_and_eb_varpro_local(
+            solve_args = (
                 w,
                 delta,
                 hyb,
                 warm_seed,
                 eb_bounds,
-                gamma=gamma,
-                regularization=regularization,
-                weight_function=weight_fun,
-                sym=sym,
+                gamma,
+                regularization,
+                weight_fun,
+                sym,
             )
-            warm = (eb_w, v_w, C_w, c_w)
+            v_h, eb_h, C_h, c_h = get_v_and_eb_varpro_held(*solve_args)
+            v_r, eb_r, C_r, c_r = get_v_and_eb_varpro_local(*solve_args)
+            candidates = ((eb_h, v_h, C_h, c_h), (eb_r, v_r, C_r, c_r))
         if comm is not None:
-            warm = comm.bcast(warm, root=0)
-        cost_warm = abs(warm[-1])
-        if cost_global < (1 - warm_accept_tol) * cost_warm:
-            status = "replaced"
-        else:
-            status = "kept"
-            bath_energies, v, C, min_cost = warm
+            candidates = comm.bcast(candidates, root=0)
+        held, refined = candidates
+        cost_held, cost_refined = abs(held[-1]), abs(refined[-1])
+        # The first candidate within the margin of the cheapest wins, in order of how little
+        # it moves the bath: the previous energies themselves, the same basin refined, the
+        # global minimum.  warm_accept_tol = 1 never moves the energies.
+        options = (
+            ("held", held, cost_held),
+            ("refined", refined, cost_refined),
+            ("replaced", (bath_energies, v, C, min_cost), cost_global),
+        )
+        cheapest = min(cost for _, _, cost in options)
+        limit = np.inf if warm_accept_tol >= 1 else cheapest / (1 - warm_accept_tol)
+        status, (bath_energies, v, C, min_cost), _ = next(
+            option for option in options if option[2] <= limit
+        )
     if warm_start_info is not None:
         warm_start_info["status"] = status
         warm_start_info["cost global"] = cost_global
-        if cost_warm is not None:
-            warm_start_info["cost warm"] = cost_warm
+        if cost_held is not None:
+            warm_start_info["cost held"] = cost_held
+            warm_start_info["cost refined"] = cost_refined
 
     if verbose:
-        if cost_warm is not None:
+        if cost_held is not None:
             print(
-                f"Warm start:    {status}  (cost warm {cost_warm:.3e}, global {cost_global:.3e},"
-                f" margin {warm_accept_tol:g})"
+                f"Warm start:    {status}  (cost held {cost_held:.3e}, refined {cost_refined:.3e},"
+                f" global {cost_global:.3e}, margin {warm_accept_tol:g})"
             )
         print(f"Final cost:    {abs(min_cost):.3e}")
         print(f"Bath energies: {_fmt_floats(bath_energies)}")

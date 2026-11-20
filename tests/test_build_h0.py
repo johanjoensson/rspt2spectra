@@ -156,7 +156,9 @@ def test_impurity_level_lands_inside_a_straddling_bath(tmp_path, monkeypatch):
 
     diag = {i: v.real for (i, j), v in _read_terms(tmp_path).items() if i == j}
     impurity, bath = diag[0], [v for k, v in diag.items() if k > 0]
-    assert min(bath) <= impurity <= max(bath), f"impurity {impurity} outside bath {min(bath)}..{max(bath)}"
+    assert (
+        min(bath) <= impurity <= max(bath)
+    ), f"impurity {impurity} outside bath {min(bath)}..{max(bath)}"
 
 
 def test_verify_spherical_basis_raises_on_non_unitary_t():
@@ -497,7 +499,9 @@ def test_assemble_h0_shares_one_fit_across_the_full_equivalence_class():
         hyb[:, i, i] = base + noise[i]
         H_local[i, i] = -0.2 + noise[i]
 
-    fit_basis = prepare_hyb_fit(hyb, H_local, tol=BLOCK_EQUIVALENCE_TOL, verbose=False, w=w)
+    fit_basis = prepare_hyb_fit(
+        hyb, H_local, tol=BLOCK_EQUIVALENCE_TOL, verbose=False, w=w
+    )
     Q, phase_hyb, H_local_Q, block_structure = (
         fit_basis.Q,
         fit_basis.phase_hyb,
@@ -550,17 +554,23 @@ def _write_d_shell_dir(path, h_cubic, green_inp, alocal=None, with_qs=False):
     w = np.linspace(-6, 3, 50)
     header = "# Frequency, total\n# indexmap: (column index of projected elements)\n"
     for i in range(n):
-        header += "# " + " ".join(str(3 + i) if j == i else "0" for j in range(n)) + "\n"
+        header += (
+            "# " + " ".join(str(3 + i) if j == i else "0" for j in range(n)) + "\n"
+        )
     for fname in ("real-hyb-cl.dat", "imag-hyb-cl.dat"):
         rows = np.column_stack([w, np.zeros_like(w)] + [np.zeros_like(w)] * n)
-        (path / fname).write_text(header + "\n".join(" ".join(f"{x:.10e}" for x in r) for r in rows) + "\n")
+        (path / fname).write_text(
+            header + "\n".join(" ".join(f"{x:.10e}" for x in r) for r in rows) + "\n"
+        )
 
     def matrix_block(m, label):
         real = "\n".join(" ".join(f"{x:.12f}" for x in r) for r in m.real)
         imag = "\n".join(" ".join(f"{x:.12f}" for x in r) for r in m.imag)
         return f"{label}\n Real:\n{real}\n Imag:\n{imag}\n"
 
-    text = " fermi energy = 0.0\n" + matrix_block(h_cubic, "Cluster cl Local hamiltonian")
+    text = " fermi energy = 0.0\n" + matrix_block(
+        h_cubic, "Cluster cl Local hamiltonian"
+    )
     if with_qs:
         text += matrix_block(
             alocal,
@@ -636,10 +646,16 @@ def test_printed_cf_matrix_is_ignored_without_the_cf_flag(tmp_path, monkeypatch)
     assert np.allclose(_impurity_block(d1, 10), _impurity_block(d2, 10), atol=1e-9)
 
 
-def test_cf_flag_composes_the_basis_rotation_with_the_printed_matrix(tmp_path, monkeypatch):
+def test_cf_flag_composes_the_basis_rotation_with_the_printed_matrix(
+    tmp_path, monkeypatch
+):
     h = _non_cubic_h()
-    alocal = np.eye(10)[[1, 0, 2, 3, 4, 5, 6, 7, 8, 9]].astype(complex)  # swap two orbitals
-    _write_d_shell_dir(tmp_path, h, "cluster\n 1 Cf Idcl\n 1 2 1 1 3\n", alocal=alocal, with_qs=True)
+    alocal = np.eye(10)[[1, 0, 2, 3, 4, 5, 6, 7, 8, 9]].astype(
+        complex
+    )  # swap two orbitals
+    _write_d_shell_dir(
+        tmp_path, h, "cluster\n 1 Cf Idcl\n 1 2 1 1 3\n", alocal=alocal, with_qs=True
+    )
     monkeypatch.chdir(tmp_path)
     _run_zero_hyb(tmp_path)
 
@@ -655,7 +671,9 @@ def test_cf_flag_without_a_printed_matrix_raises(tmp_path, monkeypatch):
 
 
 def test_layout_mismatch_between_green_inp_and_out_raises(tmp_path, monkeypatch):
-    _write_d_shell_dir(tmp_path, _non_cubic_h(), "cluster\n 2 Idcl\n 1 2 1 1 3\n 1 1 1 1 0\n")
+    _write_d_shell_dir(
+        tmp_path, _non_cubic_h(), "cluster\n 2 Idcl\n 1 2 1 1 3\n 1 1 1 1 0\n"
+    )
     monkeypatch.chdir(tmp_path)
     with pytest.raises(RuntimeError, match="16"):
         _run_zero_hyb(tmp_path)
@@ -664,7 +682,10 @@ def test_layout_mismatch_between_green_inp_and_out_raises(tmp_path, monkeypatch)
 def _write_proj_file(path, T, name="proj-cl-IrrD.inp"):
     n = T.shape[1]
     lines = [f"1 {n} {np.count_nonzero(T)}"]
-    lines += [f"{i + 1} {j + 1} {T[i, j].real:.15e} {T[i, j].imag:.15e}" for i, j in zip(*np.nonzero(T))]
+    lines += [
+        f"{i + 1} {j + 1} {T[i, j].real:.15e} {T[i, j].imag:.15e}"
+        for i, j in zip(*np.nonzero(T))
+    ]
     (path / name).write_text("\n".join(lines) + "\n")
 
 
@@ -686,13 +707,21 @@ def test_irr_projector_composes_with_the_cf_flag(tmp_path, monkeypatch):
     h = _non_cubic_h()
     T = cluster_rotation([(2, 3)])
     alocal = np.eye(10)[[1, 0, 2, 3, 4, 5, 6, 7, 8, 9]].astype(complex)
-    _write_d_shell_dir(tmp_path, h, "cluster\n 1 Cf Idcl IrrD\n 1 2 1 1 0\n", alocal=alocal, with_qs=True)
+    _write_d_shell_dir(
+        tmp_path,
+        h,
+        "cluster\n 1 Cf Idcl IrrD\n 1 2 1 1 0\n",
+        alocal=alocal,
+        with_qs=True,
+    )
     _write_proj_file(tmp_path, T)
     monkeypatch.chdir(tmp_path)
     _run_zero_hyb(tmp_path)
 
     full = T @ alocal
-    assert np.allclose(_impurity_block(tmp_path, 10), full @ h @ full.conj().T, atol=1e-6)
+    assert np.allclose(
+        _impurity_block(tmp_path, 10), full @ h @ full.conj().T, atol=1e-6
+    )
 
 
 def test_missing_irr_projector_file_raises(tmp_path, monkeypatch):

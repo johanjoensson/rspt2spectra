@@ -233,7 +233,9 @@ def test_project_to_blocks_zeroes_only_the_off_block_elements():
     assert np.all(out[:2, 2:] == 0) and np.all(out[2:, :2] == 0)
     assert np.all(out[:2, :2] == a[:2, :2]) and np.all(out[2:, 2:] == a[2:, 2:])
     stack = np.stack([a, 2 * a])
-    assert np.allclose(project_to_blocks(stack, [[0, 1], [2, 3]]), np.stack([out, 2 * out]))
+    assert np.allclose(
+        project_to_blocks(stack, [[0, 1], [2, 3]]), np.stack([out, 2 * out])
+    )
 
 
 def test_tol_truncates_weak_coupling_but_equiv_tol_does_not_merge_blocks():
@@ -272,4 +274,7 @@ def test_equivalence_tolerance_does_not_loosen_with_the_truncation_threshold():
     G = np.broadcast_to(np.eye(n, dtype=complex), (1, n, n)).copy()
     bs = build_block_structure(G, mat=mat, tol=0.1)
     assert bs.blocks == [[0], [1], [2]]
-    assert bs.identical_blocks[0] == [0, 1]  # block 0 is identical to 1 (and itself), not to 2
+    assert bs.identical_blocks[0] == [
+        0,
+        1,
+    ]  # block 0 is identical to 1 (and itself), not to 2

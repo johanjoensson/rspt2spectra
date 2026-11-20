@@ -170,7 +170,9 @@ def trivial_symmetry(n_imp):
         Full Hermitian basis, no particle-hole constraint.
     """
     basis = full_hermitian_basis(n_imp)
-    return BlockSymmetry(basis=basis, parity=_transpose_parity(basis), particle_hole=False)
+    return BlockSymmetry(
+        basis=basis, parity=_transpose_parity(basis), particle_hole=False
+    )
 
 
 def _transpose_parity(basis):
@@ -339,7 +341,9 @@ def find_antiunitary(hyb, tol=DEFAULT_SYMMETRY_TOL):
             continue
         u, _, vh = np.linalg.svd(U_raw)
         U = u @ vh
-        residual = np.linalg.norm(hyb - np.einsum("ab, mcb, dc -> mad", U, hyb, np.conj(U)))
+        residual = np.linalg.norm(
+            hyb - np.einsum("ab, mcb, dc -> mad", U, hyb, np.conj(U))
+        )
         if norm > 0 and residual <= tol * norm:
             return U
     return None
@@ -447,9 +451,13 @@ def _mirror_targets(w, G):
     w = np.asarray(w, dtype=float)
     G = np.asarray(G)
     if G.shape[0] != len(w):
-        raise ValueError(f"w has {len(w)} points but the array has {G.shape[0]} along the frequency axis")
+        raise ValueError(
+            f"w has {len(w)} points but the array has {G.shape[0]} along the frequency axis"
+        )
     if len(w) > 1 and not np.all(np.diff(w) > 0):
-        raise ValueError("the frequency mesh must be strictly increasing to be mirrored")
+        raise ValueError(
+            "the frequency mesh must be strictly increasing to be mirrored"
+        )
     mask = (-w >= w[0]) & (-w <= w[-1])
     return w, G, mask
 
@@ -532,7 +540,14 @@ def mirror_interpolation_error(w, G):
         return 0.0
     flat = G.reshape(len(w), -1)
     target = -w[mask]
-    return float(np.max(np.abs(_interpolate(w, flat, target, True) - _interpolate(w, flat, target, False))))
+    return float(
+        np.max(
+            np.abs(
+                _interpolate(w, flat, target, True)
+                - _interpolate(w, flat, target, False)
+            )
+        )
+    )
 
 
 def particle_hole_residual(w, hyb):
@@ -561,7 +576,9 @@ def particle_hole_residual(w, hyb):
     return float(np.linalg.norm(ref + np.conj(mirrored[mask])) / norm)
 
 
-def detect_block_symmetry(w, hyb, tol=DEFAULT_SYMMETRY_TOL, allow_particle_hole=True, ph_data=None):
+def detect_block_symmetry(
+    w, hyb, tol=DEFAULT_SYMMETRY_TOL, allow_particle_hole=True, ph_data=None
+):
     """Detect the symmetries of one hybridization block.
 
     Parameters
@@ -613,7 +630,9 @@ def detect_block_symmetry(w, hyb, tol=DEFAULT_SYMMETRY_TOL, allow_particle_hole=
             # antiunitary map, so the identity case must be recognised either way.
             phase = U[np.unravel_index(np.argmax(np.abs(U)), U.shape)]
             normalized = U * (np.abs(phase) / phase)
-            report["antiunitary_is_identity"] = bool(np.allclose(normalized, np.eye(n_imp), atol=tol))
+            report["antiunitary_is_identity"] = bool(
+                np.allclose(normalized, np.eye(n_imp), atol=tol)
+            )
     report["residue_dim"] = int(basis.shape[0])
 
     w_ph, hyb_ph = ph_data if ph_data is not None else (w, hyb)
@@ -625,14 +644,20 @@ def detect_block_symmetry(w, hyb, tol=DEFAULT_SYMMETRY_TOL, allow_particle_hole=
     # Reporting the floor is the honest outcome: a verdict of "not symmetric"
     # taken at a tighter tolerance would be about the mesh, not the physics.
     norm = np.linalg.norm(np.asarray(hyb_ph))
-    interp_error = mirror_interpolation_error(w_ph, hyb_ph) / norm if norm > 0 else np.inf
+    interp_error = (
+        mirror_interpolation_error(w_ph, hyb_ph) / norm if norm > 0 else np.inf
+    )
     report["particle_hole_interpolation_error"] = interp_error
     # How much of the mesh the verdict rests on: a window that barely straddles
     # the Fermi level gives a verdict from very few frequencies.
-    report["particle_hole_coverage"] = float(np.mean(mirror_on_mesh(np.asarray(w_ph, dtype=float), hyb_ph)[1]))
+    report["particle_hole_coverage"] = float(
+        np.mean(mirror_on_mesh(np.asarray(w_ph, dtype=float), hyb_ph)[1])
+    )
     particle_hole = bool(ph_residual <= tol)
     if not particle_hole and interp_error > tol:
-        report["particle_hole_skipped"] = f"not resolvable on this mesh (interpolation error {interp_error:.1e})"
+        report["particle_hole_skipped"] = (
+            f"not resolvable on this mesh (interpolation error {interp_error:.1e})"
+        )
     if particle_hole and not allow_particle_hole:
         report["particle_hole_skipped"] = "detected but not enforced"
         particle_hole = False
@@ -675,12 +700,16 @@ def describe(sym):
     rep = sym.report
     parts = [f"residues {rep.get('residue_dim', sym.basis.shape[0])}/{sym.n_imp**2}"]
     if rep.get("antiunitary"):
-        parts.append("time-reversal" if not rep.get("antiunitary_is_identity") else "real")
+        parts.append(
+            "time-reversal" if not rep.get("antiunitary_is_identity") else "real"
+        )
     ph = rep.get("particle_hole_residual")
     if ph is not None and np.isfinite(ph):
         parts.append(f"p-h residual {ph:.2e}")
     if sym.particle_hole:
-        parts.append("particle-hole enforced" + (" (+pole at E_F)" if sym.zero_pole else ""))
+        parts.append(
+            "particle-hole enforced" + (" (+pole at E_F)" if sym.zero_pole else "")
+        )
     elif "particle_hole_skipped" in rep:
         parts.append(f"particle-hole {rep['particle_hole_skipped']}")
     return ", ".join(parts)

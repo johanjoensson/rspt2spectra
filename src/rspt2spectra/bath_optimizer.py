@@ -48,7 +48,10 @@ def get_hyb(z, eb, v):
     # Loop over all bath energies
     for b, e in enumerate(eb):
         # Add contributions from each bath
-        hyb[:] += np.outer(v[b].conj(), v[b])[np.newaxis, ...] * (1 / (z - e))[:, np.newaxis, np.newaxis]
+        hyb[:] += (
+            np.outer(v[b].conj(), v[b])[np.newaxis, ...]
+            * (1 / (z - e))[:, np.newaxis, np.newaxis]
+        )
 
     return hyb
 
@@ -79,7 +82,9 @@ def get_hyb_2(z, eb, v, C=None):
     result = np.einsum("smb,sbij->smij", G, A)
     if C is not None:
         # single (n_imp, n_imp) broadcasts over S and M; batched (S, n_imp, n_imp) over M only.
-        result = result + (C[np.newaxis, np.newaxis] if C.ndim == 2 else C[:, np.newaxis])
+        result = result + (
+            C[np.newaxis, np.newaxis] if C.ndim == 2 else C[:, np.newaxis]
+        )
     return result
 
 
@@ -151,7 +156,9 @@ def inroll(v):
             0,
             -1,
         )
-    return np.moveaxis(v[..., triu_rows, triu_columns].real.reshape(v.shape[:-3] + (-1,)), 0, -1)
+    return np.moveaxis(
+        v[..., triu_rows, triu_columns].real.reshape(v.shape[:-3] + (-1,)), 0, -1
+    )
 
 
 def inroll_C(C):
@@ -214,7 +221,9 @@ def merge_bath_states(ebs, vs):
         The merged coupling matrix :math:`V^\dagger V`.
     """
     n_imp = vs.shape[1]
-    sorted_idx = np.unravel_index(np.argsort(np.linalg.norm(vs, axis=(-2, -1))), vs.shape[:-2])
+    sorted_idx = np.unravel_index(
+        np.argsort(np.linalg.norm(vs, axis=(-2, -1))), vs.shape[:-2]
+    )
     vs = vs[sorted_idx]
     ebs = ebs[sorted_idx]
 
@@ -224,7 +233,9 @@ def merge_bath_states(ebs, vs):
     # Use eigh-based pseudoinverse: safe when A is rank-deficient (zero-coupling orbitals).
     lam_A, U_A = np.linalg.eigh(A)
     tol = np.max(np.abs(lam_A)) * n_imp * np.finfo(float).eps * 1e4
-    inv_lam = np.where(np.abs(lam_A) > tol, 1.0 / np.where(np.abs(lam_A) > tol, lam_A, 1.0), 0.0)
+    inv_lam = np.where(
+        np.abs(lam_A) > tol, 1.0 / np.where(np.abs(lam_A) > tol, lam_A, 1.0), 0.0
+    )
     Eb = (U_A * inv_lam) @ (np.conj(U_A.T) @ np.sum(first_moments, axis=0))
     eb = np.mean(np.linalg.eigvals(Eb).real)
     return eb.real[None], A[None]
@@ -268,7 +279,9 @@ def merge_overlapping_bath_states(ebs, vs, delta):
     eb_merged = np.empty((0), dtype=float, order="F")
     for v_g, eb_g in zip(np.split(vs, split_indices), np.split(ebs, split_indices)):
         if v_g.shape[0] == 1:
-            Am = (np.conj(np.transpose(v_g, (0, -1, -2))) @ v_g).reshape((1, n_imp, n_imp), order="F")
+            Am = (np.conj(np.transpose(v_g, (0, -1, -2))) @ v_g).reshape(
+                (1, n_imp, n_imp), order="F"
+            )
             em = eb_g
         else:
             em, Am = merge_bath_states(eb_g, v_g)
@@ -524,7 +537,9 @@ def _project_free_residues_adjoint(sym, T_free, n_eb):
     """Adjoint of `_project_free_residues`, in the Jacobian's pairing convention."""
     out = _project_residues_adjoint(sym.basis, T_free[..., :n_eb, :, :])
     if sym.particle_hole and sym.zero_pole:
-        zero = _project_residues_adjoint(sym.even_basis, T_free[..., n_eb : n_eb + 1, :, :])
+        zero = _project_residues_adjoint(
+            sym.even_basis, T_free[..., n_eb : n_eb + 1, :, :]
+        )
         out = np.concatenate([out, zero], axis=-3)
     return out
 
@@ -546,7 +561,10 @@ def _fold_residue_sensitivity(T_full, sym, n_eb):
     if not sym.particle_hole:
         return T_full
     offset = n_eb + (1 if sym.zero_pole else 0)
-    T_free = T_full[..., offset:, :, :] + np.swapaxes(T_full[..., :n_eb, :, :], -1, -2)[..., ::-1, :, :]
+    T_free = (
+        T_full[..., offset:, :, :]
+        + np.swapaxes(T_full[..., :n_eb, :, :], -1, -2)[..., ::-1, :, :]
+    )
     if sym.zero_pole:
         T_free = np.concatenate([T_free, T_full[..., n_eb : n_eb + 1, :, :]], axis=-3)
     return T_free
@@ -605,7 +623,18 @@ def _expand_residue_factors(V_free, sym, n_free):
     return np.concatenate(blocks, axis=0)
 
 
-def _gap_slsqp_polish(gap_x, z, hyb, gamma, regularization, weight_array, W_mn, sym, gap_bounds):
+def _gap_slsqp_polish(
+    gap_x,
+    z,
+    hyb,
+    gamma,
+    regularization,
+    weight_array,
+    W_mn,
+    sym,
+    gap_bounds,
+    fixed_energies=False,
+):
     """SLSQP refinement of a gap-parametrized bath fit over eb, V and C jointly.
 
     `gap_x` is the converged gap vector [first energy, gaps].  The eb block stays
@@ -613,6 +642,8 @@ def _gap_slsqp_polish(gap_x, z, hyb, gamma, regularization, weight_array, W_mn, 
     the shared vectorized functions) so the minimum-separation constraint cannot
     be violated.  The symmetry constraints are applied inside the shared cost and
     Jacobian, so the polish cannot undo the symmetry the search established.
+    With ``fixed_energies`` the bath energies are pinned at ``gap_x`` (box bounds of zero width)
+    and only V and C are optimized, by the same SLSQP and cost as the free polish.
     Returns (v_final, eb_final, C_final, c_final) over the *full* pole set.
     """
     n_eb = len(gap_x)
@@ -620,21 +651,28 @@ def _gap_slsqp_polish(gap_x, z, hyb, gamma, regularization, weight_array, W_mn, 
     n_blocks = n_residue_blocks(n_eb, sym)
 
     eb_opt = _gaps_to_eb(gap_x)
-    _, V_opt, _, C_opt = _varpro_inner_solve(eb_opt, z, hyb, sym)
+    _, V_opt, _, C_opt = _varpro_inner_solve(
+        eb_opt, z, hyb, sym, _fit_rows(weight_array, W_mn, n_imp)
+    )
 
     p_C0 = inroll_C(C_opt)
     n_C = len(p_C0)
     p0 = np.concatenate([gap_x, inroll(_free_residue_factors(V_opt, sym, n_eb)), p_C0])
-    bounds = gap_bounds + [(None, None)] * (len(p0) - n_eb)
+    energy_bounds = [(g, g) for g in gap_x] if fixed_energies else gap_bounds
+    bounds = list(energy_bounds) + [(None, None)] * (len(p0) - n_eb)
     w_max = gap_bounds[0][1]
 
     def _cost(p):
         p_abs = np.concatenate([_gaps_to_eb(p[:n_eb]), p[n_eb:]])
-        return vectorized_cost_function(p_abs, n_eb, z, hyb, gamma, regularization, weight_array, W_mn, n_C, sym=sym)
+        return vectorized_cost_function(
+            p_abs, n_eb, z, hyb, gamma, regularization, weight_array, W_mn, n_C, sym=sym
+        )
 
     def _jac(p):
         p_abs = np.concatenate([_gaps_to_eb(p[:n_eb]), p[n_eb:]])
-        J = vectorized_jacobian(p_abs, n_eb, z, hyb, gamma, regularization, weight_array, W_mn, n_C, sym=sym)
+        J = vectorized_jacobian(
+            p_abs, n_eb, z, hyb, gamma, regularization, weight_array, W_mn, n_C, sym=sym
+        )
         J[:n_eb] = _gaps_grad(J[:n_eb])
         return J
 
@@ -752,17 +790,42 @@ def _sym_sectors(eb_free, z, sym):
     return sectors
 
 
-def _sector_coefficients(basis, Phi, hyb):
+def _fit_rows(weight_array, W_mn, n_imp):
+    """Row operator ``D`` of the fit objective, as ``(sqrt_weights, moment_rows)``.
+
+    The cost of :func:`vectorized_cost_function` without regularization is
+    ``0.5 * ||D r||^2`` with ``r`` the residual over frequency and ``D`` the stack of
+    ``diag(sqrt(weight / N))`` and ``W_mn^T / sqrt(P)`` (``N = M n_imp^2`` frequency
+    elements, ``P = max_moment n_imp^2`` moment elements).  Solving the inner least-squares
+    problem in these rows makes it minimize exactly the objective the polish minimizes.
+    """
+    n_w, n_moment = W_mn.shape
+    return np.sqrt(weight_array / (n_w * n_imp**2)), W_mn / np.sqrt(n_imp**2 * n_moment)
+
+
+def _apply_rows(rows, X):
+    """Apply the row operator :func:`_fit_rows` to ``X`` of shape ``(M, ...)``."""
+    sqrt_weights, moment_rows = rows
+    return np.concatenate([sqrt_weights[:, None] * X, moment_rows.T @ X], axis=0)
+
+
+def _sector_coefficients(basis, Phi, hyb, rows=None):
     """Solve one sector's real least-squares problem.
 
     ``Tr(S_p S_q) = delta_pq`` is real, so the normal equations decouple across
     ``p`` and every coefficient column solves the same real system.  Solving the
     stacked real problem ``[Re Phi; Im Phi] a = [Re c; Im c]`` is equivalent and
     better conditioned than forming ``Re(Phi^H Phi)`` explicitly.
+
+    ``rows`` is the row operator of :func:`_fit_rows`; with it the problem is weighted by the
+    fit weights and includes the moment rows, i.e. it minimizes the fit objective.  ``None``
+    is the plain unweighted solve.
     """
     if basis.shape[0] == 0 or Phi.shape[1] == 0:
         return np.zeros((Phi.shape[1], basis.shape[0]))
     c = np.einsum("pij, mji -> mp", basis, hyb)
+    if rows is not None:
+        Phi, c = _apply_rows(rows, Phi), _apply_rows(rows, c)
     Phi_r = np.vstack([Phi.real, Phi.imag])
     c_r = np.vstack([c.real, c.imag])
     a, *_ = np.linalg.lstsq(Phi_r, c_r, rcond=None)
@@ -797,7 +860,9 @@ def _assemble_from_coefficients(coefs, sectors, sym, n_free, n_imp):
     if sym.zero_pole:
         A_zero = np.zeros(batch + (1, n_imp, n_imp), dtype=complex)
         if even.shape[0]:
-            A_zero = np.einsum("...p, pij -> ...ij", a_even[..., n_free, :], even)[..., None, :, :]
+            A_zero = np.einsum("...p, pij -> ...ij", a_even[..., n_free, :], even)[
+                ..., None, :, :
+            ]
         blocks.append(A_zero)
     blocks.append(A_pos)
 
@@ -807,7 +872,7 @@ def _assemble_from_coefficients(coefs, sectors, sym, n_free, n_imp):
     return np.concatenate(blocks, axis=-3), C
 
 
-def _varpro_inner_solve(eb_free, z, hyb, sym):
+def _varpro_inner_solve(eb_free, z, hyb, sym, rows=None):
     """Find optimal PSD residues and constant shift for fixed bath energies.
 
     Solves ``hyb ~= C + sum_k A_k / (z - eb[k])`` with the residues restricted to
@@ -834,6 +899,9 @@ def _varpro_inner_solve(eb_free, z, hyb, sym):
         Hybridization block to fit.
     sym : rspt2spectra.symmetries.BlockSymmetry
         Symmetry constraints to impose.
+    rows : tuple, optional
+        Row operator of :func:`_fit_rows`.  Given, the least-squares problem is weighted like
+        the fit objective; omitted, it is unweighted.
 
     Returns
     -------
@@ -851,13 +919,17 @@ def _varpro_inner_solve(eb_free, z, hyb, sym):
     n_imp = hyb.shape[1]
 
     sectors = _sym_sectors(eb_free, z, sym)
-    coefs = [_sector_coefficients(basis, Phi, hyb) for basis, Phi, _, _ in sectors]
+    coefs = [
+        _sector_coefficients(basis, Phi, hyb, rows) for basis, Phi, _, _ in sectors
+    ]
     A, C = _assemble_from_coefficients(coefs, sectors, sym, n_free, n_imp)
 
     lam, U = np.linalg.eigh(A)
     lam = np.clip(lam.real, 0.0, None)
     A_psd = (U * lam[:, None, :]) @ np.conj(np.swapaxes(U, -1, -2))
-    V = np.sqrt(lam)[:, :, None] * np.conj(np.swapaxes(U, -1, -2))  # (n_full, n_imp, n_imp)
+    V = np.sqrt(lam)[:, :, None] * np.conj(
+        np.swapaxes(U, -1, -2)
+    )  # (n_full, n_imp, n_imp)
 
     eb_full = expand_eb(eb_free, sym)
     G = 1.0 / (z[:, None] - eb_full[None, :])
@@ -878,13 +950,15 @@ def _varpro_cost_and_grad(eb_free, z, hyb, weight_array, W_mn, sym):
 
     Returns (cost, grad_eb, V, C).
     """
-    A_psd, V, G, C = _varpro_inner_solve(eb_free, z, hyb, sym)
+    A_psd, V, G, C = _varpro_inner_solve(
+        eb_free, z, hyb, sym, _fit_rows(weight_array, W_mn, hyb.shape[1])
+    )
 
     max_moment = W_mn.shape[1]
     hyb_model = np.einsum("mk, kij -> mij", G, A_psd) + C[None]  # (M, n_imp, n_imp)
     diff = hyb - hyb_model
 
-    w2 = weight_array**2
+    w2 = weight_array  # the fit weights multiply |r|^2, as in vectorized_cost_function
     N = diff.size
     c = np.sum(w2[:, None, None] * 0.5 * np.abs(diff) ** 2) / N
 
@@ -899,7 +973,9 @@ def _varpro_cost_and_grad(eb_free, z, hyb, weight_array, W_mn, sym):
     grad = -np.real(np.einsum("m, mk, mk -> k", w2, dGdeb, conj_diff_A)) / N
 
     WdG = np.einsum("mn, mk -> kn", W_mn, dGdeb)  # (n_bath, max_moment)
-    conj_mdf_A = np.einsum("nij, kij -> kn", np.conj(moment_diff), A_psd)  # (n_bath, max_moment)
+    conj_mdf_A = np.einsum(
+        "nij, kij -> kn", np.conj(moment_diff), A_psd
+    )  # (n_bath, max_moment)
     grad -= np.real(np.einsum("kn, kn -> k", WdG, conj_mdf_A)) / P
 
     return c, _fold_grad(grad, sym, len(eb_free)), V, C
@@ -928,7 +1004,9 @@ def _psd_frechet_factors(A_h):
     tol = 1e-9
     degenerate = np.abs(denom) <= tol
     safe_denom = np.where(degenerate, 1.0, denom)
-    Psi = np.where(degenerate, 0.5 * (fp[..., :, None] + fp[..., None, :]), num / safe_denom)
+    Psi = np.where(
+        degenerate, 0.5 * (fp[..., :, None] + fp[..., None, :]), num / safe_denom
+    )
     return U, lam_c, A_psd, Psi
 
 
@@ -952,18 +1030,22 @@ def _varpro_cost_and_full_grad(eb_free, z, hyb, weight_array, W_mn, sym):
     max_moment = W_mn.shape[1]
 
     # --- forward pass, keeping what the derivative needs per sector ---
+    rows = _fit_rows(weight_array, W_mn, n_imp)
     sectors = _sym_sectors(eb_free, z, sym)
     coefs = []
     solves = []
     for basis, Phi, _, _ in sectors:
-        a = _sector_coefficients(basis, Phi, hyb)
+        a = _sector_coefficients(basis, Phi, hyb, rows)
         coefs.append(a)
         if basis.shape[0] == 0 or Phi.shape[1] == 0:
             solves.append(None)
             continue
         c_p = np.einsum("pij, mji -> mp", basis, hyb)
-        N_inv = np.linalg.pinv((np.conj(Phi.T) @ Phi).real)
-        solves.append((N_inv, c_p - Phi @ a))
+        # The inner solve is weighted, so the normal equations and the residual live in the
+        # row-weighted space: N = Re((D Phi)^H D Phi), r = D (c - Phi a).
+        D_Phi = _apply_rows(rows, Phi)
+        N_inv = np.linalg.pinv((np.conj(D_Phi.T) @ D_Phi).real)
+        solves.append((N_inv, D_Phi, _apply_rows(rows, c_p - Phi @ a)))
 
     A_h, C_h = _assemble_from_coefficients(coefs, sectors, sym, n_free, n_imp)
     U, lam_c, A_psd, Psi = _psd_frechet_factors(A_h)
@@ -974,7 +1056,7 @@ def _varpro_cost_and_full_grad(eb_free, z, hyb, weight_array, W_mn, sym):
     # --- cost (identical to _varpro_cost_and_grad) ---
     hyb_model = np.einsum("mk, kij -> mij", G, A_psd) + C_h[None]
     diff = hyb - hyb_model
-    w2 = weight_array**2
+    w2 = weight_array  # the fit weights multiply |r|^2, as in vectorized_cost_function
     N = diff.size
     cost = np.sum(w2[:, None, None] * 0.5 * np.abs(diff) ** 2) / N
     moment_diff = np.einsum("mn, mij -> nij", W_mn, diff)
@@ -988,7 +1070,9 @@ def _varpro_cost_and_full_grad(eb_free, z, hyb, weight_array, W_mn, sym):
 
     # Explicit (Kaufman) part: only the pole positions vary, at fixed residues.
     GpGbar = np.einsum("mk, mij -> kij", G**2, Gbar)  # (n_full, n_imp, n_imp)
-    grad_expl = _fold_grad(np.real(np.einsum("kij, kij -> k", GpGbar, A_psd)), sym, n_free)
+    grad_expl = _fold_grad(
+        np.real(np.einsum("kij, kij -> k", GpGbar, A_psd)), sym, n_free
+    )
 
     # Implicit part: pull the cost gradient back through a(eb) and C(eb).
     QA = np.einsum("mk, mij -> kij", G, Gbar)  # (n_full, n_imp, n_imp)
@@ -1002,9 +1086,10 @@ def _varpro_cost_and_full_grad(eb_free, z, hyb, weight_array, W_mn, sym):
         if solve is None:
             das.append(np.zeros((n_free,) + a.shape))
             continue
-        N_inv, r = solve
-        U_mat = (np.conj(dphi.T) @ Phi).real  # (n_free, K)
-        W1 = (np.conj(dphi.T) @ r).real  # (n_free, p)
+        N_inv, D_Phi, r = solve
+        D_dphi = _apply_rows(rows, dphi)
+        U_mat = (np.conj(D_dphi.T) @ D_Phi).real  # (n_free, K)
+        W1 = (np.conj(D_dphi.T) @ r).real  # (n_free, p)
         da = np.einsum("jk, kp -> kjp", N_inv[:, :n_free], W1)
         da -= np.einsum("kj, kp -> kjp", U_mat @ N_inv, a[:n_free])
         das.append(da)
@@ -1016,7 +1101,9 @@ def _varpro_cost_and_full_grad(eb_free, z, hyb, weight_array, W_mn, sym):
     Mmat = np.einsum("jab, kjbc, jcd -> kjad", UH, dA_h, U) * Psi[None]
     dA_psd = np.einsum("jab, kjbc, jcd -> kjad", U, Mmat, UH)
 
-    grad_impl = np.real(np.einsum("jab, kjab -> k", QA, dA_psd) + np.einsum("ab, kab -> k", QC, dC_h))
+    grad_impl = np.real(
+        np.einsum("jab, kjab -> k", QA, dA_psd) + np.einsum("ab, kab -> k", QC, dC_h)
+    )
 
     V = np.sqrt(lam_c)[:, :, None] * UH
     return float(cost), grad_expl + grad_impl, V, C_h
@@ -1102,6 +1189,46 @@ def get_v_and_eb_varpro_local(
     )
 
 
+def get_v_and_eb_varpro_held(
+    w,
+    delta,
+    hyb,
+    eb0,
+    eb_restrictions,
+    gamma,
+    regularization,
+    weight_function,
+    sym,
+    max_moment=3,
+):
+    """Re-solve V and C with the bath energies held at ``eb0``.
+
+    The energies are only clipped into the window (never moved otherwise, not even to restore
+    the minimum separation), so the returned bath is the one passed in.  The hoppings and the
+    constant come from the same SLSQP polish and cost function that the refined and the global
+    fits end with, which makes the returned cost comparable with theirs.  ``eb0`` is one
+    ``(n_eb,)`` set of free energies (the positive half for a mirrored bath).
+
+    Returns ``(v, eb, C, cost)`` over the *full* pole set.
+    """
+    eb0 = np.sort(np.asarray(eb0, dtype=float))
+    z, weight_array, W_mn = _varpro_setup(w, delta, weight_function, max_moment)
+    lo, hi = free_window(*eb_restrictions[0], delta, sym)
+    gaps = np.diff(np.clip(eb0, lo, hi), prepend=0.0)
+    return _gap_slsqp_polish(
+        gaps,
+        z,
+        hyb,
+        gamma,
+        regularization,
+        weight_array,
+        W_mn,
+        sym,
+        _gap_bounds(lo, hi, len(eb0), delta),
+        fixed_energies=True,
+    )
+
+
 def get_v_and_eb_varpro_basin_hopping(
     w,
     delta,
@@ -1140,9 +1267,9 @@ def get_v_and_eb_varpro_basin_hopping(
     bath energies whenever the block has competing local minima.
 
     ``optimize_bath_energies`` (default ``True``): set ``False`` to freeze the bath
-    energies at ``ebs[0]`` and solve only the hoppings and the constant offset, by
-    least squares (one :func:`_varpro_inner_solve`). No basin-hopping, no polish --
-    the returned energies are exactly the ones passed in (clipped into the window).
+    energies at ``ebs[0]`` and solve only the hoppings and the constant offset
+    (:func:`get_v_and_eb_varpro_held`). No basin-hopping -- the returned energies are
+    exactly the ones passed in (clipped into the window).
 
     ``sym`` is the block's :class:`rspt2spectra.symmetries.BlockSymmetry`.  With
     particle-hole symmetry ``ebs`` holds only the positive half of the bath and
@@ -1154,11 +1281,18 @@ def get_v_and_eb_varpro_basin_hopping(
     z, weight_array, W_mn = _varpro_setup(w, delta, weight_function, max_moment)
 
     if not optimize_bath_energies:
-        lo, hi = free_window(*eb_restrictions[0], delta, sym)
-        eb_fixed = np.sort(np.clip(np.asarray(ebs[0], dtype=float), lo, hi))
-        _, V, _, C = _varpro_inner_solve(eb_fixed, z, hyb, sym)
-        cost = _varpro_cost_and_grad(eb_fixed, z, hyb, weight_array, W_mn, sym)[0]
-        return V, expand_eb(eb_fixed, sym), C, float(cost)
+        return get_v_and_eb_varpro_held(
+            w,
+            delta,
+            hyb,
+            ebs[0],
+            eb_restrictions,
+            gamma,
+            regularization,
+            weight_function,
+            sym,
+            max_moment,
+        )
 
     # Reparametrize bath energies as [first energy, gaps]; gaps >= delta keep the
     # states sorted and separated by at least the broadening, so no post-fit merge
@@ -1173,10 +1307,15 @@ def get_v_and_eb_varpro_basin_hopping(
         n_eb = n_max
         ebs = ebs[:, :n_eb]
     gap_bounds = _gap_bounds(lo, hi, n_eb, delta)
-    gap_seeds = np.array([_repair_gaps(_eb_to_gaps(eb, delta), lo, hi, delta) for eb in ebs])
+    gap_seeds = np.array(
+        [_repair_gaps(_eb_to_gaps(eb, delta), lo, hi, delta) for eb in ebs]
+    )
 
     initial_costs = np.array(
-        [_varpro_cost_and_grad(_gaps_to_eb(p), z, hyb, weight_array, W_mn, sym)[0] for p in gap_seeds]
+        [
+            _varpro_cost_and_grad(_gaps_to_eb(p), z, hyb, weight_array, W_mn, sym)[0]
+            for p in gap_seeds
+        ]
     )
     mean_cost = np.mean(initial_costs)
     stddev_cost = np.std(initial_costs)
@@ -1252,7 +1391,9 @@ def get_v_and_eb_differential_evolution(
         n_eb = n_max
         ebs = ebs[:, :n_eb]
     gap_bounds = _gap_bounds(lo, hi, n_eb, delta)
-    gap_seeds = np.array([_repair_gaps(_eb_to_gaps(eb, delta), lo, hi, delta) for eb in ebs])
+    gap_seeds = np.array(
+        [_repair_gaps(_eb_to_gaps(eb, delta), lo, hi, delta) for eb in ebs]
+    )
 
     def varpro_cost(p):
         eb = _gaps_to_eb(p)
@@ -1413,7 +1554,9 @@ def vectorized_cost_function(
         model = np.einsum("smb, sbij -> smij", G, A)
         if C is not None:
             C_p = _project_residues(_c_basis(sym), C)
-            model = model + (C_p[np.newaxis, np.newaxis] if C_p.ndim == 2 else C_p[:, np.newaxis])
+            model = model + (
+                C_p[np.newaxis, np.newaxis] if C_p.ndim == 2 else C_p[:, np.newaxis]
+            )
     diff = hyb[np.newaxis] - model  # (S, M, N, N)
 
     if weight_array is None:
@@ -1425,7 +1568,9 @@ def vectorized_cost_function(
 
     if W_mn is not None:
         moment_diff = np.einsum("mn, ...mij -> ...nij", W_mn, diff)
-        c += (1 / (n_imp * n_imp * moment_diff.shape[1])) * np.sum(0.5 * np.abs(moment_diff) ** 2, axis=(1, 2, 3))
+        c += (1 / (n_imp * n_imp * moment_diff.shape[1])) * np.sum(
+            0.5 * np.abs(moment_diff) ** 2, axis=(1, 2, 3)
+        )
 
     # Regularization applies only to V parameters, not eb or C.
     n_v = p_v.shape[0]
@@ -1492,26 +1637,38 @@ def vectorized_jacobian(
         eb_full = eb
         C_used = C
     else:
-        A = _expand_residues(_project_free_residues(sym, A_raw, n_eb), sym, n_eb)  # (S, n_full, N, N)
+        A = _expand_residues(
+            _project_free_residues(sym, A_raw, n_eb), sym, n_eb
+        )  # (S, n_full, N, N)
         eb_full = expand_eb(eb, sym)
         C_used = None if C is None else _project_residues(_c_basis(sym), C)
 
-    G = 1.0 / (z[np.newaxis, :, np.newaxis] - eb_full[:, np.newaxis, :])  # (S, M, n_full)
+    G = 1.0 / (
+        z[np.newaxis, :, np.newaxis] - eb_full[:, np.newaxis, :]
+    )  # (S, M, n_full)
     model = np.einsum("smb, sbij -> smij", G, A)
     if C_used is not None:
-        model = model + (C_used[np.newaxis, np.newaxis] if C_used.ndim == 2 else C_used[:, np.newaxis])
+        model = model + (
+            C_used[np.newaxis, np.newaxis]
+            if C_used.ndim == 2
+            else C_used[:, np.newaxis]
+        )
     diff = hyb[np.newaxis] - model  # (S, M, N, N)
 
     diff_W = diff * weight_array[None, :, None, None]
 
-    dhyb_deb = A[:, np.newaxis, :, :, :] * (G**2)[:, :, :, np.newaxis, np.newaxis]  # (S, M, n_full, N, N)
+    dhyb_deb = (
+        A[:, np.newaxis, :, :, :] * (G**2)[:, :, :, np.newaxis, np.newaxis]
+    )  # (S, M, n_full, N, N)
     J_eb = -np.einsum("smxy, smbxy -> sb", np.conj(diff_W), dhyb_deb).real
     J_eb = J_eb / (n_w * n_imp * n_imp)
 
     if W_mn is not None:
         moment_diff = np.einsum("mn, ...mij -> ...nij", W_mn, diff)
         dmoment_deb = -np.einsum("mn, smbxy -> snbxy", W_mn, dhyb_deb)
-        J_moment_eb = np.einsum("snxy, snbxy -> sb", np.conj(moment_diff), dmoment_deb).real
+        J_moment_eb = np.einsum(
+            "snxy, snbxy -> sb", np.conj(moment_diff), dmoment_deb
+        ).real
         J_eb = J_eb + J_moment_eb / (n_imp * n_imp * moment_diff.shape[1])
     if sym is not None:
         J_eb = _fold_energy_sensitivity(J_eb, sym, n_eb)
@@ -1522,13 +1679,17 @@ def vectorized_jacobian(
     if W_mn is not None:
         WG = np.einsum("mn, smb -> snb", W_mn, G)
         S_mom = -np.einsum("snxy, snb -> sbxy", np.conj(moment_diff), WG)
-        S_total = S_term / (n_w * n_imp * n_imp) + S_mom / (n_imp * n_imp * moment_diff.shape[1])
+        S_total = S_term / (n_w * n_imp * n_imp) + S_mom / (
+            n_imp * n_imp * moment_diff.shape[1]
+        )
     else:
         S_total = S_term / (n_w * n_imp * n_imp)
     if sym is not None:
         # Fold the mirrored poles back onto the free residues, then pull the
         # sensitivity through the projection before it reaches V.
-        S_total = _project_free_residues_adjoint(sym, _fold_residue_sensitivity(S_total, sym, n_eb), n_eb)
+        S_total = _project_free_residues_adjoint(
+            sym, _fold_residue_sensitivity(S_total, sym, n_eb), n_eb
+        )
 
     J_R = np.zeros((popsize, n_blocks, n_imp, n_imp), dtype=float)
     J_I = np.zeros((popsize, n_blocks, n_imp, n_imp), dtype=float)
@@ -1537,13 +1698,15 @@ def vectorized_jacobian(
             if m > n:
                 continue
             term_R = np.sum(
-                S_total[:, :, n, :] * v[:, :, m, :] + S_total[:, :, :, n] * np.conj(v[:, :, m, :]),
+                S_total[:, :, n, :] * v[:, :, m, :]
+                + S_total[:, :, :, n] * np.conj(v[:, :, m, :]),
                 axis=-1,
             )
             J_R[:, :, m, n] = np.real(term_R)
             if not realvalued:
                 term_I = np.sum(
-                    S_total[:, :, n, :] * (-1j * v[:, :, m, :]) + S_total[:, :, :, n] * (1j * np.conj(v[:, :, m, :])),
+                    S_total[:, :, n, :] * (-1j * v[:, :, m, :])
+                    + S_total[:, :, :, n] * (1j * np.conj(v[:, :, m, :])),
                     axis=-1,
                 )
                 J_I[:, :, m, n] = np.real(term_I)
@@ -1576,7 +1739,9 @@ def vectorized_jacobian(
         off_mask = triu_rows != triu_cols
         n_triu = len(triu_rows)
 
-        weighted_diff = np.einsum("m, smij -> sij", weight_array, diff)  # (S, n_imp, n_imp)
+        weighted_diff = np.einsum(
+            "m, smij -> sij", weight_array, diff
+        )  # (S, n_imp, n_imp)
         if sym is not None:
             weighted_diff = _project_shift_adjoint(_c_basis(sym), weighted_diff)
         N = n_w * n_imp * n_imp
@@ -1584,7 +1749,9 @@ def vectorized_jacobian(
         # For triu (p,q): upper[k] = weighted_diff[p,q], lower[k] = weighted_diff[q,p].
         # d(cost)/d(Re(C[p,q])) = -(1/N)*Re(upper + I(p!=q)*lower)
         upper = weighted_diff[:, triu_rows, triu_cols]  # (S, n_triu)
-        lower = weighted_diff[:, triu_cols, triu_rows]  # (S, n_triu) — transposed indices
+        lower = weighted_diff[
+            :, triu_cols, triu_rows
+        ]  # (S, n_triu) — transposed indices
         sum_RL = upper.copy()
         sum_RL[:, off_mask] += lower[:, off_mask]
         J_C_real = -(1.0 / N) * np.real(np.moveaxis(sum_RL, 0, -1))  # (n_triu, S)
@@ -1592,7 +1759,9 @@ def vectorized_jacobian(
         if W_mn is not None:
             P = n_imp * n_imp * moment_diff.shape[1]
             W_sum = W_mn.sum(axis=0)  # (max_moment,)
-            weighted_mdiff = np.einsum("n, snij -> sij", W_sum, moment_diff)  # (S, n_imp, n_imp)
+            weighted_mdiff = np.einsum(
+                "n, snij -> sij", W_sum, moment_diff
+            )  # (S, n_imp, n_imp)
             if sym is not None:
                 weighted_mdiff = _project_shift_adjoint(_c_basis(sym), weighted_mdiff)
             mupper = weighted_mdiff[:, triu_rows, triu_cols]
@@ -1605,9 +1774,13 @@ def vectorized_jacobian(
 
         if n_C > n_triu:  # complex Hermitian: imaginary gradient for off-diagonal
             # d(cost)/d(Im(C[p,q])) = -(1/N)*Im(upper - lower)  for p < q
-            J_C_imag = -(1.0 / N) * np.imag(np.moveaxis(upper[:, off_mask] - lower[:, off_mask], 0, -1))
+            J_C_imag = -(1.0 / N) * np.imag(
+                np.moveaxis(upper[:, off_mask] - lower[:, off_mask], 0, -1)
+            )
             if W_mn is not None:
-                J_C_imag -= (1.0 / P) * np.imag(np.moveaxis(mupper[:, off_mask] - mlower[:, off_mask], 0, -1))
+                J_C_imag -= (1.0 / P) * np.imag(
+                    np.moveaxis(mupper[:, off_mask] - mlower[:, off_mask], 0, -1)
+                )
             J[n_v_end + n_triu :, :] = J_C_imag
 
     return J[:, 0] if one_dim else J

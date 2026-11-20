@@ -27,7 +27,10 @@ DEFAULT_U_DENSIFY = 2.0
 BATH_GEOMETRIES = ("star", "chain", "linked_chain", "peeled_linked_chain")
 
 # Spellings accepted for a geometry on a solver line.
-_GEOMETRY_TOKENS = {**{name: name for name in BATH_GEOMETRIES}, "peeled": "peeled_linked_chain"}
+_GEOMETRY_TOKENS = {
+    **{name: name for name in BATH_GEOMETRIES},
+    "peeled": "peeled_linked_chain",
+}
 
 
 @dataclass(frozen=True)
@@ -41,7 +44,8 @@ class FitOptions:
     freeze_bath_energies: bool = False
     #: Seed the fit with the previous fit's bath energies.
     warm_start: bool = True
-    #: A warm fit is kept unless a global search beats its cost by more than this relative margin.
+    #: The previous bath energies are kept unless a refinement or a global search beats their cost
+    #: by more than this relative margin (1 never moves them).
     warm_tol: float = 0.05
     #: Tikhonov regularisation of the hopping amplitudes.
     gamma: float = 0.01
@@ -60,7 +64,9 @@ class FitOptions:
     def __post_init__(self):
         """Refuse values and combinations the fit cannot honour."""
         if self.bath_geometry not in BATH_GEOMETRIES:
-            raise ValueError(f"bath_geometry must be one of {', '.join(BATH_GEOMETRIES)}, got {self.bath_geometry!r}")
+            raise ValueError(
+                f"bath_geometry must be one of {', '.join(BATH_GEOMETRIES)}, got {self.bath_geometry!r}"
+            )
         if self.weight_function not in weight_functions:
             raise ValueError(
                 f"weight_function must be one of {', '.join(weight_functions)}, got {self.weight_function!r}"
@@ -73,9 +79,13 @@ class FitOptions:
                 "iteration's bath energies, a cold fit ignores them."
             )
         if not np.isfinite(self.symm_prec) or self.symm_prec < 0:
-            raise ValueError(f"symm_prec must be a finite number that is not negative, got {self.symm_prec!r}")
+            raise ValueError(
+                f"symm_prec must be a finite number that is not negative, got {self.symm_prec!r}"
+            )
         if np.isnan(self.u_densify) or self.u_densify < 1:
-            raise ValueError(f"u_densify must be at least 1 (or inf), got {self.u_densify!r}")
+            raise ValueError(
+                f"u_densify must be at least 1 (or inf), got {self.u_densify!r}"
+            )
 
     @property
     def neglects_couplings(self):

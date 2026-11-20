@@ -12,7 +12,13 @@ from scipy.linalg import expm
 from scipy.optimize import linear_sum_assignment, minimize
 from scipy.sparse.csgraph import connected_components
 
-from .block_structure import _g_scale, _mat_scale, _min_broadening, _relative, relative_couplings
+from .block_structure import (
+    _g_scale,
+    _mat_scale,
+    _min_broadening,
+    _relative,
+    relative_couplings,
+)
 from .utils import _rotate_u4, count_u_terms
 
 
@@ -221,7 +227,9 @@ def _cubic_field_operator(l):
     Lp, Lm = Lx + 1j * Ly, Lx - 1j * Ly
     L2 = l * (l + 1)
     Lz2 = Lz @ Lz
-    O40 = 35 * Lz2 @ Lz2 - (30 * L2 - 25) * Lz2 + (3 * L2**2 - 6 * L2) * np.eye(2 * l + 1)
+    O40 = (
+        35 * Lz2 @ Lz2 - (30 * L2 - 25) * Lz2 + (3 * L2**2 - 6 * L2) * np.eye(2 * l + 1)
+    )
     O44 = 0.5 * (np.linalg.matrix_power(Lp, 4) + np.linalg.matrix_power(Lm, 4))
     return O40 + 5 * O44
 
@@ -348,7 +356,9 @@ def _basis_metrics(Q, mats, total_off, hyb, mat, tol, mat_spread=None):
     c = _coupling_matrix(Q, hyb, mat, tol, mat_spread=mat_spread)
     key, between = _quality(c, tol)
     b_max = int(key[0])
-    sub_thresholds = tuple(float(_block_threshold(c, k)) for k in range(b_max - 1, 0, -1))
+    sub_thresholds = tuple(
+        float(_block_threshold(c, k)) for k in range(b_max - 1, 0, -1)
+    )
     next_split = sub_thresholds[0] if sub_thresholds else 0.0
     off_ratio = _off_diagonal_weight(mats, Q) / max(total_off, 1e-300)
     return {
@@ -366,11 +376,22 @@ def _blockiness_better(cand, best, tol, gain=0.05):
 
     Meant for two bases that give the same partition at ``tol`` with ``b_max > 1``.
     """
-    if max(cand["next_split"], best["next_split"]) <= 0.1 * tol and max(cand["off_ratio"], best["off_ratio"]) <= 1e-6:
+    if (
+        max(cand["next_split"], best["next_split"]) <= 0.1 * tol
+        and max(cand["off_ratio"], best["off_ratio"]) <= 1e-6
+    ):
         return False
-    split_better = best["next_split"] > 0.1 * tol and cand["next_split"] < (1.0 - gain) * best["next_split"]
-    split_not_worse = cand["next_split"] <= (1.0 + gain) * best["next_split"] + 0.1 * tol
-    off_better = best["off_ratio"] > 1e-6 and cand["off_ratio"] < (1.0 - gain) * best["off_ratio"]
+    split_better = (
+        best["next_split"] > 0.1 * tol
+        and cand["next_split"] < (1.0 - gain) * best["next_split"]
+    )
+    split_not_worse = (
+        cand["next_split"] <= (1.0 + gain) * best["next_split"] + 0.1 * tol
+    )
+    off_better = (
+        best["off_ratio"] > 1e-6
+        and cand["off_ratio"] < (1.0 - gain) * best["off_ratio"]
+    )
     off_not_worse = cand["off_ratio"] <= (1.0 + gain) * best["off_ratio"] + 1e-6
     return (split_better and off_not_worse) or (off_better and split_not_worse)
 
@@ -388,7 +409,10 @@ def _frame_better(cand, best, tol):
             return True
         if _blockiness_better(best, cand, tol, gain=0.05):
             return False
-        if cand["next_split"] <= best["next_split"] * 1.01 + 0.1 * tol and cand["off_ratio"] < best["off_ratio"] - 1e-6:
+        if (
+            cand["next_split"] <= best["next_split"] * 1.01 + 0.1 * tol
+            and cand["off_ratio"] < best["off_ratio"] - 1e-6
+        ):
             return True
     return False
 
@@ -401,7 +425,9 @@ def _frame_starts(n_par):
     """
     rng = np.random.default_rng(_AXIS_SEED)
     starts = [np.zeros(n_par)]
-    starts += [np.concatenate([a, np.zeros(n_par - 3)]) for a in _so3_start_angles()[1:]]
+    starts += [
+        np.concatenate([a, np.zeros(n_par - 3)]) for a in _so3_start_angles()[1:]
+    ]
     for _ in range(_AXIS_N_SAMPLES):
         # uniform on the rotation group: alpha and gamma uniform, cos(beta) uniform
         sample = rng.uniform(-np.pi, np.pi, n_par)
@@ -463,7 +489,9 @@ def _zyz_weight_minimising_frame(l, mats_sph, W, starts, tied=False, improvement
         grad_orb = [np.real(np.vdot(G_orb, dDo_k)) for dDo_k in dDo]
         if tied:
             G_sp = np.einsum("bd,abcd->ac", Do.conj(), G_D)
-            grad = np.array([go + np.real(np.vdot(G_sp, dDs_k)) for go, dDs_k in zip(grad_orb, dDs)])
+            grad = np.array(
+                [go + np.real(np.vdot(G_sp, dDs_k)) for go, dDs_k in zip(grad_orb, dDs)]
+            )
         elif n_par == 6:
             G_sp = np.einsum("bd,abcd->ac", Do.conj(), G_D)
             grad_sp = [np.real(np.vdot(G_sp, dDs_k)) for dDs_k in dDs]
@@ -530,7 +558,9 @@ def _partition_frames(l, W, tied, g_sub, mat_sph, tol, mat_spread, starts, ancho
     if mat_sph is not None:
         H_b = np.einsum("nai,ab,nbj->nij", Q_b.conj(), mat_sph, Q_b)
         abs_H_b = np.abs(H_b)
-        min_broad = np.min(np.mean(np.abs(np.einsum("nwii->nwi", G_b).imag), axis=1), axis=1)
+        min_broad = np.min(
+            np.mean(np.abs(np.einsum("nwii->nwi", G_b).imag), axis=1), axis=1
+        )
 
     fast_scores = []
     for idx_s in range(len(starts_arr)):
@@ -560,7 +590,9 @@ def _partition_frames(l, W, tied, g_sub, mat_sph, tol, mat_spread, starts, ancho
     if largest <= 1:
         return frames
 
-    targets = [largest - step for step in range(1, min(largest, 5)) if largest - step >= 1]
+    targets = [
+        largest - step for step in range(1, min(largest, 5)) if largest - step >= 1
+    ]
     for target in targets:
         best_target_fun = _block_threshold(coupling(best), target)
         best_target_x = None
@@ -588,16 +620,18 @@ def _partition_frames(l, W, tied, g_sub, mat_sph, tol, mat_spread, starts, ancho
     return frames
 
 
-_PARTITION_N_REFINE = (
-    8  # 3 missed the partition frame for 2 of 12 start clouds on the two-plus-three test problem; 8 for none
-)
+_PARTITION_N_REFINE = 8  # 3 missed the partition frame for 2 of 12 start clouds on the two-plus-three test problem; 8 for none
 _PARTITION_MAXITER = 400
 _JD_MAX_FREQ = 50
 _JD_MAX_SWEEPS = 100
-_JD_SKIP = 1e-8  # relative to the O(1) scaled matrices; couplings below are numerical noise
+_JD_SKIP = (
+    1e-8  # relative to the O(1) scaled matrices; couplings below are numerical noise
+)
 _JD_REL_DECREASE = 1e-10  # stop when a sweep removes less than this fraction of the off-diagonal weight
 _JD_MAT_WEIGHT = 0.1  # weight of H relative to the whole hyb set: H breaks hyb degeneracies, hyb sets the basis
-_JD_MAT_FLOOR = 1e-3  # Ry; crystal-field spread below this is noise when weighting H against hyb
+_JD_MAT_FLOOR = (
+    1e-3  # Ry; crystal-field spread below this is noise when weighting H against hyb
+)
 
 
 def _subsample_indices(hyb_win, max_freq=_JD_MAX_FREQ):
@@ -618,7 +652,9 @@ def _subsample_indices(hyb_win, max_freq=_JD_MAX_FREQ):
     pair_max = np.max(abs_h, axis=0)
     coupled = pair_max > 0
     # strongest pairs first, so a truncation below drops the weakest peaks
-    peak_idx = np.argmax(abs_h, axis=0)[coupled][np.argsort(-pair_max[coupled], kind="stable")]
+    peak_idx = np.argmax(abs_h, axis=0)[coupled][
+        np.argsort(-pair_max[coupled], kind="stable")
+    ]
 
     # 2. Spectral-weight quantiles
     cdf = np.cumsum(frob) / total_frob
@@ -637,12 +673,27 @@ def _subsample_indices(hyb_win, max_freq=_JD_MAX_FREQ):
         peaks = peak_idx[np.sort(first)][:max_freq]
         rest = np.setdiff1d(combined, peaks)
         n_fill = min(max_freq - len(peaks), len(rest))
-        fill = rest[np.unique(np.linspace(0, len(rest) - 1, n_fill).astype(int))] if n_fill > 0 else rest[:0]
+        fill = (
+            rest[np.unique(np.linspace(0, len(rest) - 1, n_fill).astype(int))]
+            if n_fill > 0
+            else rest[:0]
+        )
         combined = np.union1d(peaks, fill)
     return combined
 
 
-def _tier1_candidates(mats, hyb, mat, u4, to_spherical, budget, tol, custom_shapes=None, details=None, rejected=None):
+def _tier1_candidates(
+    mats,
+    hyb,
+    mat,
+    u4,
+    to_spherical,
+    budget,
+    tol,
+    custom_shapes=None,
+    details=None,
+    rejected=None,
+):
     """Rigid-rotation bases of the correlated shell: ``[(label, Q)]``, one per shape.
 
     A rotation of the shell leaves a rotationally invariant Coulomb tensor exactly as sparse as it
@@ -671,7 +722,12 @@ def _tier1_candidates(mats, hyb, mat, u4, to_spherical, budget, tol, custom_shap
 
     # The interaction must survive a generic rotation of both frames, else this is not the shell
     # we think it is (or U is not rotationally invariant) and the premise of the tier is gone.
-    u_op = u4 - u4.transpose(1, 0, 2, 3) - u4.transpose(0, 1, 3, 2) + u4.transpose(1, 0, 3, 2)
+    u_op = (
+        u4
+        - u4.transpose(1, 0, 2, 3)
+        - u4.transpose(0, 1, 3, 2)
+        + u4.transpose(1, 0, 3, 2)
+    )
     scale = max(float(np.max(np.abs(u_op))), 1e-300)
     for angles in ([0.7, 1.1, 0.4, -0.5, 0.9, 0.3], [-0.3, 0.8, 1.2, 0.8, 0.6, 1.0]):
         probe = S @ frame(np.array(angles)) @ np.conj(S.T)
@@ -691,7 +747,9 @@ def _tier1_candidates(mats, hyb, mat, u4, to_spherical, budget, tol, custom_shap
     mats_sph = np.conj(S.T)[None] @ mats @ S[None]
     hyb_sph = np.conj(S.T)[None] @ hyb @ S[None]
     mat_sph = None if mat is None else np.conj(S.T) @ mat @ S
-    spin_coupled = float(np.sum(np.abs(mats_sph[:, :half, half:]) ** 2)) > 1e-12 * float(np.sum(np.abs(mats) ** 2))
+    spin_coupled = float(
+        np.sum(np.abs(mats_sph[:, :half, half:]) ** 2)
+    ) > 1e-12 * float(np.sum(np.abs(mats) ** 2))
 
     I2 = np.eye(2)
     shapes = [
@@ -699,7 +757,9 @@ def _tier1_candidates(mats, hyb, mat, u4, to_spherical, budget, tol, custom_shap
         ("complex harmonics", np.eye(n, dtype=complex), False),
     ]
     if l >= 1:
-        shapes.append(("real harmonics", np.kron(I2, complex_to_real_harmonics_unitary(l)), False))
+        shapes.append(
+            ("real harmonics", np.kron(I2, complex_to_real_harmonics_unitary(l)), False)
+        )
     if l == 3:
         shapes.append(("cubic f harmonics", np.kron(I2, _cubic_f_harmonics()), False))
     if spin_coupled:
@@ -711,7 +771,9 @@ def _tier1_candidates(mats, hyb, mat, u4, to_spherical, budget, tol, custom_shap
             if len(item) == 2:
                 shapes.append((item[0], np.asarray(item[1], dtype=complex), False))
             else:
-                shapes.append((item[0], np.asarray(item[1], dtype=complex), bool(item[2])))
+                shapes.append(
+                    (item[0], np.asarray(item[1], dtype=complex), bool(item[2]))
+                )
 
     sub = _subsample_indices(hyb_sph, _JD_MAX_FREQ)
     g_sub = hyb_sph[sub]
@@ -725,9 +787,17 @@ def _tier1_candidates(mats, hyb, mat, u4, to_spherical, budget, tol, custom_shap
         if terms > budget:
             if rejected is not None:
                 # Not searched, but its weight-minimising frame says what partition the budget costs.
-                theta = _zyz_weight_minimising_frame(l, mats_sph, W, starts[n_par], tied=tied)
+                theta = _zyz_weight_minimising_frame(
+                    l, mats_sph, W, starts[n_par], tied=tied
+                )
                 m = _basis_metrics(
-                    frame(theta, tied) @ W, mats_sph, total, hyb_sph, mat_sph, tol, mat_spread=mat_spread
+                    frame(theta, tied) @ W,
+                    mats_sph,
+                    total,
+                    hyb_sph,
+                    mat_sph,
+                    tol,
+                    mat_spread=mat_spread,
                 )
                 rejected.append({"label": label, "terms": terms, "key": m["key"]})
             continue
@@ -749,14 +819,21 @@ def _tier1_candidates(mats, hyb, mat, u4, to_spherical, budget, tol, custom_shap
 
         theta_w = _zyz_weight_minimising_frame(l, mats_sph, W, starts[n_par], tied=tied)
         anchor_thetas = [theta_w, np.zeros(n_par)]
-        if mat_sph is not None and _off_diagonal_weight(mat_sph[None], np.eye(n, dtype=complex)) > 1e-12:
-            theta_h = _zyz_weight_minimising_frame(l, mat_sph[None], W, starts[n_par][:64], tied=tied)
+        if (
+            mat_sph is not None
+            and _off_diagonal_weight(mat_sph[None], np.eye(n, dtype=complex)) > 1e-12
+        ):
+            theta_h = _zyz_weight_minimising_frame(
+                l, mat_sph[None], W, starts[n_par][:64], tied=tied
+            )
             anchor_thetas.append(theta_h)
 
         best_m, best_q_sph, best_theta = None, None, None
         for theta in anchor_thetas:
             q_sph = make_q_sph(theta)
-            m = _basis_metrics(q_sph, mats_sph, total, hyb_sph, mat_sph, tol, mat_spread=mat_spread)
+            m = _basis_metrics(
+                q_sph, mats_sph, total, hyb_sph, mat_sph, tol, mat_spread=mat_spread
+            )
             if best_m is None or _frame_better(m, best_m, tol):
                 best_m, best_q_sph, best_theta = m, q_sph, theta
 
@@ -764,11 +841,21 @@ def _tier1_candidates(mats, hyb, mat, u4, to_spherical, budget, tol, custom_shap
         # (or significant inter-block couplings remain)
         if best_m["b_max"] > 1 or best_m["margin"] > 0.1 * tol:
             part_thetas = _partition_frames(
-                l, W, tied, g_sub, mat_sph, tol, mat_spread, starts[n_par], anchors=anchor_thetas
+                l,
+                W,
+                tied,
+                g_sub,
+                mat_sph,
+                tol,
+                mat_spread,
+                starts[n_par],
+                anchors=anchor_thetas,
             )
             for theta in part_thetas:
                 q_sph = make_q_sph(theta)
-                m = _basis_metrics(q_sph, mats_sph, total, hyb_sph, mat_sph, tol, mat_spread=mat_spread)
+                m = _basis_metrics(
+                    q_sph, mats_sph, total, hyb_sph, mat_sph, tol, mat_spread=mat_spread
+                )
                 if _frame_better(m, best_m, tol):
                     best_m, best_q_sph, best_theta = m, q_sph, theta
 
@@ -781,7 +868,17 @@ def _tier1_candidates(mats, hyb, mat, u4, to_spherical, budget, tol, custom_shap
     return out
 
 
-def _choose_basis(mats, hyb_window, mat, u4, to_spherical, max_u_densify, tol, info, custom_shapes=None):
+def _choose_basis(
+    mats,
+    hyb_window,
+    mat,
+    u4,
+    to_spherical,
+    max_u_densify,
+    tol,
+    info,
+    custom_shapes=None,
+):
     """Pick the unitary that blocks best at ``tol`` among the bases whose Coulomb tensor stays within budget.
 
     Candidates are the rigid-rotation bases of :func:`_tier1_candidates`, the free joint rotation, and,
@@ -811,7 +908,9 @@ def _choose_basis(mats, hyb_window, mat, u4, to_spherical, max_u_densify, tol, i
         if terms > budget:
             return False
         if metrics is None:
-            metrics = _basis_metrics(Q, mats, total_off, hyb_window, mat, tol, mat_spread=mat_spread)
+            metrics = _basis_metrics(
+                Q, mats, total_off, hyb_window, mat, tol, mat_spread=mat_spread
+            )
         cand = {
             "tier": tier,
             "label": label,
@@ -837,7 +936,10 @@ def _choose_basis(mats, hyb_window, mat, u4, to_spherical, max_u_densify, tol, i
                         if _margin_better(best["margin"], cand["margin"], tol):
                             return False
                     elif terms > best["terms"]:
-                        if not (best["margin"] > 0.1 * tol and cand["margin"] < 0.95 * best["margin"]):
+                        if not (
+                            best["margin"] > 0.1 * tol
+                            and cand["margin"] < 0.95 * best["margin"]
+                        ):
                             return False
                     else:
                         if not _margin_better(cand["margin"], best["margin"], tol):
@@ -878,8 +980,12 @@ def _choose_basis(mats, hyb_window, mat, u4, to_spherical, max_u_densify, tol, i
     if not consider("free rotation", "", Q_free):
         free_terms = count_u_terms(_rotate_u4(u4, Q_free))
         if best and free_terms > budget:
-            m_free = _basis_metrics(Q_free, mats, total_off, hyb_window, mat, tol, mat_spread=mat_spread)
-            rejected.append({"label": "free rotation", "terms": free_terms, "key": m_free["key"]})
+            m_free = _basis_metrics(
+                Q_free, mats, total_off, hyb_window, mat, tol, mat_spread=mat_spread
+            )
+            rejected.append(
+                {"label": "free rotation", "terms": free_terms, "key": m_free["key"]}
+            )
         consider(
             "budgeted free rotation",
             "",
@@ -904,7 +1010,9 @@ def _choose_basis(mats, hyb_window, mat, u4, to_spherical, max_u_densify, tol, i
     return best["Q"]
 
 
-def _joint_diagonalize(mats, max_sweeps=_JD_MAX_SWEEPS, skip=_JD_SKIP, Q0=None, u4=None, budget=None):
+def _joint_diagonalize(
+    mats, max_sweeps=_JD_MAX_SWEEPS, skip=_JD_SKIP, Q0=None, u4=None, budget=None
+):
     """Approximately diagonalize a set of Hermitian matrices with one unitary.
 
     Complex Jacobi iteration after Cardoso and Souloumiac: every sweep rotates each
@@ -933,7 +1041,9 @@ def _joint_diagonalize(mats, max_sweeps=_JD_MAX_SWEEPS, skip=_JD_SKIP, Q0=None, 
     )
 
     def off_weight():
-        return float(np.sum(np.abs(A) ** 2) - np.sum(np.abs(np.einsum("mii->mi", A)) ** 2))
+        return float(
+            np.sum(np.abs(A) ** 2) - np.sum(np.abs(np.einsum("mii->mi", A)) ** 2)
+        )
 
     previous = off_weight()
     for _ in range(max_sweeps):
@@ -1020,8 +1130,13 @@ def block_diagonalize_hyb(
         in_window = np.flatnonzero((w >= x_lim[0]) & (w <= x_lim[1]))
         if len(in_window) > 0:
             idx = full_window = in_window
-    if not (np.all(np.isfinite(hyb[full_window])) and (mat is None or np.all(np.isfinite(mat)))):
-        raise ValueError("block_diagonalize_hyb: the hybridization and the local Hamiltonian must be finite")
+    if not (
+        np.all(np.isfinite(hyb[full_window]))
+        and (mat is None or np.all(np.isfinite(mat)))
+    ):
+        raise ValueError(
+            "block_diagonalize_hyb: the hybridization and the local Hamiltonian must be finite"
+        )
     if u4 is not None and not np.all(np.isfinite(u4)):
         raise ValueError("block_diagonalize_hyb: the Coulomb tensor must be finite")
     if len(idx) > _JD_MAX_FREQ:

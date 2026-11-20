@@ -43,7 +43,9 @@ def test_weak_coupling_joins_blocks_by_default_and_is_neglected_above_tol():
 
 def _two_orbital_hyb(w, weight_occ, weight_unocc, coupling, eim=0.05):
     hyb = np.zeros((len(w), 2, 2), dtype=complex)
-    hyb[:, 0, 0] = weight_occ / (w + 1j * eim + 0.5) + weight_unocc / (w + 1j * eim - 0.9)
+    hyb[:, 0, 0] = weight_occ / (w + 1j * eim + 0.5) + weight_unocc / (
+        w + 1j * eim - 0.9
+    )
     hyb[:, 1, 1] = 0.5 * weight_occ / (w + 1j * eim + 0.3)
     hyb[:, 0, 1] = hyb[:, 1, 0] = coupling * weight_occ / (w + 1j * eim + 0.4)
     return hyb
@@ -54,7 +56,9 @@ def test_strong_peak_outside_the_window_does_not_split_a_block_after_the_fact():
     # scale of the whole mesh and must not make the equivalence pass disagree with the window.
     w = np.linspace(-2, 2, 400)
     hyb = _two_orbital_hyb(w, 0.01, 10.0, 5.0)
-    bs = prepare_hyb_fit(hyb, np.diag([0.0, 0.1]), tol=0.05, w=w, x_lim=(-1, 0), verbose=False).block_structure
+    bs = prepare_hyb_fit(
+        hyb, np.diag([0.0, 0.1]), tol=0.05, w=w, x_lim=(-1, 0), verbose=False
+    ).block_structure
     assert bs.blocks == [[0, 1]]
 
 

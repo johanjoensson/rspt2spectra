@@ -71,7 +71,9 @@ def partition_index(l: Iterable, pred: Callable = bool) -> tuple[list[int], list
     return yes, no
 
 
-def _report_fit_fidelity(w, eim, phase_hyb, block_structure, ebs_star, vs_star, verbose):
+def _report_fit_fidelity(
+    w, eim, phase_hyb, block_structure, ebs_star, vs_star, verbose
+):
     """Print, per inequivalent block, how much of the occupied hybridization weight the fit captured.
 
     A 12% t2g capture (measured on a real NiO star-bath fit) was previously only discoverable
@@ -93,21 +95,29 @@ def _report_fit_fidelity(w, eim, phase_hyb, block_structure, ebs_star, vs_star, 
         return
     z = w[occupied, None, None] + 1j * eim
     print()
-    print("Hybridization fit fidelity (integral |Im D| below E_F, per orbital in each block):")
+    print(
+        "Hybridization fit fidelity (integral |Im D| below E_F, per orbital in each block):"
+    )
     for idx, b in enumerate(block_structure.inequivalent_blocks):
         orbs = block_structure.blocks[b]
         try:
             hyb_true = phase_hyb[occupied][:, orbs, :][:, :, orbs]
             hyb_fit = np.zeros_like(hyb_true)
             for e_i, v_i in zip(ebs_star[idx], vs_star[idx]):
-                hyb_fit += (np.conjugate(v_i.T) @ v_i)[None] / (z[:, 0, 0] - e_i)[:, None, None]
+                hyb_fit += (np.conjugate(v_i.T) @ v_i)[None] / (z[:, 0, 0] - e_i)[
+                    :, None, None
+                ]
         except (IndexError, ValueError) as exc:
-            print(f"  block {list(orbs)}: could not reconstruct the fit for reporting ({exc}); skipped.")
+            print(
+                f"  block {list(orbs)}: could not reconstruct the fit for reporting ({exc}); skipped."
+            )
             continue
         true_int = np.trapezoid(np.abs(hyb_true.imag), w[occupied], axis=0)
         fit_int = np.trapezoid(np.abs(hyb_fit.imag), w[occupied], axis=0)
         for k, orb in enumerate(orbs):
-            ratio = fit_int[k, k] / true_int[k, k] if true_int[k, k] > 0 else float("nan")
+            ratio = (
+                fit_int[k, k] / true_int[k, k] if true_int[k, k] > 0 else float("nan")
+            )
             print(f"  orbital {orb} (block {list(orbs)}): {100 * ratio:5.1f}% captured")
 
 
@@ -197,7 +207,9 @@ def _verify_spherical_basis(T, cluster):
     may not have, so unitarity of ``T`` is the whole check.
     """
     if not np.allclose(T @ np.conjugate(T.T), np.eye(T.shape[0]), atol=1e-8):
-        raise RuntimeError(f"Cluster {cluster}: the rotation matrix T is not unitary; refusing to trust it.")
+        raise RuntimeError(
+            f"Cluster {cluster}: the rotation matrix T is not unitary; refusing to trust it."
+        )
 
 
 def _shell_orbital_indices(shells, spin_resolved=True):
@@ -256,7 +268,9 @@ def filter_and_shift(
     for eb_block, v_block, shift in zip(ebs, vs, shifts):
         f = np.logical_or(eb_block < w_min, eb_block > w_max)
         shift += np.sum(  # noqa: PLW2901 - in-place update of the arrays in shifts
-            np.conj(np.transpose(v_block[f], (0, 2, 1))) @ v_block[f] / eb_block[f, None, None],
+            np.conj(np.transpose(v_block[f], (0, 2, 1)))
+            @ v_block[f]
+            / eb_block[f, None, None],
             axis=0,
         )
         filtered_ebs_star.append(eb_block[np.logical_not(f)].copy())
@@ -288,14 +302,18 @@ class RsptCluster:
 def read_rspt_cluster(cluster: str, prefix: str, verbose: bool) -> RsptCluster:
     """Read RSPt's output for ``cluster`` and rotate it to spherical harmonics."""
     hyb_dat = extract_dat("hyb", cluster, prefix)
-    hs = parse_matrices(out_file="out", search_phrase="Local hamiltonian", prefix=prefix)
+    hs = parse_matrices(
+        out_file="out", search_phrase="Local hamiltonian", prefix=prefix
+    )
     qs = parse_matrices(
         out_file="out",
         search_phrase="Transformation to the local cf basis:",
         prefix=prefix,
     )
     if cluster not in hs:
-        raise RuntimeError(f"Could not extract local hamiltonian for cluster {cluster} from file {prefix}/out.")
+        raise RuntimeError(
+            f"Could not extract local hamiltonian for cluster {cluster} from file {prefix}/out."
+        )
     H_dft = hs[cluster]
     hyb = hyb_dat.orbitals
     w = hyb_dat.w
@@ -310,7 +328,9 @@ def read_rspt_cluster(cluster: str, prefix: str, verbose: bool) -> RsptCluster:
     e_fermi = parse_fermi_energy(out_file="out", prefix=prefix)
     H_dft = H_dft - e_fermi * np.eye(H_dft.shape[0])
     if verbose:
-        print(f"Fermi energy {e_fermi: .8f} subtracted from the local Hamiltonian (bath mesh has E_F = 0).")
+        print(
+            f"Fermi energy {e_fermi: .8f} subtracted from the local Hamiltonian (bath mesh has E_F = 0)."
+        )
 
     cluster_basis = parse_cluster_basis(cluster, inp_file="green.inp", prefix=prefix)
     if cluster_basis is None:
@@ -327,7 +347,9 @@ def read_rspt_cluster(cluster: str, prefix: str, verbose: bool) -> RsptCluster:
     # RSPt's basis index is a fixed rotation of each shell's orbitals (see rspt_basis); it is
     # not tied to the crystal's point group. A non-spin-resolved Hamiltonian carries no
     # down/up split.
-    if n_orb == sum(2 * l + 1 for l, _ in shells) and n_orb != sum(2 * (2 * l + 1) for l, _ in shells):
+    if n_orb == sum(2 * l + 1 for l, _ in shells) and n_orb != sum(
+        2 * (2 * l + 1) for l, _ in shells
+    ):
         spin_resolved = False
     else:
         spin_resolved = True
@@ -346,11 +368,15 @@ def read_rspt_cluster(cluster: str, prefix: str, verbose: bool) -> RsptCluster:
                     f"in green.inp, but {prefix}/{name} does not exist."
                 ) from exc
             except ValueError as exc:
-                raise RuntimeError(f"Cluster {cluster}: cannot read projector file: {exc}") from exc
+                raise RuntimeError(
+                    f"Cluster {cluster}: cannot read projector file: {exc}"
+                ) from exc
         try:
             T = projection_from_files(shells, parsed)
         except ValueError as exc:
-            raise RuntimeError(f"Cluster {cluster}: invalid projector files {proj_files}: {exc}") from exc
+            raise RuntimeError(
+                f"Cluster {cluster}: invalid projector files {proj_files}: {exc}"
+            ) from exc
     else:
         try:
             T = cluster_rotation(shells, spin_resolved=spin_resolved)
@@ -384,7 +410,9 @@ def read_rspt_cluster(cluster: str, prefix: str, verbose: bool) -> RsptCluster:
                 "input and rerun RSPt to print it."
             )
         alocal = qs[cluster]
-        if alocal.shape != (n_orb, n_orb) or not np.allclose(alocal @ np.conjugate(alocal.T), np.eye(n_orb), atol=1e-8):
+        if alocal.shape != (n_orb, n_orb) or not np.allclose(
+            alocal @ np.conjugate(alocal.T), np.eye(n_orb), atol=1e-8
+        ):
             raise RuntimeError(
                 f"Cluster {cluster}: the printed Cf transformation is not a unitary "
                 f"{n_orb}x{n_orb} matrix; refusing to trust it."
@@ -396,10 +424,14 @@ def read_rspt_cluster(cluster: str, prefix: str, verbose: bool) -> RsptCluster:
 
     if rotation_applied:
         if verbose:
-            print(f"Cluster {cluster} shells (l, basis index): {shells}; Cf flag: {has_cf_flag}.")
+            print(
+                f"Cluster {cluster} shells (l, basis index): {shells}; Cf flag: {has_cf_flag}."
+            )
             if proj_files:
                 print(f"Custom projectors read from: {proj_files}.")
-            print("Applying transformation T to rotate to the Spherical Harmonics basis (T @ H @ T.T.conj()).")
+            print(
+                "Applying transformation T to rotate to the Spherical Harmonics basis (T @ H @ T.T.conj())."
+            )
             matrix_print(T, "Transformation matrix T:")
             print()
         hyb_sph = T[None] @ hyb @ np.conjugate(T.T)[None]
@@ -475,7 +507,14 @@ def fit_star_bath(
     # symmetry-equivalent orbitals that machine epsilon would fracture into several
     # independently-seeded fits, while a loose `symm_prec` would merge inequivalent blocks.
     fit_basis = prepare_hyb_fit(
-        hyb_sph, H_dft_sph, tol=symm_prec, verbose=False, w=w, x_lim=x_lim, report=verbose, comm=comm
+        hyb_sph,
+        H_dft_sph,
+        tol=symm_prec,
+        verbose=False,
+        w=w,
+        x_lim=x_lim,
+        report=verbose,
+        comm=comm,
     )
     Q, phase_hyb, H_local_Q, block_structure = (
         fit_basis.Q,
@@ -485,7 +524,9 @@ def fit_star_bath(
     )
 
     if verbose:
-        print("Rotating to the joint near-diagonal basis of the hybridization function and H_dft.")
+        print(
+            "Rotating to the joint near-diagonal basis of the hybridization function and H_dft."
+        )
         matrix_print(
             Q,
             "Unitary transformation Q (from Spherical to block-diagonal fitting basis):",
@@ -552,7 +593,9 @@ def fit_star_bath(
         for i in range(len(ebs_star)):
             if len(ebs_star[i]) == 0:
                 continue
-            ebs_star[i], vs_star[i] = flatten_star_levels(ebs_star[i], vs_star[i], verbose=False)
+            ebs_star[i], vs_star[i] = flatten_star_levels(
+                ebs_star[i], vs_star[i], verbose=False
+            )
     return StarFit(Q, phase_hyb, H_local_Q, block_structure, ebs_star, vs_star, cs_star)
 
 
@@ -594,7 +637,11 @@ def run(
     data = read_rspt_cluster(cluster, prefix, verbose)
     w, hyb_sph, H_dft_sph = data.w, data.hyb, data.H
     e_fermi, shells, spin_resolved = data.e_fermi, data.shells, data.spin_resolved
-    proj_files, rotation_applied, contains_soc = data.proj_files, data.rotation_applied, data.contains_soc
+    proj_files, rotation_applied, contains_soc = (
+        data.proj_files,
+        data.rotation_applied,
+        data.contains_soc,
+    )
     n_orb = H_dft_sph.shape[0]
 
     star = fit_star_bath(
@@ -617,7 +664,12 @@ def run(
         verbose=verbose,
         comm=comm,
     )
-    Q, phase_hyb, H_local_Q, block_structure = star.Q, star.phase_hyb, star.H_local_Q, star.block_structure
+    Q, phase_hyb, H_local_Q, block_structure = (
+        star.Q,
+        star.phase_hyb,
+        star.H_local_Q,
+        star.block_structure,
+    )
     ebs_star, vs_star, cs_star = star.ebs_star, star.vs_star, star.cs_star
 
     (
@@ -678,7 +730,9 @@ def run(
     # approximate. Record them only when the two coincide.
     star_geometry = bath_geometry.lower() == "star"
     impurity_orbitals = (
-        _shell_orbital_indices(shells, spin_resolved) if len(impurity_indices) == n_orb else {0: impurity_indices}
+        _shell_orbital_indices(shells, spin_resolved)
+        if len(impurity_indices) == n_orb
+        else {0: impurity_indices}
     )
 
     write_h0_file(

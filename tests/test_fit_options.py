@@ -2,7 +2,12 @@ import math
 
 import pytest
 
-from rspt2spectra.fit_options import DEFAULT_SYMM_PREC, DEFAULT_U_DENSIFY, FitOptions, parse_fit_tokens
+from rspt2spectra.fit_options import (
+    DEFAULT_SYMM_PREC,
+    DEFAULT_U_DENSIFY,
+    FitOptions,
+    parse_fit_tokens,
+)
 
 
 def test_defaults_are_what_a_bare_solver_line_gives():
@@ -11,7 +16,10 @@ def test_defaults_are_what_a_bare_solver_line_gives():
     assert unused == []
     assert options.gamma == 0.01
     assert options.bath_geometry == "peeled_linked_chain"
-    assert options.symm_prec == DEFAULT_SYMM_PREC and options.u_densify == DEFAULT_U_DENSIFY
+    assert (
+        options.symm_prec == DEFAULT_SYMM_PREC
+        and options.u_densify == DEFAULT_U_DENSIFY
+    )
     assert not options.neglects_couplings
 
 
@@ -44,12 +52,16 @@ def test_tokens_set_the_option_they_name(tokens, expected):
 
 
 def test_tokens_that_are_not_fit_options_are_returned_in_order_with_their_values():
-    options, unused = parse_fit_tokens(["slater_min", "1e-3", "star", "gf_method", "lanczos", "no_mv", "gamma", "0.1"])
+    options, unused = parse_fit_tokens(
+        ["slater_min", "1e-3", "star", "gf_method", "lanczos", "no_mv", "gamma", "0.1"]
+    )
     assert options.bath_geometry == "star" and options.gamma == 0.1
     assert unused == ["slater_min", "1e-3", "gf_method", "lanczos", "no_mv"]
 
 
-@pytest.mark.parametrize("tokens", [["gamma"], ["symm_prec"], ["u_densify"], ["warm_tol"]])
+@pytest.mark.parametrize(
+    "tokens", [["gamma"], ["symm_prec"], ["u_densify"], ["warm_tol"]]
+)
 def test_a_valued_token_without_a_value_is_an_error(tokens):
     with pytest.raises(ValueError, match="needs a value"):
         parse_fit_tokens(tokens)
@@ -57,7 +69,13 @@ def test_a_valued_token_without_a_value_is_an_error(tokens):
 
 @pytest.mark.parametrize(
     "tokens",
-    [["symm_prec", "-1"], ["symm_prec", "nan"], ["symm_prec", "x"], ["u_densify", "0.5"], ["warm_tol", "2"]],
+    [
+        ["symm_prec", "-1"],
+        ["symm_prec", "nan"],
+        ["symm_prec", "x"],
+        ["u_densify", "0.5"],
+        ["warm_tol", "2"],
+    ],
 )
 def test_values_out_of_range_are_errors(tokens):
     with pytest.raises(ValueError):

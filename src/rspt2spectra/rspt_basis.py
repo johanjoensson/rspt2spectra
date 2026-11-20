@@ -66,7 +66,9 @@ def _real_harmonic_columns(l, tag):
         return _d_columns(tag)
     if l == 3:
         return _f_columns(tag)
-    raise NotImplementedError(f"RSPt basis index {tag} for l={l} is not supported (RSPt defines it for l <= 3).")
+    raise NotImplementedError(
+        f"RSPt basis index {tag} for l={l} is not supported (RSPt defines it for l <= 3)."
+    )
 
 
 def _jj_rotation(l):
@@ -135,7 +137,9 @@ def shell_rotation(l, basis_tag, spin_resolved=True):
         return block_diag(spatial, spatial) if spin_resolved else spatial
     if basis_tag == 9:
         if not spin_resolved:
-            raise NotImplementedError("The JJ basis (index 9) needs a spin-resolved shell.")
+            raise NotImplementedError(
+                "The JJ basis (index 9) needs a spin-resolved shell."
+            )
         return _jj_rotation(l)
     if basis_tag in (10, 11):
         raise NotImplementedError(
@@ -220,7 +224,9 @@ def projection_from_files(shells, files):
     for set_sizes, entries in files:
         for i, j, value in entries:
             if not 1 <= i <= premsize:
-                raise ValueError(f"projection row index {i} outside the cluster's {premsize} pre-basis orbitals")
+                raise ValueError(
+                    f"projection row index {i} outside the cluster's {premsize} pre-basis orbitals"
+                )
             P[i - 1, offset + j - 1] = value
         for size in set_sizes:
             sets.append((offset, size))

@@ -13,6 +13,7 @@ from rspt2spectra.bath_optimizer import (
     expand_eb,
     free_window,
     get_v_and_eb_varpro_basin_hopping,
+    get_v_and_eb_varpro_held,
     max_bath_states,
     moment_weights,
 )
@@ -42,7 +43,9 @@ Z = W + 1j * DELTA
 
 def _model(eb, A, z=Z):
     """Delta(z) = sum_b A_b / (z - e_b) for explicit residues."""
-    return np.einsum("mb, bij -> mij", 1.0 / (z[:, None] - np.asarray(eb)[None, :]), np.asarray(A))
+    return np.einsum(
+        "mb, bij -> mij", 1.0 / (z[:, None] - np.asarray(eb)[None, :]), np.asarray(A)
+    )
 
 
 def _psd(V):
@@ -270,8 +273,12 @@ def test_varpro_full_gradient_matches_finite_difference_under_symmetry(case):
     num = np.array(
         [
             (
-                _varpro_cost_and_full_grad(eb + h * np.eye(len(eb))[i], Z, hyb, wa, W_mn, sym)[0]
-                - _varpro_cost_and_full_grad(eb - h * np.eye(len(eb))[i], Z, hyb, wa, W_mn, sym)[0]
+                _varpro_cost_and_full_grad(
+                    eb + h * np.eye(len(eb))[i], Z, hyb, wa, W_mn, sym
+                )[0]
+                - _varpro_cost_and_full_grad(
+                    eb - h * np.eye(len(eb))[i], Z, hyb, wa, W_mn, sym
+                )[0]
             )
             / (2 * h)
             for i in range(len(eb))
@@ -279,6 +286,23 @@ def test_varpro_full_gradient_matches_finite_difference_under_symmetry(case):
     )
     rel = np.max(np.abs(grad - num)) / (np.linalg.norm(num) + 1e-30)
     assert rel < 1e-5, f"{case}: full-grad rel err {rel:.2e}"
+
+
+@pytest.mark.parametrize("case", ["none", "degenerate", "particle_hole"])
+def test_reduced_cost_is_the_cost_the_polish_minimizes(case):
+    # The inner solve minimizes the same weighted objective as the polish, so re-solving V and C
+    # at fixed energies with the polish cannot lower the reduced cost (no PSD clip is active on
+    # a model plus a small smooth perturbation).
+    hyb, sym, eb = _gradient_case(case)
+    hyb = hyb + 0.01 * hyb * np.sin(3 * W)[:, None, None]
+    weight_fun = lambda w: 1.0 / (1.0 + w**2)  # noqa: E731
+    wa = weight_fun(W)
+    reduced, _, _, _ = _varpro_cost_and_grad(eb, Z, hyb, wa, moment_weights(W, 3), sym)
+    *_, held = get_v_and_eb_varpro_held(
+        W, DELTA, hyb, eb, [(W[0], W[-1])], 0.0, None, weight_fun, sym
+    )
+    assert held == pytest.approx(reduced, rel=1e-4)
+    assert held <= reduced * (1 + 1e-6)
 
 
 # --------------------------------------------------------------------------- #
@@ -427,7 +451,9 @@ def test_inter_block_particle_hole_round_trip():
         v_full,
     )
     assert np.allclose(delta_full[:, 0, 0], d0[:, 0, 0])
-    assert np.allclose(delta_full[mask, 1, 1], -np.conj(mirror_on_mesh(W, d0)[0][mask, 0, 0]))
+    assert np.allclose(
+        delta_full[mask, 1, 1], -np.conj(mirror_on_mesh(W, d0)[0][mask, 0, 0])
+    )
 
 
 def test_assemble_h0_shifts_every_equivalent_block_not_only_identical_ones():
@@ -541,7 +567,9 @@ def test_state_cap_accounts_for_the_symmetric_sub_window():
     # On a symmetric window the two caps agree: the same window holds the same
     # number of delta-separated states however they are arranged.
     assert max_bath_states(-1.0, 1.0, 0.1, ph) == max_bath_states(-1.0, 1.0, 0.1, None)
-    assert max_bath_states(-1.0, 1.0, 0.1, plain) == max_bath_states(-1.0, 1.0, 0.1, None)
+    assert max_bath_states(-1.0, 1.0, 0.1, plain) == max_bath_states(
+        -1.0, 1.0, 0.1, None
+    )
     # On a lopsided one it must not: a mirrored bath only has the symmetric part
     # to sit in, so asking for the unconstrained count would place poles outside.
     assert max_bath_states(-5.0, 1.0, 0.1, ph) < max_bath_states(-5.0, 1.0, 0.1, None)
@@ -720,7 +748,12 @@ def test_particle_hole_equivalence_is_skipped_when_the_mesh_cannot_resolve_it():
     G_sym = np.zeros((len(w_sym), 2, 2), dtype=complex)
     G_sym[:, 0:1, 0:1], G_sym[:, 1:2, 1:2] = e0, e1
     assert mirror_interpolation_error(w_sym, e0) < 1e-9
-    assert 1 in build_block_structure(G_sym, mat=np.zeros((2, 2)), tol=1e-6, w=w_sym).particle_hole_blocks[0]
+    assert (
+        1
+        in build_block_structure(
+            G_sym, mat=np.zeros((2, 2)), tol=1e-6, w=w_sym
+        ).particle_hole_blocks[0]
+    )
 
 
 @pytest.mark.parametrize(
@@ -776,7 +809,9 @@ def test_switching_symmetry_off_really_leaves_the_fit_unconstrained():
     on_err = max(abs(A[0, 0] - A[1, 1]) for A in A_on)
     off_err = max(abs(A[0, 0] - A[1, 1]) for A in A_off)
     assert on_err < 1e-12
-    assert off_err > 1e-10, "the unconstrained fit happened to be symmetric; test is not discriminating"
+    assert (
+        off_err > 1e-10
+    ), "the unconstrained fit happened to be symmetric; test is not discriminating"
 
 
 def test_the_constant_shift_is_restricted_to_the_transpose_odd_sector():
@@ -800,14 +835,20 @@ def test_state_allocation_caps_a_mirrored_block_to_its_symmetric_sub_window():
     # only has the symmetric part of it to sit in, so the cap must know the
     # symmetry.  Detection runs on the full (symmetric) mesh, the cap on the
     # lopsided fit window -- the two are deliberately different meshes.
-    hyb = _model([-2.0, -0.8, 0.8, 2.0], np.array([a * np.eye(1) for a in (0.4, 0.9, 0.9, 0.4)]))
+    hyb = _model(
+        [-2.0, -0.8, 0.8, 2.0], np.array([a * np.eye(1) for a in (0.4, 0.9, 0.9, 0.4)])
+    )
     bs = _single_block_structure(hyb, W)
     sym = detect_block_symmetry(W, hyb)
     assert sym.particle_hole
 
     window = (W >= -3.0) & (W <= 1.0)
     w_fit, hyb_fit = W[window], hyb[window]
-    aware = get_state_per_inequivalent_block(bs, 200, hyb_fit, w_fit, np.ones_like, DELTA, syms=[sym])
-    unaware = get_state_per_inequivalent_block(bs, 200, hyb_fit, w_fit, np.ones_like, DELTA)
+    aware = get_state_per_inequivalent_block(
+        bs, 200, hyb_fit, w_fit, np.ones_like, DELTA, syms=[sym]
+    )
+    unaware = get_state_per_inequivalent_block(
+        bs, 200, hyb_fit, w_fit, np.ones_like, DELTA
+    )
     assert aware[0] < unaware[0], "the mirrored cap did not bind"
     assert aware[0] == max_bath_states(w_fit[0], w_fit[-1], DELTA, sym)
