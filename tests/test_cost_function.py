@@ -172,6 +172,22 @@ def test_inroll_C_unroll_C_real():
     assert np.allclose(C_rt.imag, 0)
 
 
+@pytest.mark.parametrize("n_b", [1, 3])
+def test_inroll_unroll_roundtrip_complex(n_b):
+    # Complex upper-triangular hoppings must survive the round trip for any number of bath
+    # states, alone and stacked.  `inroll` used to interleave real and imaginary parts per bath
+    # state while `unroll` reads all real parts first, so from two states on the hoppings came
+    # back scrambled -- and the SLSQP polish started from them.
+    n_imp = 3
+    rng = np.random.default_rng(5)
+    v = np.triu(
+        rng.normal(size=(n_b, n_imp, n_imp)) + 1j * rng.normal(size=(n_b, n_imp, n_imp))
+    )
+    assert np.allclose(unroll(inroll(v), n_b, n_imp), v)
+    stack = np.stack([v, 2 * v])
+    assert np.allclose(unroll(inroll(stack), n_b, n_imp), stack)
+
+
 def test_inroll_C_unroll_C_complex():
     n_imp = 2
     C = np.array([[1.0, 2.0 + 3j], [2.0 - 3j, 4.0]])

@@ -5,6 +5,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
+from rspt2spectra import hyb_fit
 from rspt2spectra.bath_optimizer import (
     _c_basis,
     _varpro_cost_and_full_grad,
@@ -787,10 +788,14 @@ def test_a_frozen_bath_is_returned_exactly_as_given(guess, n_states):
     np.testing.assert_allclose(np.sort(ebs[0]), np.sort(guess))
 
 
-def test_switching_symmetry_off_really_leaves_the_fit_unconstrained():
-    # The positive half of `test_fit_hyb_can_be_switched_off`: with enforcement
-    # off the fitted residues must NOT reproduce the data's exact pattern, or the
-    # flag would be doing nothing.
+def test_switching_symmetry_off_really_leaves_the_fit_unconstrained(monkeypatch):
+    # The positive half of `test_fit_hyb_can_be_switched_off`: with enforcement off
+    # the fit must run in the full residue space, or the flag would be doing nothing.
+    # This is checked on the constraint the fit is handed, not on the fitted pattern:
+    # the data are exactly symmetric, and so is their unconstrained optimum (at fixed
+    # energies the residues solve a linear least-squares problem, which the symmetry
+    # maps onto itself).  A fitted asymmetry only ever measured optimizer noise from a
+    # polish that did not start at the optimum.
     base = np.array([[1.0, 0.3], [0.3, 1.0]])
     hyb = _model([-1.5, 0.9], np.array([a * base for a in (1.0, 2.0)]))
     bs = _single_block_structure(hyb, W)
@@ -804,14 +809,18 @@ def test_switching_symmetry_off_really_leaves_the_fit_unconstrained():
         verbose=False,
         regularization=None,
     )
+    residue_dims = []
+    fit_block = hyb_fit.fit_block
+
+    def recording_fit_block(*args, **kw):
+        residue_dims.append(kw["sym"].basis.shape[0])
+        return fit_block(*args, **kw)
+
+    monkeypatch.setattr(hyb_fit, "fit_block", recording_fit_block)
     A_on = _psd(fit_hyb(**kwargs)[1][0])
-    A_off = _psd(fit_hyb(**kwargs, enforce_symmetry=False)[1][0])
-    on_err = max(abs(A[0, 0] - A[1, 1]) for A in A_on)
-    off_err = max(abs(A[0, 0] - A[1, 1]) for A in A_off)
-    assert on_err < 1e-12
-    assert (
-        off_err > 1e-10
-    ), "the unconstrained fit happened to be symmetric; test is not discriminating"
+    fit_hyb(**kwargs, enforce_symmetry=False)
+    assert max(abs(A[0, 0] - A[1, 1]) for A in A_on) < 1e-12
+    assert residue_dims == [2, 4]
 
 
 def test_the_constant_shift_is_restricted_to_the_transpose_odd_sector():

@@ -143,22 +143,13 @@ def inroll(v):
 
     """
     triu_rows, triu_columns = np.triu_indices(v.shape[-1])
-    cplx = np.any(np.abs(v.imag)) > 0
-
-    # res_shape = v.shape[:-3] + (v.shape[-3] * v.shape[-2] * v.shape[-1],)
-    if cplx:
-        return np.moveaxis(
-            np.append(
-                v[..., triu_rows, triu_columns].real,
-                v[..., triu_rows, triu_columns].imag,
-                axis=-1,
-            ).reshape(v.shape[:-3] + (-1,)),
-            0,
-            -1,
-        )
-    return np.moveaxis(
-        v[..., triu_rows, triu_columns].real.reshape(v.shape[:-3] + (-1,)), 0, -1
-    )
+    entries = v[..., triu_rows, triu_columns].reshape(v.shape[:-3] + (-1,))
+    if np.any(np.abs(v.imag) > 0):
+        # All real parts first, then all imaginary parts -- the layout `unroll` reads.  Appending
+        # them per bath state instead interleaved them, and for more than one bath state `unroll`
+        # then paired real and imaginary parts of different hoppings.
+        entries = np.concatenate([entries.real, entries.imag], axis=-1)
+    return np.moveaxis(entries.real, 0, -1)
 
 
 def inroll_C(C):
@@ -623,6 +614,15 @@ def _expand_residue_factors(V_free, sym, n_free):
     return np.concatenate(blocks, axis=0)
 
 
+def _triangular_factors(V):
+    """Return upper-triangular ``R_k`` with ``R_k^dagger R_k == V_k^dagger V_k``.
+
+    The QR factor of each ``V_k``: it carries the same residue as ``V_k`` and is exactly
+    representable by :func:`inroll`, which keeps only the upper triangle.
+    """
+    return np.linalg.qr(np.asarray(V), mode="r")
+
+
 def _gap_slsqp_polish(
     gap_x,
     z,
@@ -657,7 +657,13 @@ def _gap_slsqp_polish(
 
     p_C0 = inroll_C(C_opt)
     n_C = len(p_C0)
-    p0 = np.concatenate([gap_x, inroll(_free_residue_factors(V_opt, sym, n_eb)), p_C0])
+    # The polish parametrizes each V_k by its upper triangle (`inroll`), but the inner solve
+    # returns the full factor sqrt(lam) U^dagger.  Packing that as is would drop its lower
+    # triangle: the polish would start from another residue than the inner optimum, and from a
+    # different one in every orbital basis, so a unitary change of basis changed the fit.  The
+    # triangular factor of the same residue is exactly representable.
+    V_free = _triangular_factors(_free_residue_factors(V_opt, sym, n_eb))
+    p0 = np.concatenate([gap_x, inroll(V_free), p_C0])
     energy_bounds = [(g, g) for g in gap_x] if fixed_energies else gap_bounds
     bounds = list(energy_bounds) + [(None, None)] * (len(p0) - n_eb)
     w_max = gap_bounds[0][1]
