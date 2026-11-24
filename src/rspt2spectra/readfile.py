@@ -312,3 +312,70 @@ def read_projection_file(path):
             fail(lineno, f"column index {j} outside 1..{msize}")
         entries.append((i, j, complex(re, im)))
     return set_sizes, entries
+
+
+_OBSERVABLE_TITLES = {
+    "Lz: (ml)": "ml",
+    "Sz: (ms)": "ms",
+    "S_spinaxis: (msaxis)": "msaxis",
+    "L^+: (mlp)": "mlp",
+    "S^+: (msp)": "msp",
+}
+
+
+def parse_observables(out_file="out", prefix="."):
+    """Extract the observable matrices RSPt prints under ``verbose Observables``.
+
+    Per cluster the dump holds ``Lz: (ml)``, ``Sz: (ms)``, ``S_spinaxis: (msaxis)``,
+    ``L^+: (mlp)`` and ``S^+: (msp)``, followed, when ``observables Dxyz`` and/or ``Dpm`` is set in
+    ``green.inp``, by the dipole components. All are in the cluster's correlated basis (the one of
+    ``Local hamiltonian``) and in RSPt's global Cartesian frame.
+
+    Returns
+    -------
+    dict[str, dict[str, np.ndarray]]
+        ``{cluster: {"ml", "ms", "msaxis", "mlp", "msp", "dxyz", "dpm"}}``. ``dxyz`` is
+        ``(3, n, n)`` ordered ``(Dx, Dy, Dz)`` and ``dpm`` is ``(3, n, n)`` ordered ``(Dp, Dm, Dz)``.
+        Entries RSPt did not print are absent.
+    """
+    out = {}
+    cluster = None
+    dipole = None  # (key, [matrices]) while a dipole group is being read
+    with open(f"{prefix}/{out_file}", "r") as f:
+        lines = f.read().splitlines()
+
+    def block(i):
+        n = 0
+        while "imag" not in lines[i + 2 + n].lower():
+            n += 1
+        real = [[float(x) for x in lines[i + 2 + r].split()] for r in range(n)]
+        imag = [[float(x) for x in lines[i + 3 + n + r].split()] for r in range(n)]
+        if any(len(row) != n for row in real + imag):
+            raise ValueError(f"observable {lines[i].strip()!r} for cluster {cluster}: not a square {n}x{n} real+imaginary block")
+        return np.array(real) + 1j * np.array(imag)
+
+    def flush():
+        if dipole is not None and cluster is not None:
+            if len(dipole[1]) != 3:
+                raise ValueError(f"cluster {cluster}: dipole group {dipole[0]} has {len(dipole[1])} components, expected 3")
+            out[cluster][dipole[0]] = np.array(dipole[1])
+
+    for i, line in enumerate(lines):
+        s = line.strip()
+        if s.startswith("Observables for cluster ID"):
+            flush()
+            dipole = None
+            cluster = s.split()[-1]
+            out[cluster] = {}
+            continue
+        if cluster is None or i + 1 >= len(lines) or "real part" not in lines[i + 1].lower():
+            continue
+        if s in _OBSERVABLE_TITLES:
+            out[cluster][_OBSERVABLE_TITLES[s]] = block(i)
+        elif s.startswith("(Dipole)") or (dipole is not None and s in ("Dy", "Dz", "Dm")):
+            if s.startswith("(Dipole)"):
+                flush()
+                dipole = ("dxyz" if s.split()[-1] == "Dx" else "dpm", [])
+            dipole[1].append(block(i))
+    flush()
+    return out

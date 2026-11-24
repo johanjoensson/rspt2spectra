@@ -246,3 +246,34 @@ def projection_from_files(shells, files):
         T[down_rows, c : c + half] = P[:, c : c + half]
         T[up_rows, c + half : c + size] = P[:, c : c + half]
     return T
+
+
+def spherical_operators(shells, spin_resolved=True):
+    """Canonical ``lz, l_plus, sz, s_plus`` in the spherical basis ``cluster_rotation`` rotates to.
+
+    Shell-major, each spin-resolved shell spin-down block first, ``m = -l..l`` inside a block;
+    ``S_+`` takes the down block to the up block with matrix element 1. Used to check the operators
+    RSPt prints against what the rotation claims to produce.
+    """
+    lzs, lps, szs, sps = [], [], [], []
+    for l, _tag in shells:
+        m = np.arange(-l, l + 1)
+        lz = np.diag(m).astype(complex)
+        lp = np.zeros((2 * l + 1, 2 * l + 1), dtype=complex)
+        for i in range(2 * l):  # |m=i-l> -> |m+1>
+            lp[i + 1, i] = np.sqrt(l * (l + 1) - m[i] * (m[i] + 1))
+        if spin_resolved:
+            z, i2 = np.zeros_like(lz), np.eye(2 * l + 1)
+            lz, lp = block_diag(lz, lz), block_diag(lp, lp)
+            sz = block_diag(-0.5 * i2, 0.5 * i2).astype(complex)
+            sp = np.block([[z, z], [i2, z]])
+        else:
+            sz = np.zeros_like(lz)
+            sp = np.zeros_like(lz)
+        lzs.append(lz), lps.append(lp), szs.append(sz), sps.append(sp)
+    return {
+        "lz": block_diag(*lzs),
+        "l_plus": block_diag(*lps),
+        "sz": block_diag(*szs),
+        "s_plus": block_diag(*sps),
+    }

@@ -34,9 +34,10 @@ from rspt2spectra.readfile import (
     parse_cluster_basis,
     parse_fermi_energy,
     parse_matrices,
+    parse_observables,
     read_projection_file,
 )
-from rspt2spectra.rspt_basis import cluster_rotation, projection_from_files
+from rspt2spectra.rspt_basis import cluster_rotation, projection_from_files, spherical_operators
 from rspt2spectra.symmetries import DEFAULT_SYMMETRY_TOL
 from rspt2spectra.utils import matrix_print
 from rspt2spectra.weight_functions import weight_functions
@@ -297,6 +298,11 @@ class RsptCluster:
     rotation_applied: bool
     #: Whether the impurity block already contains spin-orbit coupling (``None``: undetermined).
     contains_soc: object
+    #: The observables RSPt printed (``verbose Observables``), rotated to spherical harmonics with
+    #: the same ``T`` as ``H``, in ``write_h0_file(operators=...)`` naming; ``None`` when absent.
+    operators: object = None
+    #: Largest deviation of the printed ``Lz, L+, Sz, S+`` from the canonical spherical ones.
+    operators_deviation: object = None
 
 
 def read_rspt_cluster(cluster: str, prefix: str, verbose: bool) -> RsptCluster:
@@ -448,6 +454,10 @@ def read_rspt_cluster(cluster: str, prefix: str, verbose: bool) -> RsptCluster:
     if verbose:
         print(f"Impurity block already contains spin-orbit coupling: {contains_soc}.")
 
+    operators, operators_deviation = _read_operators(
+        cluster, prefix, T, n_orb, shells, spin_resolved, verbose
+    )
+
     return RsptCluster(
         w=w,
         hyb=hyb_sph,
@@ -458,7 +468,51 @@ def read_rspt_cluster(cluster: str, prefix: str, verbose: bool) -> RsptCluster:
         proj_files=proj_files,
         rotation_applied=rotation_applied,
         contains_soc=contains_soc,
+        operators=operators,
+        operators_deviation=operators_deviation,
     )
+
+
+def _read_operators(cluster, prefix, T, n_orb, shells, spin_resolved, verbose):
+    """RSPt's printed observables for ``cluster`` rotated with ``T``, and their spherical deviation.
+
+    Returns ``(None, None)`` when the ``out`` file holds no dump for the cluster (RSPt was not run
+    with ``verbose Observables``) or the matrices do not fit the cluster, so the caller falls back to
+    the spherical operators impurityModel builds itself.
+    """
+    try:
+        printed = parse_observables(out_file="out", prefix=prefix).get(cluster)
+    except (OSError, ValueError, IndexError, StopIteration) as exc:
+        print(f"Cluster {cluster}: could not read the printed observables ({exc}); continuing without them.")
+        printed = None
+    if not printed:
+        if printed is not None and verbose:
+            print(f"Cluster {cluster}: no observables printed (add `Observables` to the verbose line in green.inp).")
+        return None, None
+    if any(m.shape[-1] != n_orb for m in printed.values()):
+        if verbose:
+            print(f"Cluster {cluster}: printed observables are not {n_orb}x{n_orb}; ignoring them.")
+        return None, None
+
+    def rot(m):
+        return T @ m @ np.conjugate(T.T)
+
+    names = {"sz": "ms", "s_plus": "msp", "lz": "ml", "l_plus": "mlp", "s_axis": "msaxis"}
+    ops = {k: rot(printed[v]) for k, v in names.items() if v in printed}
+    if "dxyz" in printed:
+        ops["dipole"] = np.array([rot(c) for c in printed["dxyz"]])
+    elif "dpm" in printed:  # (Dp, Dm, Dz) with Dp = (Dx + iDy)/sqrt2, Dm = (Dx - iDy)/sqrt2
+        dp, dm, dz = (rot(c) for c in printed["dpm"])
+        ops["dipole"] = np.array([(dp + dm) / np.sqrt(2), (dp - dm) / (1j * np.sqrt(2)), dz])
+    ref = spherical_operators(shells, spin_resolved)
+    dev = max((np.abs(ops[k] - ref[k]).max() for k in ref if k in ops), default=None)
+    if verbose:
+        shown = "n/a (no Lz, L+, Sz or S+ printed)" if dev is None else f"{dev:.2e}"
+        print(
+            f"Cluster {cluster}: read RSPt observables {sorted(ops)}; largest deviation from the "
+            f"spherical Lz, L+, Sz, S+ is {shown}."
+        )
+    return ops, dev
 
 
 @dataclass(frozen=True)
@@ -765,6 +819,11 @@ def run(
         # rather than written with a guessed value.
         contains_soc=contains_soc,
         producer={"name": "rspt2spectra", "cluster": cluster},
+        operators=(
+            None
+            if data.operators is None or len(impurity_indices) != n_orb
+            else {**data.operators, "source": "rspt", "frame": "global"}
+        ),
     )
 
     if plot and rank == 0:
