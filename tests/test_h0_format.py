@@ -130,3 +130,50 @@ def test_amplitudes_round_trip_exactly(tmp_path):
         i, j, re_part, im_part = line.split()
         got[int(i), int(j)] = complex(float(re_part), float(im_part))
     np.testing.assert_array_equal(got, h)
+
+
+def test_operators_block_is_written_as_re_im_nests(tmp_path):
+    n = 4
+    sz = np.diag([-0.5, -0.5, 0.5, 0.5]).astype(complex)
+    path = tmp_path / "ops.h0"
+    write_h0_file(
+        path,
+        np.eye(n),
+        impurity_orbitals={0: list(range(n))},
+        unit="Ry",
+        operators={"sz": sz, "dipole": np.ones((3, n, n)), "symmetry_ops": [(np.eye(n), True)], "source": "rspt"},
+    )
+    header = json.loads(path.read_text().splitlines()[1])
+    block = header["operators"]
+    assert block["source"] == "rspt" and block["frame"] == "local"
+    assert np.asarray(block["sz"]).shape == (n, n, 2) and np.asarray(block["dipole"]).shape == (3, n, n, 2)
+    assert block["symmetry_ops"][0]["antiunitary"] is True
+    assert "operators" not in json.loads(_write_plain(tmp_path).read_text().splitlines()[1])
+
+
+def _write_plain(tmp_path):
+    path = tmp_path / "plain.h0"
+    write_h0_file(path, np.eye(2), impurity_orbitals={0: [0, 1]}, unit="Ry")
+    return path
+
+
+def test_operators_block_is_validated(tmp_path):
+    with pytest.raises(ValueError, match="shape"):
+        write_h0_file(tmp_path / "a.h0", np.eye(4), impurity_orbitals={0: [0, 1, 2, 3]}, unit="Ry",
+                      operators={"sz": np.eye(3)})
+    with pytest.raises(ValueError, match="unknown"):
+        write_h0_file(tmp_path / "b.h0", np.eye(2), impurity_orbitals={0: [0, 1]}, unit="Ry",
+                      operators={"bogus": np.eye(2)})
+
+
+def test_impurity_model_reads_what_rspt2spectra_wrote(tmp_path):
+    h0_format = pytest.importorskip("impurityModel.ed.h0_format")
+    n = 4
+    sp = np.zeros((n, n), dtype=complex)
+    sp[2, 0] = sp[3, 1] = 1
+    path = tmp_path / "ops.h0"
+    write_h0_file(path, np.eye(n), impurity_orbitals={0: list(range(n))}, unit="Ry",
+                  operators={"s_plus": sp, "source": "rspt", "frame": "global"}, spin_ordering="down_first")
+    ops = h0_format.read_h0_file(path).operators
+    np.testing.assert_allclose(ops.s_plus, sp)
+    assert (ops.source, ops.frame) == ("rspt", "global")
