@@ -66,3 +66,20 @@ def test_a_ragged_or_incomplete_dump_is_an_error_not_a_silent_misread(tmp_path):
     (tmp_path / "out").write_text(two + " Observables for cluster ID B\n")
     with pytest.raises(ValueError, match="3 components|expected 3"):
         parse_observables(prefix=str(tmp_path))
+
+
+@pytest.mark.parametrize("shells, kept", [([(2, 3)], False), ([(1, 1), (2, 3)], True)])
+def test_a_dipole_without_a_core_valence_block_is_not_written(tmp_path, shells, kept):
+    """RSPt's Dxyz of a d-only cluster is the valence-valence optical matrix: no XAS transition, so build_h0
+    leaves it out and impurityModel falls back to its Gaunt dipole."""
+    from rspt2spectra.scripts.build_h0 import _read_operators
+
+    n = sum(2 * (2 * l + 1) for l, _ in shells)
+    rng = np.random.default_rng(1)
+    text = " Observables for cluster ID A\n" + _dump("Lz: (ml)", np.eye(n)) + " Extra observables:\n"
+    for title in ("(Dipole) Dx", "        Dy", "        Dz"):
+        text += _dump(title, rng.normal(size=(n, n)))
+    (tmp_path / "out").write_text(text)
+    ops, _ = _read_operators("A", str(tmp_path), np.eye(n), n, shells, True, False)
+    assert ("dipole" in ops) is kept
+    assert "lz" in ops

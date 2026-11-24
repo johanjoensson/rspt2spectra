@@ -504,6 +504,16 @@ def _read_operators(cluster, prefix, T, n_orb, shells, spin_resolved, verbose):
     elif "dpm" in printed:  # (Dp, Dm, Dz) with Dp = (Dx + iDy)/sqrt2, Dm = (Dx - iDy)/sqrt2
         dp, dm, dz = (rot(c) for c in printed["dpm"])
         ops["dipole"] = np.array([(dp + dm) / np.sqrt(2), (dp - dm) / (1j * np.sqrt(2)), dz])
+    ls = sorted({l for l, _ in shells})
+    if "dipole" in ops and not any(abs(a - b) == 1 for a in ls for b in ls):
+        # RSPt's Dxyz is the optical (momentum) matrix between the cluster's LMTOs: without a second shell
+        # of l +- 1 it is the on-site valence-valence block (parity-forbidden, tails only) and no XAS
+        # transition. Leaving it out lets impurityModel use its Gaunt dipole.
+        del ops["dipole"]
+        if verbose:
+            print(
+                f"Cluster {cluster}: the printed dipole has no core->valence block (shells l = {ls}); not written."
+            )
     ref = spherical_operators(shells, spin_resolved)
     dev = max((np.abs(ops[k] - ref[k]).max() for k in ref if k in ops), default=None)
     if verbose:
