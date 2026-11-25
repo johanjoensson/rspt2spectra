@@ -33,6 +33,7 @@ def test_same_request_same_key():
         {"options": replace(FitOptions(), weight_function="unit", weight=3.0)},
         {"options": replace(FitOptions(), weight_w0=0.5)},
         {"options": replace(FitOptions(), fit_unocc=True)},
+        {"options": replace(FitOptions(), hyb_tol=1e-3)},
     ],
 )
 def test_a_changed_fit_input_changes_the_key(changed):

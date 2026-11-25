@@ -42,6 +42,8 @@ def test_defaults_are_what_a_bare_solver_line_gives():
         (["symm_prec", "0.05"], {"symm_prec": 0.05}),
         (["symmetry_prec", "5d-2"], {"symm_prec": 0.05}),
         (["u_densify", "inf"], {"u_densify": math.inf}),
+        (["hyb_tol", "1d-2"], {"hyb_tol": 1e-2}),
+        (["hyb_tol", "0"], {"hyb_tol": 0.0}),
     ],
 )
 def test_tokens_set_the_option_they_name(tokens, expected):
@@ -75,6 +77,9 @@ def test_a_valued_token_without_a_value_is_an_error(tokens):
         ["symm_prec", "x"],
         ["u_densify", "0.5"],
         ["warm_tol", "2"],
+        ["hyb_tol", "-0.1"],
+        ["hyb_tol", "1"],
+        ["hyb_tol", "nan"],
     ],
 )
 def test_values_out_of_range_are_errors(tokens):

@@ -23,6 +23,7 @@ import numpy as np
 import scipy as sp
 from scipy.signal import find_peaks, peak_widths
 
+from .fit_options import DEFAULT_HYB_TOL
 from .bath_optimizer import (
     _max_bath_states,
     free_window,
@@ -124,7 +125,19 @@ def _get_v_opt_op():
 #: A block whose hybridization weight is below this fraction of the strongest block's counts as not
 #: hybridizing: it neither gets bath states nor enlarges the pool.  This keeps a core shell (2p next to
 #: 3d) from drawing states away from the valence shell.  ``0`` restores "any positive weight counts".
-HYB_WEIGHT_REL_TOL = 1e-3
+#: The fit takes it from :attr:`FitOptions.hyb_tol`; this is its default.
+HYB_WEIGHT_REL_TOL = DEFAULT_HYB_TOL
+
+
+def hybridization_weight(hyb, w, weight_fun=np.ones_like):
+    """The weight of a hybridization function: ``integral of -Im tr hyb(w) * weight_fun(w) dw``.
+
+    ``hyb`` has the frequency first.  This is what the bath-state allocation compares between
+    blocks, so a caller deciding which orbitals hybridize should measure with it, on the fit
+    window, too.
+    """
+    trace = np.einsum("wii->w", hyb)
+    return float(sp.integrate.simpson(-np.imag(trace) * weight_fun(w), x=w))
 
 
 def fit_hyb(
@@ -297,6 +310,15 @@ def fit_hyb(
         if warm_start_info is not None:
             warm_start_info.append(block_info)
         if states_per_inequivalent_block[inequivalent_block_i] == 0:
+            if verbose:
+                print()
+                print(
+                    _rule(
+                        f"Orbitals {block_structure.blocks[block_i]}  ·  no bath states "
+                        f"(weight below hyb_tol {hyb_weight_rel_tol:g} of the strongest block)",
+                        "-",
+                    )
+                )
             continue
         block = block_structure.blocks[block_i]
         if verbose:
@@ -570,11 +592,7 @@ def get_state_per_inequivalent_block(
         idx = np.ix_(range(hyb.shape[0]), block, block)
         block_hyb = hyb[idx]
         average_weight_per_inequivalent_block[inequivalent_block_i] = (
-            sp.integrate.simpson(
-                -np.imag(np.sum(np.diagonal(block_hyb, axis1=1, axis2=2), axis=1))
-                * weight_fun(w),
-                w,
-            )
+            hybridization_weight(block_hyb, w, weight_fun)
             * block_multiplicity
             / len(block)
         )

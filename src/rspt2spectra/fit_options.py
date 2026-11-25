@@ -23,6 +23,11 @@ DEFAULT_SYMM_PREC = 1e-6
 #: denser (number of non-negligible elements) than it is in the basis the caller hands over.
 DEFAULT_U_DENSIFY = 2.0
 
+#: The default ``hyb_tol``: a block whose hybridization weight in the fit window is below this
+#: fraction of the strongest block's counts as not hybridizing and gets no bath states.  A core shell
+#: next to a valence shell (Ni 2p next to 3d in NiO) sits at about 1-2% of it.
+DEFAULT_HYB_TOL = 5e-2
+
 #: Bath geometries :func:`rspt2spectra.edchain.build_H_bath_v` can build.
 BATH_GEOMETRIES = ("star", "chain", "linked_chain", "peeled_linked_chain")
 
@@ -60,6 +65,9 @@ class FitOptions:
     symm_prec: float = DEFAULT_SYMM_PREC
     #: How many times denser the fitting basis may make the Coulomb tensor; ``inf`` disables it.
     u_densify: float = DEFAULT_U_DENSIFY
+    #: Blocks whose hybridization weight in the fit window is below this fraction of the strongest
+    #: block's get no bath states and do not enlarge the pool; ``0`` covers any positive weight.
+    hyb_tol: float = DEFAULT_HYB_TOL
 
     def __post_init__(self):
         """Refuse values and combinations the fit cannot honour."""
@@ -82,6 +90,8 @@ class FitOptions:
             raise ValueError(
                 f"symm_prec must be a finite number that is not negative, got {self.symm_prec!r}"
             )
+        if not np.isfinite(self.hyb_tol) or not 0 <= self.hyb_tol < 1:
+            raise ValueError(f"hyb_tol must be at least 0 and below 1, got {self.hyb_tol!r}")
         if np.isnan(self.u_densify) or self.u_densify < 1:
             raise ValueError(
                 f"u_densify must be at least 1 (or inf), got {self.u_densify!r}"
@@ -114,6 +124,7 @@ _LABELS = (
     ("weight_w0", "Fitting weight center w0"),
     ("symm_prec", "Neglected coupling (relative)"),
     ("u_densify", "Max. Coulomb densification"),
+    ("hyb_tol", "Min. hybridization weight (rel.)"),
 )
 
 
@@ -134,6 +145,7 @@ _VALUED = {
     "symm_prec": ("symm_prec", _number),
     "symmetry_prec": ("symm_prec", _number),
     "u_densify": ("u_densify", _number),
+    "hyb_tol": ("hyb_tol", _number),
 }
 
 #: Tokens that set a flag.

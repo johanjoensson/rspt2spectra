@@ -3,7 +3,7 @@
 import numpy as np
 from types import SimpleNamespace
 
-from rspt2spectra.hyb_fit import HYB_WEIGHT_REL_TOL, get_state_per_inequivalent_block
+from rspt2spectra.hyb_fit import HYB_WEIGHT_REL_TOL, get_state_per_inequivalent_block, hybridization_weight
 
 
 def _structure(n_blocks):
@@ -42,3 +42,22 @@ def test_equal_blocks_are_unchanged():
     bs = _structure(2)
     states = get_state_per_inequivalent_block(bs, 3, _hyb([1.0, 1.0], w), w, np.ones_like, delta=0.1)
     np.testing.assert_array_equal(states, [3, 3])
+
+
+def test_a_core_shell_at_two_percent_gets_no_bath_at_the_default_tolerance():
+    """Ni 2p next to 3d in NiO: about 2% of the valence weight in the fit window."""
+    w = np.linspace(-5, 5, 201)
+    bs = _structure(3)
+    hyb = _hyb([1.0, 0.8, 0.02], w)
+    states = get_state_per_inequivalent_block(bs, 5, hyb, w, np.ones_like, delta=0.1)
+    assert states[2] == 0
+    assert states[0] + states[1] == 10, "the pool is nBaths times the hybridizing blocks only"
+    loose = get_state_per_inequivalent_block(bs, 5, hyb, w, np.ones_like, delta=0.1, rel_tol=1e-3)
+    assert loose[2] >= 1
+
+
+def test_hybridization_weight_is_what_the_allocation_compares():
+    w = np.linspace(-5, 5, 201)
+    hyb = _hyb([1.0, 3.0], w)
+    assert np.isclose(hybridization_weight(hyb, w), 0.5 * 4.0 * 10.0)
+    assert np.isclose(hybridization_weight(hyb, w, lambda x: np.where(x < 0, 1.0, 0.0)), 0.5 * 4.0 * 5.0, rtol=2e-2)

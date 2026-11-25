@@ -209,6 +209,7 @@ def bath_fit_fingerprint(basis, w, eim, n_baths, options):
                 float(options.weight),
                 float(options.weight_w0),
                 bool(options.fit_unocc),
+                float(options.hyb_tol),
             )
         ).encode()
     ).hexdigest()
@@ -591,6 +592,7 @@ def fit_bath(
             ),
             warm_accept_tol=options.warm_tol,
             warm_start_info=warm_start_info,
+            hyb_weight_rel_tol=options.hyb_tol,
         )
     for i in range(len(ebs_star)):
         if len(ebs_star[i]) == 0:
