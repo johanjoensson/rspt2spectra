@@ -121,6 +121,12 @@ def _get_v_opt_op():
     return MPI.Op.Create(v_opt, commute=True)
 
 
+#: A block whose hybridization weight is below this fraction of the strongest block's counts as not
+#: hybridizing: it neither gets bath states nor enlarges the pool.  This keeps a core shell (2p next to
+#: 3d) from drawing states away from the valence shell.  ``0`` restores "any positive weight counts".
+HYB_WEIGHT_REL_TOL = 1e-3
+
+
 def fit_hyb(
     w,
     delta,
@@ -139,6 +145,7 @@ def fit_hyb(
     symmetry_tol=DEFAULT_SYMMETRY_TOL,
     warm_accept_tol=DEFAULT_WARM_ACCEPT_TOL,
     warm_start_info=None,
+    hyb_weight_rel_tol=HYB_WEIGHT_REL_TOL,
 ):
     """Fit bath energies and hoppings to the hybridization function.
 
@@ -190,6 +197,8 @@ def fit_hyb(
     warm_start_info : list, optional
         When given, one dict per inequivalent block is appended, in block order,
         describing the warm-start outcome (see :func:`fit_block`).
+    hyb_weight_rel_tol : float
+        Blocks weaker than this fraction of the strongest do not hybridize (see :data:`HYB_WEIGHT_REL_TOL`).
 
     Returns
     -------
@@ -272,6 +281,7 @@ def fit_hyb(
         weight_fun,
         delta,
         syms=syms,
+        rel_tol=hyb_weight_rel_tol,
     )
     # An odd state count on a mirrored bath needs one unpaired pole at E_F.
     # `zero_pole` is deliberately not set here: `fit_block` is the only place that
@@ -512,6 +522,7 @@ def get_state_per_inequivalent_block(
     weight_fun,
     delta,
     syms=None,
+    rel_tol=HYB_WEIGHT_REL_TOL,
 ):
     """Distribute a pool of bath states across the inequivalent blocks.
 
@@ -529,6 +540,9 @@ def get_state_per_inequivalent_block(
       `rspt2spectra.bath_optimizer.max_bath_states`); an over-large share is capped,
       not fitted out of the window.  A particle-hole symmetric block only varies
       the positive half of its bath, so its cap is set by the half-window.
+
+    Only blocks whose weight exceeds ``rel_tol`` times the largest one count as hybridizing
+    (see :data:`HYB_WEIGHT_REL_TOL`); the pool is ``B`` times their number.
 
     ``syms`` are the per-block symmetries from `_detect_symmetries`; passing
     ``None`` caps every block as if it were unconstrained.
@@ -570,10 +584,16 @@ def get_state_per_inequivalent_block(
     average_weight_per_inequivalent_block = np.clip(
         average_weight_per_inequivalent_block, 0.0, None
     )
+    hybridizing = average_weight_per_inequivalent_block > (
+        rel_tol * np.max(average_weight_per_inequivalent_block, initial=0.0)
+    )
+    average_weight_per_inequivalent_block = np.where(
+        hybridizing, average_weight_per_inequivalent_block, 0.0
+    )
     total_weight = np.sum(average_weight_per_inequivalent_block)
 
-    # Pool of B states per block, shared out by hybridization strength.
-    pool = bath_states_per_orbital * n_blocks
+    # Pool of B states per hybridizing block, shared out by hybridization strength.
+    pool = bath_states_per_orbital * int(np.sum(hybridizing))
     if total_weight > 0:
         states = np.round(
             pool * average_weight_per_inequivalent_block / total_weight
@@ -584,7 +604,6 @@ def get_state_per_inequivalent_block(
     # Coverage: every hybridizing block gets at least one pole level.  The residue of a
     # pole is full rank, so one level already spans the block's n x n hybridization; a
     # floor of n levels would cost n^2 bath orbitals per block.
-    hybridizing = average_weight_per_inequivalent_block > 0
     states[hybridizing] = np.maximum(states[hybridizing], 1)
 
     # Window cap: never request more states than reasonably fit in the window.

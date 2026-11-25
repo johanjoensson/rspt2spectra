@@ -559,7 +559,9 @@ def test_state_distribution_coverage_and_cap():
     hyb = _diag_hyb(w, [100.0, 0.001, 0.001, 0.001])
     delta = 0.2
     n_max = _max_bath_states(w[0], w[-1], delta)  # 11
-    states = get_state_per_inequivalent_block(bs, 8, hyb, w, np.ones_like, delta=delta)
+    # rel_tol=0: any positive weight counts as hybridizing (the default drops a block 1e-5 as strong).
+    assert get_state_per_inequivalent_block(bs, 8, hyb, w, np.ones_like, delta=delta)[1] == 0
+    states = get_state_per_inequivalent_block(bs, 8, hyb, w, np.ones_like, delta=delta, rel_tol=0)
     assert states[1] >= 1  # coverage: one pole level (= n_block bath orbitals)
     assert np.all(states <= n_max)  # window cap
     # A zero-weight block gets zero states (nothing to fit).
